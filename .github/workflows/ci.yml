@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx next lint
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      minio:
+        image: bitnamilegacy/minio:2025.7.23-debian-12-r0
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: mzali-ci
+          MINIO_ROOT_PASSWORD: mzali-ci-password
+        options: >-
+          --health-cmd "curl -fsS http://localhost:9000/minio/health/live"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      MONGODB_URI: mongodb://localhost:27017/mzali?directConnection=true
+      REDIS_URL: redis://localhost:6379
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: mzali-ci
+      MINIO_SECRET_KEY: mzali-ci-password
+      MINIO_PUBLIC_URL: http://localhost:9000
+      JWT_ACCESS_SECRET: ci-jwt-secret-at-least-thirty-two-characters
+      SERVICE_TOKEN: ci-service-token-at-least-thirty-two-chars
+      SWAGGER_ENABLED: "false"
+      STRICT_STOCK: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start MongoDB replica-set service container
+        run: |
+          docker run -d --name mzali-ci-mongo -p 27017:27017 mongo:7 \
+            mongod --replSet rs0 --bind_ip_all
+          for _ in {1..30}; do
+            docker exec mzali-ci-mongo mongosh --quiet --eval 'db.adminCommand({ping:1}).ok' 2>/dev/null | grep -q 1 && break
+            sleep 2
+          done
+          docker exec mzali-ci-mongo mongosh --quiet --eval \
+            "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok"
+          for _ in {1..30}; do
+            docker exec mzali-ci-mongo mongosh --quiet --eval 'rs.status().myState' 2>/dev/null | grep -q 1 && break
+            sleep 2
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run check:contracts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --runInBand
+      - run: npm run test:integration
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build storefront image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: mzali-storefront:ci
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.api
+          push: false
+          tags: mzali-api:ci
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.worker
+          push: false
+          tags: mzali-worker:ci

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="50%" stop-color="#1E1B4B"/>
+      <stop offset="100%" stop-color="#070A11"/>
+    </linearGradient>
+    <linearGradient id="mGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="50%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="goldDot" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="128" fill="url(#bgGrad)" stroke="#334155" stroke-width="8"/>
+  <rect x="24" y="24" width="464" height="464" rx="120" fill="none" stroke="#60A5FA" stroke-width="2" stroke-opacity="0.3"/>
+
+  <path d="M 128 368 V 160 L 256 288 L 384 160 V 368" 
+        fill="none" 
+        stroke="url(#mGrad)" 
+        stroke-width="52" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"
+        filter="url(#glow)"/>
+
+  <circle cx="384" cy="144" r="28" fill="url(#goldDot)" />
+</svg>

@@ -1,0 +1,214 @@
+name: deploy
+
+x-app-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  mongo:
+    image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --eval "try {
+          const config = rs.conf();
+          if (config.members[0].host !== 'mongo:27017') {
+          config.members[0].host = 'mongo:27017';
+          rs.reconfig(config, {force: true});
+          }
+          rs.status().ok
+          } catch (error) {
+          rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok
+          }"
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 5s
+    networks: [mzali]
+    logging: *app-logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [mzali]
+    logging: *app-logging
+
+  minio:
+    image: minio/minio
+    env_file:
+      - backend/.env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        export MINIO_ROOT_USER="$$MINIO_ACCESS_KEY";
+        export MINIO_ROOT_PASSWORD="$$MINIO_SECRET_KEY";
+        exec minio server /data --console-address ':9001'
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [mzali]
+    logging: *app-logging
+
+  minio-init:
+    image: minio/mc
+    env_file:
+      - backend/.env
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        mc alias set local http://minio:9000 "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}"
+        for bucket in catalog categories banners avatars documents exports temp; do
+          mc mb --ignore-existing "local/$${bucket}"
+        done
+        mc ilm rule add --expire-days 7 local/temp || true
+        mc anonymous set download local/catalog
+        mc anonymous set download local/categories
+        mc anonymous set download local/banners
+    restart: "no"
+    networks: [mzali]
+    logging: *app-logging
+
+  api:
+    build:
+      context: backend
+      dockerfile: Dockerfile.api
+    image: mzali-api:local
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/mzali?replicaSet=rs0
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_URL: http://localhost:9000
+      SWAGGER_ENABLED: "true"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    networks: [mzali]
+    logging: *app-logging
+
+  worker:
+    build:
+      context: backend
+      dockerfile: Dockerfile.worker
+    image: mzali-worker:local
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/mzali?replicaSet=rs0
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_PUBLIC_URL: http://localhost:9000
+      SWAGGER_ENABLED: "false"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [mzali]
+    logging: *app-logging
+
+  storefront:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_COMMERCE_PROVIDER: mzali-api
+    image: mzali-storefront:local
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      COMMERCE_PROVIDER: mzali-api
+      NEXT_PUBLIC_COMMERCE_PROVIDER: mzali-api
+      MZALI_API_URL: http://api:4000
+      COOKIE_SECURE: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks: [mzali]
+    logging: *app-logging
+
+  pos:
+    build:
+      context: ./pos
+      dockerfile: Dockerfile
+    image: mzali-pos:local
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOSTNAME: 0.0.0.0
+      MZALI_API_URL: http://api:4000
+      COOKIE_SECURE: "false"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    networks: [mzali]
+    logging: *app-logging
+
+volumes:
+  mongo-data:
+  redis-data:
+  minio-data:
+
+networks:
+  mzali:
+    driver: bridge

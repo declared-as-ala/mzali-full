@@ -1,0 +1,27 @@
+{
+	email {$CADDY_ACME_EMAIL}
+}
+
+{$STOREFRONT_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy storefront:3000
+}
+
+{$MEDIA_DOMAIN} {
+	@allowed {
+		method GET HEAD
+		path /catalog/* /categories/* /banners/*
+	}
+
+	handle @allowed {
+		reverse_proxy minio:9000
+	}
+
+	respond "Not found" 404
+}
+
+# The Nest API deliberately stays private behind the storefront BFF.
+# Uncomment only for a controlled debugging window, then remove it again.
+# api.example.com {
+# 	reverse_proxy api:4000
+# }

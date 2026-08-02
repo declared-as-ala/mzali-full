@@ -1,0 +1,27 @@
+User-agent: *
+Disallow: /admin
+Disallow: /admin-login
+Disallow: /api/
+Disallow: /employee
+Crawl-delay: 10
+
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
+
+User-agent: BLEXBot
+Disallow: /
+
+User-agent: DataForSeoBot
+Disallow: /

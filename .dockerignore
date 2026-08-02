@@ -1,0 +1,15 @@
+backend/
+pos/
+deploy/
+data/
+.env*
+.git/
+.github/
+.next/
+node_modules/
+.gemini/
+tasks/
+docs/
+*.log
+*.tsbuildinfo
+
