@@ -9,7 +9,6 @@ import { hashPassword } from '@/auth/password';
 import { Session } from '@/auth/session.schema';
 import { Employee } from '@/users/employee.schema';
 import { Product } from '@/catalog/product.schema';
-import { InventoryItem } from '@/inventory/inventory-item.schema';
 import { InventoryService, InsufficientStockError } from '@/inventory/inventory.service';
 import { Order } from '@/orders/order.schema';
 import { Coupon, CouponRedemption } from '@/coupons/coupon.schema';
@@ -28,7 +27,6 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
   let employees: Model<Employee>;
   let sessions: Model<Session>;
   let products: Model<Product>;
-  let inventoryItems: Model<InventoryItem>;
   let orders: Model<Order>;
   let coupons: Model<Coupon>;
   let redemptions: Model<CouponRedemption>;
@@ -58,7 +56,6 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
       employees = app.get<Model<Employee>>(getModelToken(Employee.name));
       sessions = app.get<Model<Session>>(getModelToken(Session.name));
       products = app.get<Model<Product>>(getModelToken(Product.name));
-      inventoryItems = app.get<Model<InventoryItem>>(getModelToken(InventoryItem.name));
       orders = app.get<Model<Order>>(getModelToken(Order.name));
       coupons = app.get<Model<Coupon>>(getModelToken(Coupon.name));
       redemptions = app.get<Model<CouponRedemption>>(getModelToken(CouponRedemption.name));
@@ -100,7 +97,8 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     await employees.deleteMany({ email: { $in: [ADMIN_EMAIL, EMPLOYEE_A_EMAIL, EMPLOYEE_B_EMAIL] } });
     await sessions.deleteMany({});
     await products.deleteMany({ name: { $regex: /^Commerce Test/ } });
-    await inventoryItems.deleteMany({});
+    await connection.collection('stock_items').deleteMany({});
+    await connection.collection('stock_movements').deleteMany({});
     await orders.deleteMany({ 'customer.phone': { $regex: `^${TEST_PHONE_PREFIX}` } });
     await coupons.deleteMany({ code: { $regex: /^CTEST/ } });
     await redemptions.deleteMany({});
@@ -195,9 +193,9 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
   test('inventory.reserve in strict mode never oversells under concurrency', async () => {
     if (!infraAvailable) return;
     const productId = await createProduct('Commerce Test Strict Stock', 20);
-    await inventoryItems.create({ productId, warehouseId: 'main', onHand: 1, reserved: 0 });
-
     const actor = { type: 'system' as const, id: null, name: 'test' };
+    await inventoryService.adjust(productId, 1, 'test seed', actor);
+
     const results = await Promise.allSettled([
       inventoryService.reserve(productId, 1, 'order-a', actor, true),
       inventoryService.reserve(productId, 1, 'order-b', actor, true),
@@ -208,8 +206,8 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     expect(rejected).toHaveLength(1);
     expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(InsufficientStockError);
 
-    const item = await inventoryItems.findOne({ productId });
-    expect(item?.reserved).toBe(1);
+    const { items } = await inventoryService.list(1, 10, 'Commerce Test Strict Stock');
+    expect(items[0]?.reserved).toBe(1);
   });
 
   test('status transitions drive the stock ledger: reserve on create, commit on confirme, restock on annule', async () => {
@@ -227,21 +225,21 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
       .expect(201);
     const orderId = created.body.id as string;
 
-    let item = await inventoryItems.findOne({ productId });
-    expect(item?.reserved).toBe(3);
+    let { items } = await inventoryService.list(1, 10, 'Commerce Test Ledger');
+    expect(items[0]?.reserved).toBe(3);
 
     await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
-    item = await inventoryItems.findOne({ productId });
-    expect(item?.reserved).toBe(0);
-    expect(item?.onHand).toBe(0); // started at 0, floored (no migration seed in this test)
+    ({ items } = await inventoryService.list(1, 10, 'Commerce Test Ledger'));
+    expect(items[0]?.reserved).toBe(0);
+    expect(items[0]?.onHand).toBe(0); // started at 0, floored (no migration seed in this test)
 
     await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'annule' }).expect(200);
-    item = await inventoryItems.findOne({ productId });
+    ({ items } = await inventoryService.list(1, 10, 'Commerce Test Ledger'));
     // restock: onHand goes back up by the committed qty
-    expect(item?.onHand).toBe(3);
+    expect(items[0]?.onHand).toBe(3);
 
-    const movements = await connection.collection('stock_movements').find({ productId }).sort({ createdAt: 1 }).toArray();
-    expect(movements.map((m) => m.type)).toEqual(['order_reserve', 'order_commit', 'manual_adjust']);
+    const { items: movements } = await inventoryService.movementsFor(productId, 1, 10);
+    expect(movements.map((m) => m.type).reverse()).toEqual(['order_reserve', 'order_commit', 'manual_adjust']);
   });
 
   test('an employee can only read/update their own assigned orders', async () => {
