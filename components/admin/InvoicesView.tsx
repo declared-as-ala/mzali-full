@@ -160,7 +160,7 @@ export default function InvoicesView() {
       <header className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-black">Factures</h1>
-          <p className="text-ink-700">Factures, proformas, avoirs — la facturation réelle nécessite l'activation dans les paramètres.</p>
+          <p className="text-ink-700">Factures, proformas, avoirs — la facturation réelle nécessite l&apos;activation dans les paramètres.</p>
         </div>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
@@ -183,7 +183,7 @@ export default function InvoicesView() {
 
       {!invoicingEnabled && (
         <div className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-          La facturation n'est pas activée — les factures peuvent être créées en brouillon mais pas finalisées avant confirmation du comptable (Paramètres → Facturation).
+          La facturation n&apos;est pas activée — les factures peuvent être créées en brouillon mais pas finalisées avant confirmation du comptable (Paramètres → Facturation).
         </div>
       )}
 

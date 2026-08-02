@@ -83,7 +83,7 @@ export default function Dashboard({ cashierName }: { cashierName: string; canEdi
 
               <h3 className="text-2xl font-black text-white mb-2.5 tracking-tight">Historique Commandes</h3>
               <p className="text-xs font-semibold text-slate-300 mb-8 leading-relaxed">
-                Consulter l'historique complet des tickets, modifier, réimprimer ou annuler une vente.
+                Consulter l&apos;historique complet des tickets, modifier, réimprimer ou annuler une vente.
               </p>
 
               <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs font-black">

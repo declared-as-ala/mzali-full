@@ -369,7 +369,7 @@ export default function StockView({
               <span className="text-xs text-ink-500 font-medium">Filtres actifs :</span>
               {search && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700">
-                  "{search}" <button onClick={() => { setSearch(''); setPage(1); }}><X size={11} /></button>
+                  &quot;{search}&quot; <button onClick={() => { setSearch(''); setPage(1); }}><X size={11} /></button>
                 </span>
               )}
               {lowStockOnly && (

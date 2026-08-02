@@ -239,7 +239,7 @@ export default function ProfileView({
           <div>
             <p className="text-sm font-extrabold text-amber-900">Mot de passe temporaire détecté</p>
             <p className="text-xs font-semibold text-amber-800 mt-0.5">
-              Veuillez personnaliser votre mot de passe ci-dessous pour sécuriser l'accès à la console.
+              Veuillez personnaliser votre mot de passe ci-dessous pour sécuriser l&apos;accès à la console.
             </p>
           </div>
         </div>

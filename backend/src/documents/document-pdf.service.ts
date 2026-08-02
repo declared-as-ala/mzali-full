@@ -23,14 +23,12 @@ export type DocumentPdfInput = {
 
 // ── Brand palette (Pure Strong Blue theme across all document types) ─────────
 const BRAND       = '#1a2ee8'; // primary deep blue
-const BRAND_DARK  = '#0f1fa0'; // dark blue accent
 const BRAND_BG    = '#eef0fd'; // subtle light blue card background
 const WHITE       = '#ffffff';
 const INK_900     = '#111827';
 const INK_700     = '#374151';
 const INK_500     = '#6b7280';
 const INK_200     = '#e5e7eb';
-const INK_100     = '#f3f4f6';
 const INK_50      = '#f9fafb';
 
 // ── Layout constants ──────────────────────────────────────────────────────────

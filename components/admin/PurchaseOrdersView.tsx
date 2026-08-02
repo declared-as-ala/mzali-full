@@ -278,7 +278,7 @@ function CreatePoDrawer({ onClose, onCreated }: { onClose: () => void; onCreated
                 </div>
               ) : (
                 <p className="rounded-xl bg-ink-100 p-4 text-sm text-ink-600">
-                  Aucun fournisseur. <a href="/admin/suppliers" className="font-bold text-brand-600 hover:underline">Créez-en un d'abord →</a>
+                  Aucun fournisseur. <a href="/admin/suppliers" className="font-bold text-brand-600 hover:underline">Créez-en un d&apos;abord →</a>
                 </p>
               )
             ) : (
@@ -303,7 +303,7 @@ function CreatePoDrawer({ onClose, onCreated }: { onClose: () => void; onCreated
                   <p className="p-4 text-center text-sm text-ink-500">Chargement du catalogue…</p>
                 ) : !visible.length ? (
                   <div className="p-4 text-center text-sm text-ink-600">
-                    <p className="mb-1">Ce fournisseur n'a pas encore de produits dans son catalogue.</p>
+                    <p className="mb-1">Ce fournisseur n&apos;a pas encore de produits dans son catalogue.</p>
                     <a href="/admin/suppliers" className="font-bold text-brand-600 hover:underline">Ajouter des produits à ce fournisseur →</a>
                   </div>
                 ) : (

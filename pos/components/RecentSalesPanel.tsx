@@ -61,7 +61,7 @@ export default function RecentSalesPanel({ onOpen, onPrint }: {
           <Receipt size={16} className="text-blue-600" /> Ventes récentes
         </h2>
         <button onClick={() => router.push('/history')} className="text-xs font-bold text-blue-600 hover:underline">
-          Voir tout l'historique →
+          Voir tout l&apos;historique →
         </button>
       </div>
 

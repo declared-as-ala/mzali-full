@@ -8,10 +8,6 @@ import {
 
 type PageSize = { width: number; height: number };
 
-/** Minimum quiet zone is 4 QR modules on every side (ISO/IEC 18004) — undersizing
- *  this is the #1 cause of "prints fine, won't scan" loyalty cards. */
-const QR_QUIET_ZONE_MODULES = 4;
-
 function drawQr(doc: PDFKit.PDFDocument, data: string, x: number, y: number, size: number, dark: string): void {
   const qr = QRCode.create(data, { errorCorrectionLevel: 'M' });
   const modules = qr.modules.size;

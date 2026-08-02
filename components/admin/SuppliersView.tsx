@@ -485,7 +485,7 @@ function AddSupplierProductForm({ supplierId, onDone, onCancel }: { supplierId: 
               ))
             )}
           </div>
-          <p className="mt-2 text-[11px] text-ink-500">Choisissez un produit pour préremplir le nom, puis complétez le prix d'achat fournisseur.</p>
+          <p className="mt-2 text-[11px] text-ink-500">Choisissez un produit pour préremplir le nom, puis complétez le prix d&apos;achat fournisseur.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">

@@ -121,7 +121,7 @@ export default function SaleDrawer({ sale, canEdit, initialEdit = false, onClose
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {!canEdit && sale.status === 'COMPLETED' && (
             <p className="flex items-center gap-2 rounded-2xl bg-slate-50 border border-slate-200 p-3 text-xs font-semibold text-slate-500">
-              <ShieldAlert size={14} /> Vous n'avez pas la permission de modifier cette vente.
+              <ShieldAlert size={14} /> Vous n&apos;avez pas la permission de modifier cette vente.
             </p>
           )}
 

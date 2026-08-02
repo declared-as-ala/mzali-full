@@ -165,7 +165,7 @@ export default function ReportsView() {
             <BarChart3 size={15} /> Rapports
           </div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight sm:text-4xl">Marge</h1>
-          <p className="mt-1 text-sm text-slate-600 max-w-2xl">Revenu, coût d'achat et profit par produit.</p>
+          <p className="mt-1 text-sm text-slate-600 max-w-2xl">Revenu, coût d&apos;achat et profit par produit.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportCSV} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50 transition">
@@ -198,7 +198,7 @@ export default function ReportsView() {
             }}
             className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
           >
-            <option value={1}>Aujourd'hui</option>
+            <option value={1}>Aujourd&apos;hui</option>
             <option value={7}>7 derniers jours</option>
             <option value={30}>30 derniers jours</option>
             <option value={3650}>Tout</option>
@@ -318,7 +318,7 @@ export default function ReportsView() {
                     <th className="px-4 py-3.5">Produit</th>
                     <th className="px-4 py-3.5">Catégorie</th>
                     <th className="px-4 py-3.5 text-center">Qté vendue</th>
-                    <th className="px-4 py-3.5 text-right">Prix d'achat</th>
+                    <th className="px-4 py-3.5 text-right">Prix d&apos;achat</th>
                     <th className="px-4 py-3.5 text-right">Prix de vente</th>
                     <th className="px-4 py-3.5 text-right">CA</th>
                     <th className="px-4 py-3.5 text-right">Coût total</th>
@@ -353,13 +353,13 @@ export default function ReportsView() {
                         {r.purchasePriceMissing ? (
                           <div className="flex flex-col items-end gap-1">
                             <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600">
-                              <AlertCircle size={11} /> Prix d'achat non défini
+                              <AlertCircle size={11} /> Prix d&apos;achat non défini
                             </span>
                             <button
                               onClick={() => setEditProductId(r.productId)}
                               className="text-[10px] font-black text-brand-600 hover:underline"
                             >
-                              Définir le prix d'achat
+                              Définir le prix d&apos;achat
                             </button>
                           </div>
                         ) : (

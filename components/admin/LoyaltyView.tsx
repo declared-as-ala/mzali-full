@@ -214,7 +214,7 @@ function AccountDetailDrawer({ account, onClose, onChanged, toast }: { account: 
             <input placeholder="Motif (requis)" className="input py-1.5" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} />
           </div>
           <button disabled={busy || !adjustPoints || !adjustReason.trim()} onClick={adjust} className="btn-primary mt-2 w-full disabled:opacity-40">
-            Appliquer l'ajustement
+            Appliquer l&apos;ajustement
           </button>
         </div>
 
@@ -553,7 +553,7 @@ function RulesTab() {
       <div className="rounded-2xl bg-white p-6 shadow-card">
         <h2 className="mb-4 flex items-center gap-2 text-lg font-black text-ink-900"><Settings2 size={18} /> Échange de points</h2>
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-bold">Valeur d'un point (millimes)
+          <label className="block text-sm font-bold">Valeur d&apos;un point (millimes)
             <input type="number" min={1} className="input mt-1" value={settings.pointValueMinor} onChange={(e) => setSettings({ ...settings, pointValueMinor: Number(e.target.value) })} />
           </label>
           <label className="block text-sm font-bold">Points minimum pour échanger

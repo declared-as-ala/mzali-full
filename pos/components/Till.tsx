@@ -494,7 +494,7 @@ export default function Till({ cashierName }: { cashierName: string }) {
             onClick={() => { setEditingSale(null); setCart([]); }}
             className="rounded-lg bg-amber-200/80 px-3 py-1 text-xs font-bold text-amber-900 hover:bg-amber-300 transition"
           >
-            Annuler l'édition
+            Annuler l&apos;édition
           </button>
         </div>
       )}
