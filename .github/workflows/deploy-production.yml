@@ -1,0 +1,153 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA to deploy (defaults to the tip of master)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+# Only one production deployment at a time; never cancel one mid-flight
+# (that could leave the VPS mid-pull/mid-restart) — queue instead.
+concurrency:
+  group: mzali-production
+  cancel-in-progress: false
+
+jobs:
+  publish-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_SHA: ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
+      REGISTRY: ghcr.io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Normalize GHCR owner
+        shell: bash
+        run: echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push storefront
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-storefront:${{ env.DEPLOY_SHA }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-storefront:latest
+
+      - name: Build and push POS
+        uses: docker/build-push-action@v6
+        with:
+          context: pos
+          file: pos/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-pos:${{ env.DEPLOY_SHA }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-pos:latest
+
+      - name: Build and push API
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-api:${{ env.DEPLOY_SHA }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-api:latest
+
+      - name: Build and push worker
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.worker
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-worker:${{ env.DEPLOY_SHA }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-worker:latest
+
+      # Password-based SSH per explicit requirement — no private key anywhere
+      # in this pipeline. appleboy/ssh-action accepts `password:` as a direct
+      # alternative to `key:`; GitHub masks the secret value in all logs
+      # automatically, and it is never interpolated into the `script:` body
+      # below (the action handles auth itself, the script never sees it).
+      - name: Update repository checkout on the VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          envs: DEPLOY_SHA
+          script_stop: true
+          script: |
+            set -Eeuo pipefail
+            cd "${{ secrets.VPS_DEPLOY_PATH }}"
+            git fetch --quiet origin
+            git checkout --quiet "$DEPLOY_SHA"
+            # Idempotent: only links the shared secrets file in if this
+            # checkout doesn't already have deploy/.env — never overwrites
+            # an operator-managed secrets file, and never recreates it.
+            if [[ ! -e deploy/.env ]]; then
+              ln -s /opt/mzali/shared/.env.production deploy/.env
+            fi
+
+      - name: Deploy approved SHA to VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_SHA: ${{ env.DEPLOY_SHA }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: ${{ secrets.VPS_PORT || '22' }}
+          envs: DEPLOY_SHA
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            cd "${{ secrets.VPS_DEPLOY_PATH }}"
+            # deploy.sh backs up Mongo+MinIO first, pulls the new images,
+            # restarts, waits for health, runs the full domain smoke-test
+            # suite (deploy/scripts/verify-production.sh), and — on any
+            # failure — automatically rolls back to the last known-good tag
+            # itself (see deploy/scripts/deploy.sh's ERR trap). A non-zero
+            # exit here means the deploy AND the automatic rollback both
+            # failed and this needs a human right now.
+            bash ./deploy/scripts/deploy.sh "$DEPLOY_SHA"
+
+      - name: Record deployed commit
+        if: success()
+        run: |
+          echo "### Deployed to production :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: \`${{ env.DEPLOY_SHA }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Images: mzali-{storefront,pos,api,worker}:${{ env.DEPLOY_SHA }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deployment failed
+        if: failure()
+        run: |
+          echo "### Deployment FAILED :x:" >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit \`${{ env.DEPLOY_SHA }}\` did not pass health/smoke checks." >> "$GITHUB_STEP_SUMMARY"
+          echo "deploy.sh attempts an automatic rollback on failure — check" >> "$GITHUB_STEP_SUMMARY"
+          echo "the SSH step log above to see whether that rollback succeeded." >> "$GITHUB_STEP_SUMMARY"
+          exit 1

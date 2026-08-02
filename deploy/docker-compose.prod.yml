@@ -26,6 +26,22 @@ services:
     networks: [mzali-internal]
     logging: *default-logging
 
+  pos:
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-pos:${IMAGE_TAG:?Set IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MZALI_API_URL: http://api:4000
+      MZALI_SERVICE_TOKEN: ${SERVICE_TOKEN:?Set SERVICE_TOKEN}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
+      COOKIE_SECURE: "true"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [mzali-internal]
+    logging: *default-logging
+
   api:
     image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-api:${IMAGE_TAG:?Set IMAGE_TAG}
     restart: unless-stopped
@@ -46,6 +62,10 @@ services:
       SERVICE_TOKEN: ${SERVICE_TOKEN:?Set SERVICE_TOKEN}
       STRICT_STOCK: ${STRICT_STOCK:-false}
       SWAGGER_ENABLED: "false"
+      # Off by default — no browser calls the API directly today (storefront
+      # and POS both proxy through their own BFF over the internal network).
+      # Only takes effect if you explicitly set it in deploy/.env.
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
       NAVEX_API_BASE: ${NAVEX_API_BASE:-https://app.navex.tn}
       NAVEX_TOKEN_ADD: ${NAVEX_TOKEN_ADD:-}
       NAVEX_TOKEN_GET: ${NAVEX_TOKEN_GET:-}
@@ -157,6 +177,10 @@ services:
     restart: unless-stopped
     environment:
       STOREFRONT_DOMAIN: ${STOREFRONT_DOMAIN:?Set STOREFRONT_DOMAIN}
+      WWW_DOMAIN: ${WWW_DOMAIN:?Set WWW_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set ADMIN_DOMAIN}
+      POS_DOMAIN: ${POS_DOMAIN:?Set POS_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN:?Set MEDIA_DOMAIN}
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?Set CADDY_ACME_EMAIL}
     ports:
@@ -169,6 +193,8 @@ services:
       - caddy-config:/config
     depends_on:
       storefront:
+        condition: service_healthy
+      pos:
         condition: service_healthy
       minio:
         condition: service_healthy

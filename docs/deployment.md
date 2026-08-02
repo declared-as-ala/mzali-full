@@ -1,5 +1,10 @@
 # Production deployment
 
+> **Superseded** by `docs/deployment/production-deployment.md` (OVH VPS,
+> `/opt/mzali`, password-based SSH deploy, all six production domains). Kept
+> for historical reference — the deploy path, SSH auth method, and backup
+> script names below are out of date versus the current setup.
+
 The production stack is the merge of `deploy/docker-compose.yml` and
 `deploy/docker-compose.prod.yml`. It runs the storefront, Nest API, BullMQ
 worker, authenticated MongoDB replica set, password-protected Redis, MinIO,

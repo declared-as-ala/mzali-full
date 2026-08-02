@@ -1,13 +1,107 @@
 {
 	email {$CADDY_ACME_EMAIL}
+	# Ops-visible only on the loopback inside the container (used by this
+	# compose file's own caddy healthcheck) — never published externally.
+	admin 127.0.0.1:2019
+}
+
+# Shared security headers — applied on every public site block below.
+# No inline snippet reuse across files, so this is duplicated per block
+# deliberately (Caddyfile snippets can't span files without an import).
+(security_headers) {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}
+
+{$WWW_DOMAIN} {
+	redir https://{$STOREFRONT_DOMAIN}{uri} permanent
 }
 
 {$STOREFRONT_DOMAIN} {
+	import security_headers
 	encode zstd gzip
-	reverse_proxy storefront:3000
+	# Product/media uploads go through the admin API, not this route, but
+	# keep a sane ceiling on anything posted straight to Next.js server actions.
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy storefront:3000 {
+		header_up X-Real-IP {remote_host}
+		transport http {
+			read_timeout 60s
+			dial_timeout 5s
+		}
+	}
+}
+
+# Admin has no separate app/container — it's `/admin/*` inside the
+# storefront build (see docs/deployment/ovh-production-audit.md §6). A
+# redirect keeps this zero-risk: no new middleware, no cookie-domain
+# changes, and the moment you land on the storefront origin the existing
+# admin auth just works unchanged.
+{$ADMIN_DOMAIN} {
+	import security_headers
+	redir https://{$STOREFRONT_DOMAIN}/admin{uri} permanent
+}
+
+{$POS_DOMAIN} {
+	import security_headers
+	encode zstd gzip
+	request_body {
+		max_size 25MB
+	}
+	# /api/events is a long-lived SSE stream (inventory/live updates) proxied
+	# by the POS app itself — disable response buffering so chunks flush
+	# immediately instead of queuing behind Caddy's default buffer.
+	@sse path /api/events
+	handle @sse {
+		reverse_proxy pos:3001 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+			}
+		}
+	}
+	handle {
+		reverse_proxy pos:3001 {
+			header_up X-Real-IP {remote_host}
+			transport http {
+				read_timeout 60s
+				dial_timeout 5s
+			}
+		}
+	}
+}
+
+# Public per your explicit domain list. Nothing in this system requires it —
+# both the storefront and POS reach the API over the internal Docker network
+# only (see the audit, §7) — so this exists for direct API access/testing,
+# not because any app depends on it. CORS stays off unless CORS_ORIGINS is
+# set in deploy/.env.
+{$API_DOMAIN} {
+	import security_headers
+	encode zstd gzip
+	reverse_proxy api:4000 {
+		header_up X-Real-IP {remote_host}
+		transport http {
+			read_timeout 120s
+			dial_timeout 5s
+		}
+	}
 }
 
 {$MEDIA_DOMAIN} {
+	import security_headers
+	# Matches exactly the buckets minio-init grants anonymous download to
+	# (see deploy/docker-compose.yml's minio-init command) — avatars/
+	# documents/exports/temp stay private; MinIO itself would 403 them even
+	# if routed here, but the allow-list should say what's actually public.
 	@allowed {
 		method GET HEAD
 		path /catalog/* /categories/* /banners/*
@@ -19,9 +113,3 @@
 
 	respond "Not found" 404
 }
-
-# The Nest API deliberately stays private behind the storefront BFF.
-# Uncomment only for a controlled debugging window, then remove it again.
-# api.example.com {
-# 	reverse_proxy api:4000
-# }

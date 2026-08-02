@@ -1,5 +1,10 @@
 # Backup and restore operations
 
+> **Superseded** by `docs/deployment/backup-and-restore.md` — `backup.sh` was
+> split into `backup-mongodb.sh`/`backup-minio.sh`, `restore.sh` was renamed
+> `restore-mongodb.sh` and a new `restore-minio.sh` was added, and the deploy
+> path is now `/opt/mzali`. Kept for historical reference only.
+
 Production backups are created by `deploy/scripts/backup.sh`. The script
 creates a compressed MongoDB archive under
 `$BACKUP_TARGET/mongo/<UTC timestamp>/dump.archive.gz` and mirrors all MinIO

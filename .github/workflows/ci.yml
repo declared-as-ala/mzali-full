@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [master]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,6 +20,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx next lint
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  pos:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: pos/package-lock.json
+      - run: npm ci
+      - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
 
@@ -92,6 +110,40 @@ jobs:
       - run: npm test -- --runInBand
       - run: npm run test:integration
 
+  compose-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production compose (base + prod overlay)
+        env:
+          # Dummy values only — this step never starts anything, it just
+          # confirms the merged compose file is well-formed and every
+          # required variable resolves.
+          GHCR_OWNER: ci
+          IMAGE_TAG: ci
+          STOREFRONT_DOMAIN: shop.example.com
+          WWW_DOMAIN: www.example.com
+          ADMIN_DOMAIN: admin.example.com
+          POS_DOMAIN: pos.example.com
+          API_DOMAIN: api.example.com
+          MEDIA_DOMAIN: media.example.com
+          MINIO_PUBLIC_URL: https://media.example.com
+          CADDY_ACME_EMAIL: ops@example.com
+          SERVICE_TOKEN: ci-placeholder-32-characters-long!!
+          JWT_ACCESS_SECRET: ci-placeholder-32-characters-long!!
+          SESSION_SECRET: ci-placeholder-32-characters-long!!
+          NEXT_PUBLIC_SITE_URL: https://shop.example.com
+          MONGO_INITDB_ROOT_USERNAME: ci
+          MONGO_INITDB_ROOT_PASSWORD: ci-placeholder-password
+          MONGO_REPLICA_KEY: ci-placeholder-key
+          MONGODB_URI: mongodb://ci:ci-placeholder-password@mongo:27017/mzali?replicaSet=rs0&authSource=admin
+          REDIS_PASSWORD: ci-placeholder-password
+          REDIS_URL: redis://:ci-placeholder-password@redis:6379
+          MINIO_ROOT_USER: ci
+          MINIO_ROOT_PASSWORD: ci-placeholder-password
+        run: |
+          docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml config -q
+
   docker:
     runs-on: ubuntu-latest
     steps:
@@ -103,13 +155,23 @@ jobs:
           context: .
           file: Dockerfile
           push: false
+          load: true
           tags: mzali-storefront:ci
+      - name: Build POS image
+        uses: docker/build-push-action@v6
+        with:
+          context: pos
+          file: pos/Dockerfile
+          push: false
+          load: true
+          tags: mzali-pos:ci
       - name: Build API image
         uses: docker/build-push-action@v6
         with:
           context: backend
           file: backend/Dockerfile.api
           push: false
+          load: true
           tags: mzali-api:ci
       - name: Build worker image
         uses: docker/build-push-action@v6
@@ -117,4 +179,38 @@ jobs:
           context: backend
           file: backend/Dockerfile.worker
           push: false
+          load: true
           tags: mzali-worker:ci
+
+      - name: Scan storefront image for known-critical CVEs
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: mzali-storefront:ci
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: Scan POS image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: mzali-pos:ci
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: Scan API image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: mzali-api:ci
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: Scan worker image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: mzali-worker:ci
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true

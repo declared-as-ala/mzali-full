@@ -48,17 +48,26 @@ compose() {
   fi
 }
 
-rollback_hint() {
-  echo "Deployment failed." >&2
-  if [[ -n "$previous_tag" ]]; then
-    echo "Rollback: IMAGE_TAG=$previous_tag docker compose --env-file deploy/.env -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d" >&2
+deploy_failed() {
+  local exit_code=$?
+  echo "Deployment $NEW_TAG failed (exit $exit_code)." >&2
+  if [[ -n "$previous_tag" && "$previous_tag" != "$NEW_TAG" ]]; then
+    echo "Automatically rolling back to $previous_tag ..." >&2
+    if bash "$SCRIPT_DIR/rollback-production.sh" "$previous_tag"; then
+      echo "Rollback to $previous_tag succeeded." >&2
+    else
+      echo "Rollback to $previous_tag ALSO FAILED — manual intervention required." >&2
+      echo "Previous known-good tag: $previous_tag" >&2
+    fi
   else
-    echo "No previous deploy tag was recorded in deploy/.last-good." >&2
+    echo "No previous deploy tag recorded in deploy/.last-good — nothing to roll back to." >&2
   fi
+  exit "$exit_code"
 }
-trap rollback_hint ERR
+trap deploy_failed ERR
 
-bash "$SCRIPT_DIR/backup.sh"
+bash "$SCRIPT_DIR/backup-mongodb.sh"
+bash "$SCRIPT_DIR/backup-minio.sh"
 compose pull
 compose up -d --remove-orphans
 
@@ -76,11 +85,9 @@ wait_for_container() {
 
 wait_for_container api "fetch('http://127.0.0.1:4000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 wait_for_container storefront "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+wait_for_container pos "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-: "${STOREFRONT_DOMAIN:?Set STOREFRONT_DOMAIN in deploy/.env}"
-: "${SMOKE_PRODUCT_PATH:?Set SMOKE_PRODUCT_PATH to a real product page in deploy/.env}"
-curl --fail --silent --show-error --retry 5 --retry-delay 3 "https://${STOREFRONT_DOMAIN}/" >/dev/null
-curl --fail --silent --show-error --retry 5 --retry-delay 3 "https://${STOREFRONT_DOMAIN}${SMOKE_PRODUCT_PATH}" >/dev/null
+bash "$SCRIPT_DIR/verify-production.sh"
 
 printf '%s\n' "$NEW_TAG" > "$LAST_GOOD_FILE"
 trap - ERR

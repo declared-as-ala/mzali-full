@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Mirrors every MinIO bucket to a timestamped local directory. Run before
+# every deploy (see deploy.sh) and safe to run standalone / on a cron.
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +13,7 @@ set -a
 source "$ENV_FILE"
 set +a
 
-BACKUP_TARGET="${BACKUP_TARGET:-/backups}"
+BACKUP_TARGET="${BACKUP_TARGET:-/opt/mzali/backups}"
 BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
 if [[ "$BACKUP_TARGET" == /* ]]; then
   [[ "$BACKUP_TARGET" != "/" && ${#BACKUP_TARGET} -gt 4 ]]
@@ -24,9 +26,8 @@ fi
 [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || { echo "Invalid BACKUP_RETENTION_DAYS" >&2; exit 1; }
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-mongo_dir="$BACKUP_TARGET/mongo/$timestamp"
 minio_dir="$BACKUP_TARGET/minio/$timestamp"
-mkdir -p -- "$mongo_dir" "$minio_dir"
+mkdir -p -- "$minio_dir"
 
 compose() {
   if [[ ${OSTYPE:-} == msys* ]]; then
@@ -43,16 +44,6 @@ compose() {
   fi
 }
 
-echo "Creating MongoDB backup $mongo_dir/dump.archive.gz"
-# Variables in this single-quoted command expand inside the Mongo container.
-# shellcheck disable=SC2016
-compose exec -T mongo sh -ec '
-  mongodump --quiet --username "$MONGO_INITDB_ROOT_USERNAME" \
-    --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin \
-    --db mzali --archive --gzip
-' > "$mongo_dir/dump.archive.gz"
-[[ -s "$mongo_dir/dump.archive.gz" ]] || { echo "MongoDB backup is empty" >&2; exit 1; }
-
 echo "Mirroring MinIO into $minio_dir"
 # MinIO credentials expand in the one-shot container, not in the host shell.
 # shellcheck disable=SC2016
@@ -61,7 +52,8 @@ compose run --rm --no-deps --entrypoint /bin/sh minio-init -ec '
   mc mirror --overwrite backup-source/ "/backups/minio/'"$timestamp"'"
 '
 
-find "$BACKUP_TARGET/mongo" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} +
 find "$BACKUP_TARGET/minio" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} +
 
-echo "Backup completed: $timestamp"
+echo "MinIO backup completed: $timestamp"
+echo "REMINDER: this is a local copy only — mirror $BACKUP_TARGET/minio off-server" \
+     "(see docs/deployment/backup-and-restore.md). Do not rely on the VPS being the only copy."
