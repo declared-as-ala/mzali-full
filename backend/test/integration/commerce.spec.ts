@@ -213,6 +213,8 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
   test('status transitions drive the stock ledger: no reservation on create, commit on confirme, restock on annule', async () => {
     if (!infraAvailable) return;
     const productId = await createProduct('Commerce Test Ledger', 30);
+    const actor = { type: 'system' as const, id: null, name: 'test' };
+    await inventoryService.adjust(productId, 3, 'test seed', actor);
     const phone = uniquePhone();
     const created = await request(server)
       .post('/api/v1/orders')
@@ -226,22 +228,27 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     const orderId = created.body.id as string;
 
     // Orders sit in 'en-attente' (phone-confirmation pending) without holding
-    // stock — no stock_items doc exists yet for this variant/location.
+    // stock — the seeded on-hand is untouched, nothing reserved.
     let { items } = await inventoryService.list(1, 10, 'Commerce Test Ledger');
-    expect(items).toHaveLength(0);
+    expect(items[0]?.reserved).toBe(0);
+    expect(items[0]?.onHand).toBe(3);
 
     await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
     ({ items } = await inventoryService.list(1, 10, 'Commerce Test Ledger'));
     expect(items[0]?.reserved).toBe(0);
-    expect(items[0]?.onHand).toBe(0); // started at 0, floored (no migration seed in this test)
+    expect(items[0]?.onHand).toBe(0); // committed: seeded 3 - qty 3
 
-    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'annule' }).expect(200);
+    await request(server)
+      .put(`/api/v1/admin/orders/${orderId}`)
+      .set('Authorization', adminAuth)
+      .send({ status: 'annule', reason: 'test cancel' })
+      .expect(200);
     ({ items } = await inventoryService.list(1, 10, 'Commerce Test Ledger'));
     // restock: onHand goes back up by the committed qty
     expect(items[0]?.onHand).toBe(3);
 
     const { items: movements } = await inventoryService.movementsFor(productId, 1, 10);
-    expect(movements.map((m) => m.type).reverse()).toEqual(['order_commit', 'manual_adjust']);
+    expect(movements.map((m) => m.type).reverse()).toEqual(['manual_adjust', 'order_commit', 'manual_adjust']);
   });
 
   test('an employee can only read/update their own assigned orders', async () => {
