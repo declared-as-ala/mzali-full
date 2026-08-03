@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { normalizeComPort, openCashDrawer, shouldOpenDrawer } from './drawer.mjs';
-import { writeVfdPayment } from './display.mjs';
+import { writeVfdLines, writeVfdPayment } from './display.mjs';
 import { createRequestDeduplicator } from './dedupe.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -58,7 +58,7 @@ async function detectVfdPort(drawerPort) {
     return configured;
   }
   if (process.platform !== 'win32') return null;
-  const command = String.raw`$map = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue; $entry = $map.PSObject.Properties | Where-Object { $_.Value -match '^COM\d+$' -and $_.Value -ne $env:MZALI_DRAWER_PORT } | Select-Object -First 1; if ($null -ne $entry) { $entry.Value | ConvertTo-Json -Compress }`;
+  const command = String.raw`$map = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue; $entries = $map.PSObject.Properties | Where-Object { $_.Value -match '^COM\d+$' -and $_.Value -ne $env:MZALI_DRAWER_PORT }; $entry = $entries | Where-Object { $_.Value -eq 'COM1' } | Select-Object -First 1; if ($null -eq $entry) { $entry = $entries | Select-Object -First 1 }; if ($null -ne $entry) { $entry.Value | ConvertTo-Json -Compress }`;
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
     windowsHide: true,
     timeout: 8000,
@@ -103,8 +103,13 @@ async function showOnVfd(input, phase) {
   return true;
 }
 
-// Warm hardware discovery when the bridge starts so the first payment stays fast.
-void getVfdPort();
+// Warm hardware discovery and replace the device's factory welcome message.
+void getVfdPort().then((vfdPort) => {
+  if (!vfdPort) return;
+  return writeVfdLines(vfdPort, 'MZALI POS', 'CAISSE PRETE', {
+    baudRate: Number(process.env.POS_VFD_BAUD_RATE || 9600),
+  });
+}).catch((error) => console.error(`[vfd] ${error instanceof Error ? error.message : 'Erreur VFD'}`));
 
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') {
@@ -127,6 +132,14 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/v1/display/payment') {
       const input = await body(request);
       return json(response, 200, { ok: true, displayed: await showOnVfd(input, 'payment') });
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/display/test') {
+      const vfdPort = await getVfdPort();
+      if (!vfdPort) throw new Error('Afficheur client non dÃ©tectÃ©.');
+      await writeVfdLines(vfdPort, 'MZALI POS', 'CAISSE PRETE', {
+        baudRate: Number(process.env.POS_VFD_BAUD_RATE || 9600),
+      });
+      return json(response, 200, { ok: true, displayed: true, vfdPort });
     }
     if (request.method === 'POST' && url.pathname === '/v1/sale-completed') {
       const input = await body(request);

@@ -40,7 +40,11 @@ export function formatVfdLines(input) {
 
 export function encodeVfdFrame(input) {
   const [line1, line2] = formatVfdLines(input);
-  return Buffer.concat([Buffer.from([0x0c]), Buffer.from(`${line1}\r\n${line2}`, 'ascii')]);
+  return encodeVfdLines(line1, line2);
+}
+
+export function encodeVfdLines(line1, line2) {
+  return Buffer.concat([Buffer.from([0x0c]), Buffer.from(`${fit(line1)}\r\n${fit(line2)}`, 'ascii')]);
 }
 
 async function configureVfdPort(port, baudRate) {
@@ -53,11 +57,10 @@ async function configureVfdPort(port, baudRate) {
   configuredPorts.add(key);
 }
 
-export async function writeVfdPayment(serialPort, input, options = {}) {
+async function writeVfdFrame(serialPort, frame, options = {}) {
   const port = normalizeComPort(serialPort);
   const baudRate = Number(options.baudRate || 9600);
   const writer = options.writer;
-  const frame = encodeVfdFrame(input);
   if (writer) return writer(port, frame);
   if (process.platform !== 'win32') throw new Error('Afficheur VFD disponible uniquement sous Windows.');
   const previous = writeQueues.get(port) || Promise.resolve();
@@ -78,4 +81,12 @@ export async function writeVfdPayment(serialPort, input, options = {}) {
   } finally {
     if (writeQueues.get(port) === queued) writeQueues.delete(port);
   }
+}
+
+export function writeVfdLines(serialPort, line1, line2, options = {}) {
+  return writeVfdFrame(serialPort, encodeVfdLines(line1, line2), options);
+}
+
+export function writeVfdPayment(serialPort, input, options = {}) {
+  return writeVfdFrame(serialPort, encodeVfdFrame(input), options);
 }

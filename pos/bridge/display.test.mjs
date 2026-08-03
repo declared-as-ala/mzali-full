@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { encodeVfdFrame, formatVfdLines, writeVfdPayment } from './display.mjs';
+import { encodeVfdFrame, encodeVfdLines, formatVfdLines, writeVfdPayment } from './display.mjs';
 
 test('cash payment displays total and received amount on two 20-character lines', () => {
   const lines = formatVfdLines({ phase: 'payment', method: 'CASH', totalMinor: 12345, cashReceivedMinor: 20000 });
@@ -20,6 +20,11 @@ test('VFD frame clears the display and contains ASCII only', () => {
   const frame = encodeVfdFrame({ phase: 'completed', method: 'CARD', totalMinor: 5000 });
   assert.equal(frame[0], 0x0c);
   assert.equal(frame.subarray(1).toString('ascii'), 'PAYE 5.000 DT       \r\nMERCI - CARTE       ');
+});
+
+test('ready message is formatted for a two-line VFD', () => {
+  const frame = encodeVfdLines('MZALI POS', 'CAISSE PRETE');
+  assert.equal(frame.subarray(1).toString('ascii'), 'MZALI POS           \r\nCAISSE PRETE        ');
 });
 
 test('writer receives VFD bytes on a port separate from the drawer', async () => {

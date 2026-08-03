@@ -26,6 +26,15 @@ $serverPath = Join-Path $installFolder 'server.mjs'
 $startupFolder = [Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupFolder 'MZALI POS Bridge.lnk'
 
+# This boutique's customer display is exposed by Windows as COM1. Persist the
+# detected assignment so other serial devices can never be selected instead.
+$serialMap = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue
+$hasCom1 = $serialMap -and ($serialMap.PSObject.Properties.Value -contains 'COM1')
+if ($hasCom1) {
+  [Environment]::SetEnvironmentVariable('POS_VFD_COM_PORT', 'COM1', 'User')
+  $env:POS_VFD_COM_PORT = 'COM1'
+}
+
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $nodePath
@@ -61,5 +70,7 @@ if ($health.drawerPort) {
   Write-Warning 'Service actif, mais tiroir USB non detecte. Verifiez le cable USB du tiroir.'
 }
 if ($health.vfdPort) {
+  Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:17890/v1/display/test' -ContentType 'application/json' -Body '{}' -TimeoutSec 10 | Out-Null
   Write-Host ('Afficheur client detecte sur ' + $health.vfdPort + '.') -ForegroundColor Green
+  Write-Host 'L afficheur doit maintenant indiquer MZALI POS / CAISSE PRETE.' -ForegroundColor Green
 }
