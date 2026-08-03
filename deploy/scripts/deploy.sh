@@ -87,7 +87,16 @@ wait_for_container api "fetch('http://127.0.0.1:4000/health/ready').then(r=>{if(
 wait_for_container storefront "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 wait_for_container pos "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
-bash "$SCRIPT_DIR/verify-production.sh"
+# Domain smoke tests require DNS to already point here (and a live TLS cert).
+# During pre-DNS bring-up, set SKIP_DOMAIN_SMOKE_TESTS=true in deploy/.env —
+# the container-internal health checks above already prove the app itself
+# is healthy. Remove/unset this once DNS is live; it must not stay set in
+# steady-state production (it would hide a real Caddy/DNS/TLS regression).
+if [[ "${SKIP_DOMAIN_SMOKE_TESTS:-false}" == "true" ]]; then
+  echo "SKIP_DOMAIN_SMOKE_TESTS=true — skipping domain smoke tests (container health checks above already passed)." >&2
+else
+  bash "$SCRIPT_DIR/verify-production.sh"
+fi
 
 printf '%s\n' "$NEW_TAG" > "$LAST_GOOD_FILE"
 trap - ERR
