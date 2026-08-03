@@ -42,6 +42,19 @@ export function shouldOpenDrawer(settings, paymentMethods) {
 
 const WINDOWS_RAW_PRINT_SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
+$printer = Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq $env:MZALI_RAW_PRINTER } | Select-Object -First 1
+if ($null -eq $printer) {
+  throw "Imprimante introuvable: $env:MZALI_RAW_PRINTER"
+}
+if ($printer.WorkOffline -eq $true -or $printer.PrinterStatus -eq 7) {
+  throw "L'imprimante $env:MZALI_RAW_PRINTER est hors connexion. Allumez-la et désactivez 'Utiliser l'imprimante hors connexion' dans Windows."
+}
+if ($printer.PrinterStatus -eq 6) {
+  throw "L'imprimante $env:MZALI_RAW_PRINTER est en pause. Reprenez l'impression dans la file Windows."
+}
+if ($printer.Status -eq 'Error' -or $printer.ExtendedPrinterStatus -eq 9) {
+  throw "Windows signale une erreur pour l'imprimante $env:MZALI_RAW_PRINTER. Vérifiez son alimentation, le câble USB et le port sélectionné."
+}
 Add-Type -TypeDefinition @'
 using System;
 using System.ComponentModel;
