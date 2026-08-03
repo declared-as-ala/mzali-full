@@ -6,6 +6,12 @@ echo.
 echo Installation du service local MZALI POS...
 echo.
 
+if not exist "%~dp0install-windows.ps1" goto :not_extracted
+if not exist "%~dp0server.mjs" goto :not_extracted
+if not exist "%~dp0drawer.mjs" goto :not_extracted
+if not exist "%~dp0display.mjs" goto :not_extracted
+if not exist "%~dp0dedupe.mjs" goto :not_extracted
+
 where node.exe >nul 2>nul
 if errorlevel 1 (
   echo Node.js est necessaire. Installation automatique en cours...
@@ -46,3 +52,16 @@ echo.
 echo Vous pouvez maintenant ouvrir le POS et tester le tiroir.
 echo.
 pause
+exit /b 0
+
+:not_extracted
+echo ERREUR: Le programme est encore ouvert directement depuis le fichier ZIP.
+echo.
+echo 1. Fermez cette fenetre.
+echo 2. Clic droit sur mzali-full-master.zip.
+echo 3. Choisissez "Extraire tout".
+echo 4. Ouvrez le dossier extrait: mzali-full-master\pos\bridge.
+echo 5. Double-cliquez de nouveau sur INSTALL-ON-POS-PC.cmd.
+echo.
+pause
+exit /b 1
