@@ -31,15 +31,18 @@ set -a
 source "$ENV_FILE"
 set +a
 
-tmp_env="$(mktemp "$ENV_FILE.XXXXXX")"
+# See deploy.sh for why this resolves the symlink first: mv onto the
+# symlink path would delete it and drop a disconnected copy in its place.
+real_env_file="$(readlink -f "$ENV_FILE")"
+tmp_env="$(mktemp "$real_env_file.XXXXXX")"
 awk -v tag="$TARGET_TAG" '
   BEGIN { replaced=0 }
   /^IMAGE_TAG=/ { print "IMAGE_TAG=" tag; replaced=1; next }
   { print }
   END { if (!replaced) print "IMAGE_TAG=" tag }
-' "$ENV_FILE" > "$tmp_env"
-chmod --reference="$ENV_FILE" "$tmp_env"
-mv -f -- "$tmp_env" "$ENV_FILE"
+' "$real_env_file" > "$tmp_env"
+chmod --reference="$real_env_file" "$tmp_env"
+mv -f -- "$tmp_env" "$real_env_file"
 export IMAGE_TAG="$TARGET_TAG"
 
 compose() {
