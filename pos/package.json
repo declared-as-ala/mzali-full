@@ -8,6 +8,7 @@
     "start": "next start -p ${PORT:-3001} -H 0.0.0.0",
     "lint": "next lint",
     "bridge:start": "node bridge/server.mjs",
+    "bridge:install": "powershell -NoProfile -ExecutionPolicy Bypass -File bridge/install-windows.ps1",
     "bridge:test": "node --test bridge/*.test.mjs"
   },
   "dependencies": {

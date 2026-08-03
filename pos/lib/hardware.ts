@@ -3,7 +3,6 @@
 import { posFetch } from './device';
 import type { PosSale } from '@/types/pos';
 
-const CONNECTION_KEY = 'pos_hardware_bridge_connection';
 const DEFAULT_URL = 'http://127.0.0.1:17890';
 
 export type DrawerSettings = {
@@ -17,8 +16,6 @@ export type DrawerSettings = {
   autoPrintReceipt: boolean;
 };
 
-export type BridgeConnection = { url: string; token: string };
-
 export type SaleHardwareResult = {
   autoPrintReceipt: boolean;
   drawerAttempted: boolean;
@@ -30,40 +27,15 @@ export function canOpenDrawer(role: string): boolean {
   return role === 'store_manager' || role === 'admin' || role === 'super_admin';
 }
 
-function validateLoopbackUrl(value: string): string {
-  const url = new URL(value || DEFAULT_URL);
-  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) {
-    throw new Error('Le pont matériel doit utiliser une adresse HTTP locale (127.0.0.1 ou localhost).');
-  }
-  return url.origin;
-}
-
-export function getBridgeConnection(): BridgeConnection {
-  try {
-    const stored = JSON.parse(localStorage.getItem(CONNECTION_KEY) || '{}') as Partial<BridgeConnection>;
-    return { url: validateLoopbackUrl(stored.url || DEFAULT_URL), token: String(stored.token || '') };
-  } catch {
-    return { url: DEFAULT_URL, token: '' };
-  }
-}
-
-export function saveBridgeConnection(connection: BridgeConnection): BridgeConnection {
-  const safe = { url: validateLoopbackUrl(connection.url), token: connection.token.trim() };
-  localStorage.setItem(CONNECTION_KEY, JSON.stringify(safe));
-  return safe;
-}
-
-async function bridgeFetch<T>(path: string, init: RequestInit = {}, connection = getBridgeConnection()): Promise<T> {
-  if (connection.token.length < 32) throw new Error('Le secret du pont matériel n’est pas configuré sur ce terminal.');
+async function bridgeFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`${validateLoopbackUrl(connection.url)}${path}`, {
+    const response = await fetch(`${DEFAULT_URL}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${connection.token}`,
         ...init.headers,
       },
       cache: 'no-store',
@@ -72,29 +44,30 @@ async function bridgeFetch<T>(path: string, init: RequestInit = {}, connection =
     if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : `Pont matériel indisponible (${response.status}).`);
     return data as T;
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Le pont matériel local ne répond pas.');
+    if (error instanceof DOMException && error.name === 'AbortError') throw new Error('Le service local du tiroir ne répond pas. Lancez « MZALI POS Bridge » sur ce PC.');
+    if (error instanceof TypeError) throw new Error('Le service local du tiroir est arrêté. Lancez « MZALI POS Bridge » sur ce PC, puis réessayez.');
     throw error;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function getBridgeStatus(connection?: BridgeConnection) {
-  return bridgeFetch<{ ok: true; platform: string }>('/v1/health', {}, connection);
+export async function getBridgeStatus() {
+  return bridgeFetch<{ ok: true; platform: string }>('/v1/health');
 }
 
-export async function getDrawerSettings(connection?: BridgeConnection) {
-  return bridgeFetch<{ ok: true; settings: DrawerSettings }>('/v1/settings', {}, connection);
+export async function getDrawerSettings() {
+  return bridgeFetch<{ ok: true; settings: DrawerSettings }>('/v1/settings');
 }
 
-export async function updateDrawerSettings(settings: DrawerSettings, connection?: BridgeConnection) {
+export async function updateDrawerSettings(settings: DrawerSettings) {
   return bridgeFetch<{ ok: true; settings: DrawerSettings }>('/v1/settings', {
     method: 'PUT', body: JSON.stringify(settings),
-  }, connection);
+  });
 }
 
-export async function getLocalPrinters(connection?: BridgeConnection) {
-  return bridgeFetch<{ ok: true; printers: string[] }>('/v1/printers', {}, connection);
+export async function getLocalPrinters() {
+  return bridgeFetch<{ ok: true; printers: string[] }>('/v1/printers');
 }
 
 async function recordPaymentEvent(saleId: string, outcome: 'opened' | 'failed' | 'skipped', error?: string) {

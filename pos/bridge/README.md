@@ -1,18 +1,20 @@
 # MZALI local printer bridge
 
 This loopback-only Windows service sends the validated ESC/POS cash-drawer
-pulse through the configured receipt-printer queue. It never accepts arbitrary
-printer bytes and is not part of the public Docker deployment.
+pulse through the receipt-printer queue. It never accepts arbitrary printer
+bytes and is not part of the public Docker deployment.
 
-Set these environment variables on the till computer:
+No secret, URL, or CORS configuration is required. On the till computer, set
+the thermal receipt printer as the Windows default printer, then run:
 
 ```powershell
-$env:POS_BRIDGE_TOKEN = '<random secret of at least 32 characters>'
-$env:POS_BRIDGE_ALLOWED_ORIGINS = 'https://your-pos-origin.example'
-$env:POS_BRIDGE_PORT = '17890'
 node .\bridge\server.mjs
 ```
 
-The same token and bridge URL are entered locally in the POS hardware settings
-page. Use a printer driver that preserves RAW spool data; “generic/text only”
+The POS connects automatically to `127.0.0.1:17890`. Run `npm run bridge:install`
+once to start the bridge now and at every Windows login. Use a printer driver
+that preserves RAW spool data; "generic/text only"
 or the printer vendor's ESC/POS-compatible driver is usually required.
+
+The service listens only on the local PC. Because this zero-configuration mode
+has no local secret, only use it on a dedicated, trusted cashier terminal.
