@@ -4,6 +4,7 @@ import { AT_COOKIE, COOKIE, LEGACY_COOKIE, RT_COOKIE, Role, signSession } from '
 import { verifyPassword as verifyAdminPassword } from '@/lib/admin-storage';
 import { employeeService } from '@/services';
 import { adminHrefForHost } from '@/lib/admin-nav';
+import { PERSISTENT_SESSION_SECONDS } from '@/lib/session-duration';
 
 const PROVIDER = process.env.COMMERCE_PROVIDER ?? 'woocommerce';
 const API_BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
@@ -27,7 +28,7 @@ function setSessionCookies(res: NextResponse, tokens: BackendLoginResult) {
   });
   res.cookies.set(RT_COOKIE, tokens.refreshToken, {
     httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES,
-    path: '/', maxAge: 60 * 60 * 24 * 30,
+    path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
   });
   // Keep the legacy cookie in sync too — any code still reading getSession()
   // via the old path (or a stale tab) sees a consistent role/name.
@@ -35,7 +36,7 @@ function setSessionCookies(res: NextResponse, tokens: BackendLoginResult) {
   const legacyValue = signSession({ role, userId: tokens.user.id, name: tokens.user.name });
   res.cookies.set(COOKIE, legacyValue, {
     httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES,
-    path: '/', maxAge: 60 * 60 * 24 * 7,
+    path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
   });
   res.cookies.set(LEGACY_COOKIE, '', { maxAge: 0, path: '/' });
 }
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
     const res = NextResponse.json({ ok: true, role: 'admin', redirect: adminHrefForHost('/', req.headers.get('host')) });
     res.cookies.set(COOKIE, cookieValue, {
       httpOnly: true, sameSite: 'lax',
-      secure: SECURE_COOKIES, path: '/', maxAge: 60 * 60 * 24 * 7,
+      secure: SECURE_COOKIES, path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
     });
     // Keep legacy cookie around for back-compat with old tabs (will be ignored once expired).
     res.cookies.set(LEGACY_COOKIE, '', { maxAge: 0, path: '/' });
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
   });
   res.cookies.set(COOKIE, cookieValue, {
     httpOnly: true, sameSite: 'lax',
-    secure: SECURE_COOKIES, path: '/', maxAge: 60 * 60 * 24 * 7,
+    secure: SECURE_COOKIES, path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
   });
   res.cookies.set(LEGACY_COOKIE, '', { maxAge: 0, path: '/' });
   return res;

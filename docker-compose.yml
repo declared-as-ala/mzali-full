@@ -116,6 +116,7 @@ services:
       MINIO_USE_SSL: "false"
       MINIO_PUBLIC_URL: http://localhost:9000
       SWAGGER_ENABLED: "true"
+      REFRESH_TOKEN_TTL_DAYS: 3650
     depends_on:
       mongo:
         condition: service_healthy

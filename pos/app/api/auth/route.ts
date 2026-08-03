@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { AT_COOKIE, RT_COOKIE } from '@/lib/auth';
+import { AT_COOKIE, RT_COOKIE } from '@/lib/auth-cookies';
 import { apiRequest } from '@/lib/api-client';
+import { PERSISTENT_SESSION_SECONDS } from '@/lib/session-duration';
 
 const SECURE_COOKIES = process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV === 'production';
 
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
       httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, path: '/', maxAge: data.expiresIn,
     });
     res.cookies.set(RT_COOKIE, data.refreshToken, {
-      httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, path: '/', maxAge: 60 * 60 * 24 * 30,
+      httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
     });
     return res;
   } catch {

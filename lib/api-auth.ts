@@ -2,6 +2,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import { AT_COOKIE, RT_COOKIE } from './auth';
 import { verifyHs256Jwt } from './jwt';
+import { PERSISTENT_SESSION_SECONDS } from './session-duration';
 
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET ?? '';
 const API_BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
@@ -82,7 +83,7 @@ export async function getValidAccessToken(): Promise<string | null> {
       // SameSite=Lax, so this doesn't weaken exposure to client-side JS.
       store.set(RT_COOKIE, data.refreshToken, {
         httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES,
-        path: '/', maxAge: 60 * 60 * 24 * 30,
+        path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
       });
     } catch {
       // Called from a non-mutable context (Server Component render) — the

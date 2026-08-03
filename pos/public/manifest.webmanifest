@@ -1,0 +1,35 @@
+{
+  "id": "/",
+  "name": "Mzali POS",
+  "short_name": "Mzali POS",
+  "description": "Terminal de caisse Mzali Boutique",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/dashboard?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#F4F6F9",
+  "theme_color": "#0F172A",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Caisse", "short_name": "Caisse", "url": "/till", "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Commandes", "short_name": "Commandes", "url": "/history", "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Rapports", "short_name": "Rapports", "url": "/dashboard", "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png" }] }
+  ]
+}
