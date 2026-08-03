@@ -210,7 +210,7 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     expect(items[0]?.reserved).toBe(1);
   });
 
-  test('status transitions drive the stock ledger: reserve on create, commit on confirme, restock on annule', async () => {
+  test('status transitions drive the stock ledger: no reservation on create, commit on confirme, restock on annule', async () => {
     if (!infraAvailable) return;
     const productId = await createProduct('Commerce Test Ledger', 30);
     const phone = uniquePhone();
@@ -225,8 +225,10 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
       .expect(201);
     const orderId = created.body.id as string;
 
+    // Orders sit in 'en-attente' (phone-confirmation pending) without holding
+    // stock — no stock_items doc exists yet for this variant/location.
     let { items } = await inventoryService.list(1, 10, 'Commerce Test Ledger');
-    expect(items[0]?.reserved).toBe(3);
+    expect(items).toHaveLength(0);
 
     await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
     ({ items } = await inventoryService.list(1, 10, 'Commerce Test Ledger'));
@@ -239,7 +241,7 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     expect(items[0]?.onHand).toBe(3);
 
     const { items: movements } = await inventoryService.movementsFor(productId, 1, 10);
-    expect(movements.map((m) => m.type).reverse()).toEqual(['order_reserve', 'order_commit', 'manual_adjust']);
+    expect(movements.map((m) => m.type).reverse()).toEqual(['order_commit', 'manual_adjust']);
   });
 
   test('an employee can only read/update their own assigned orders', async () => {
@@ -257,6 +259,7 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
       .expect(201);
 
     const productId = await createProduct('Commerce Test Ownership', 15);
+    await inventoryService.adjust(productId, 1, 'test seed', { type: 'system', id: null, name: 'test' });
     const phone = uniquePhone();
     const created = await request(server)
       .post('/api/v1/orders')
