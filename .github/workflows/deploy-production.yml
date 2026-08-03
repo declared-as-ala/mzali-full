@@ -108,7 +108,10 @@ jobs:
             # Idempotent: only links the shared secrets file in if this
             # checkout doesn't already have deploy/.env — never overwrites
             # an operator-managed secrets file, and never recreates it.
-            if [[ ! -e deploy/.env ]]; then
+            # `-e` alone misses a dangling symlink (it dereferences), so a
+            # broken deploy/.env from an earlier attempt would make `ln -s`
+            # fail with "Already exists" forever; `-L` catches that case too.
+            if [[ ! -e deploy/.env && ! -L deploy/.env ]]; then
               ln -s /opt/mzali/shared/.env.production deploy/.env
             fi
 
