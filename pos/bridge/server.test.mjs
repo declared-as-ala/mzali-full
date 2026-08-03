@@ -6,7 +6,7 @@ test('loopback bridge works without setup and exposes safe defaults', async (con
   const port = 18000 + Math.floor(Math.random() * 1000);
   const child = spawn(process.execPath, ['bridge/server.mjs'], {
     cwd: new URL('..', import.meta.url),
-    env: { ...process.env, POS_BRIDGE_PORT: String(port), POS_DRAWER_COM_PORT: 'COM4' },
+    env: { ...process.env, POS_BRIDGE_PORT: String(port), POS_DRAWER_COM_PORT: 'COM4', POS_VFD_DISABLED: '1' },
     stdio: 'ignore',
   });
   context.after(() => child.kill());
@@ -27,6 +27,7 @@ test('loopback bridge works without setup and exposes safe defaults', async (con
   const health = await response.json();
   assert.equal(health.ok, true);
   assert.equal(health.drawerPort, 'COM4');
+  assert.equal(health.vfdPort, null);
 
   const preflight = await fetch(`${url}/v1/health`, {
     method: 'OPTIONS',
@@ -38,6 +39,13 @@ test('loopback bridge works without setup and exposes safe defaults', async (con
   });
   assert.equal(preflight.status, 204);
   assert.equal(preflight.headers.get('access-control-allow-private-network'), 'true');
+
+  const displayResponse = await fetch(`${url}/v1/display/payment`, {
+    method: 'POST',
+    headers: { Origin: 'https://pos.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'CASH', totalMinor: 12000, cashReceivedMinor: 20000 }),
+  });
+  assert.deepEqual(await displayResponse.json(), { ok: true, displayed: false });
 
   const removedSettings = await fetch(`${url}/v1/settings`, { headers: { Origin: 'https://pos.example' } });
   assert.equal(removedSettings.status, 404);

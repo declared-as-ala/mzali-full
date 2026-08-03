@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Banknote, Building2, CheckCircle2, CreditCard, WalletCards, X } from 'lucide-react';
 import { formatMinor } from '@/lib/money';
 import type { PosSalePaymentInput } from '@/types/pos';
@@ -15,12 +15,13 @@ const METHODS: { value: PaymentMethod; label: string; detail: string; icon: type
   { value: 'OTHER', label: 'Autre', detail: 'Autre règlement', icon: WalletCards },
 ];
 
-export default function PaymentModal({ totalMinor, busy, error, onClose, onConfirm }: {
+export default function PaymentModal({ totalMinor, busy, error, onClose, onConfirm, onDisplayChange }: {
   totalMinor: number;
   busy: boolean;
   error: string | null;
   onClose: () => void;
   onConfirm: (method: PaymentMethod, cashReceivedMinor: number | null) => void;
+  onDisplayChange?: (payment: { method: PaymentMethod; totalMinor: number; cashReceivedMinor: number | null; changeMinor: number }) => void;
 }) {
   const [method, setMethod] = useState<PaymentMethod>('CASH');
   const [cashReceived, setCashReceived] = useState<number>(totalMinor);
@@ -28,6 +29,15 @@ export default function PaymentModal({ totalMinor, busy, error, onClose, onConfi
   const insufficient = method === 'CASH' && cashReceived < totalMinor;
   const selected = METHODS.find((item) => item.value === method)!;
   const SelectedIcon = selected.icon;
+
+  useEffect(() => {
+    onDisplayChange?.({
+      method,
+      totalMinor,
+      cashReceivedMinor: method === 'CASH' ? cashReceived : null,
+      changeMinor: method === 'CASH' ? change : 0,
+    });
+  }, [cashReceived, change, method, onDisplayChange, totalMinor]);
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4 backdrop-blur-sm" onClick={onClose}>

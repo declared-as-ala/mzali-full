@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Banknote, Clock, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
-import { canOpenDrawer, completeSaleHardware, openManualDrawer } from '@/lib/hardware';
+import { canOpenDrawer, completeSaleHardware, openManualDrawer, scheduleCustomerDisplayPayment } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
 import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
@@ -638,6 +638,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           error={saveError}
           onClose={() => setPaymentOpen(false)}
           onConfirm={confirmPayment}
+          onDisplayChange={scheduleCustomerDisplayPayment}
         />
       )}
 

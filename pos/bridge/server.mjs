@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { normalizeComPort, openCashDrawer, shouldOpenDrawer } from './drawer.mjs';
+import { writeVfdPayment } from './display.mjs';
 import { createRequestDeduplicator } from './dedupe.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -32,21 +33,78 @@ async function body(request) {
 async function detectUsbDrawerPort() {
   if (process.env.POS_DRAWER_COM_PORT) return normalizeComPort(process.env.POS_DRAWER_COM_PORT);
   if (process.platform !== 'win32') throw new Error('Détection du tiroir USB disponible uniquement sous Windows.');
-  const command = String.raw`$device = Get-CimInstance Win32_PnPEntity | Where-Object { $_.Status -eq 'OK' -and $_.DeviceID -like 'USB\VID_067B&PID_23A3*' -and $_.Name -match '\(COM\d+\)' } | Select-Object -First 1; if ($null -ne $device -and $device.Name -match '\((COM\d+)\)') { $Matches[1] | ConvertTo-Json -Compress }`;
+  const command = String.raw`$map = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue; $entry = $map.PSObject.Properties | Where-Object { $_.Name -like '*ProlificSerial*' -and $_.Value -match '^COM\d+$' } | Select-Object -First 1; if ($null -ne $entry) { $entry.Value | ConvertTo-Json -Compress }`;
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true, timeout: 8000 });
   if (!stdout.trim()) throw new Error('Tiroir USB non détecté. Vérifiez son câble USB.');
   return normalizeComPort(JSON.parse(stdout.trim()));
 }
 
-let drawerPortPromise = detectUsbDrawerPort();
+let drawerPortPromise = null;
 async function getDrawerPort() {
+  if (!drawerPortPromise) drawerPortPromise = detectUsbDrawerPort();
   try {
     return await drawerPortPromise;
   } catch {
-    drawerPortPromise = detectUsbDrawerPort();
-    return drawerPortPromise;
+    drawerPortPromise = null;
+    throw new Error('Tiroir USB non détecté. Vérifiez son câble USB.');
   }
 }
+
+async function detectVfdPort(drawerPort) {
+  if (process.env.POS_VFD_DISABLED === '1') return null;
+  if (process.env.POS_VFD_COM_PORT) {
+    const configured = normalizeComPort(process.env.POS_VFD_COM_PORT);
+    if (configured === drawerPort) throw new Error('Le VFD et le tiroir ne peuvent pas partager le même port COM.');
+    return configured;
+  }
+  if (process.platform !== 'win32') return null;
+  const command = String.raw`$map = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue; $entry = $map.PSObject.Properties | Where-Object { $_.Value -match '^COM\d+$' -and $_.Value -ne $env:MZALI_DRAWER_PORT } | Select-Object -First 1; if ($null -ne $entry) { $entry.Value | ConvertTo-Json -Compress }`;
+  const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    windowsHide: true,
+    timeout: 8000,
+    env: { ...process.env, MZALI_DRAWER_PORT: drawerPort },
+  });
+  return stdout.trim() ? normalizeComPort(JSON.parse(stdout.trim())) : null;
+}
+
+let vfdPortPromise = null;
+async function getVfdPort() {
+  if (!vfdPortPromise) {
+    const pending = getDrawerPort().catch(() => null).then(detectVfdPort);
+    vfdPortPromise = pending;
+    void pending.then((detected) => {
+      if (detected === null) setTimeout(() => { if (vfdPortPromise === pending) vfdPortPromise = null; }, 5000);
+    }).catch(() => undefined);
+  }
+  try {
+    return await vfdPortPromise;
+  } catch {
+    vfdPortPromise = null;
+    return null;
+  }
+}
+
+function paymentDisplayInput(input, phase = 'payment') {
+  const method = ['CASH', 'CARD', 'BANK_TRANSFER', 'OTHER'].includes(input?.method) ? input.method : 'OTHER';
+  const integer = (value) => Number.isInteger(value) && value >= 0 ? value : 0;
+  return {
+    phase: phase === 'completed' ? 'completed' : 'payment',
+    method,
+    totalMinor: integer(input?.totalMinor),
+    cashReceivedMinor: integer(input?.cashReceivedMinor),
+    changeMinor: integer(input?.changeMinor),
+  };
+}
+
+async function showOnVfd(input, phase) {
+  const vfdPort = await getVfdPort();
+  if (!vfdPort) return false;
+  await writeVfdPayment(vfdPort, paymentDisplayInput(input, phase), { baudRate: Number(process.env.POS_VFD_BAUD_RATE || 9600) });
+  return true;
+}
+
+// Warm hardware discovery when the bridge starts so the first payment stays fast.
+void getVfdPort();
 
 const server = createServer(async (request, response) => {
   if (request.method === 'OPTIONS') {
@@ -63,7 +121,12 @@ const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || '/', `http://${host}:${port}`);
     if (request.method === 'GET' && url.pathname === '/v1/health') {
-      return json(response, 200, { ok: true, platform: process.platform, drawerPort: await getDrawerPort() });
+      const drawerPort = await getDrawerPort().catch(() => null);
+      return json(response, 200, { ok: true, platform: process.platform, drawerPort, vfdPort: await getVfdPort() });
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/display/payment') {
+      const input = await body(request);
+      return json(response, 200, { ok: true, displayed: await showOnVfd(input, 'payment') });
     }
     if (request.method === 'POST' && url.pathname === '/v1/sale-completed') {
       const input = await body(request);
@@ -75,10 +138,14 @@ const server = createServer(async (request, response) => {
       if (!requestId || !saleId || paymentMethods.length === 0) throw new Error('Requête de vente invalide.');
       const drawerAttempted = shouldOpenDrawer(paymentMethods);
       const result = await saleOnce(requestId, async () => {
-        if (!drawerAttempted) return { ok: true, drawerAttempted: false, drawerOpened: false, autoPrintReceipt: false };
+        const displayPromise = showOnVfd(input.display, 'completed').catch((error) => {
+          console.error(`[vfd] ${error instanceof Error ? error.message : 'Erreur VFD'}`);
+          return false;
+        });
+        if (!drawerAttempted) return { ok: true, drawerAttempted: false, drawerOpened: false, autoPrintReceipt: false, displayed: await displayPromise };
         const drawer = await openCashDrawer(await getDrawerPort());
         console.info(`[drawer] Vente ${saleId}: ouverture USB envoyée à ${drawer.serialPort}`);
-        return { ok: true, drawerAttempted: true, drawerOpened: true, autoPrintReceipt: false };
+        return { ok: true, drawerAttempted: true, drawerOpened: true, autoPrintReceipt: false, displayed: await displayPromise };
       });
       return json(response, 200, result);
     }

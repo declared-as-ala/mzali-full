@@ -38,3 +38,14 @@ warning and can use the visible “Ouvrir le tiroir” action. Manual openings a
 available to employee, cashier, store-manager, and admin roles and remain
 recorded in the central audit log. Backend endpoints authorize and audit these
 events but cannot directly operate local hardware.
+
+## Customer VFD
+
+The same local bridge auto-detects a second serial device while excluding the
+cash drawer COM port. The payment modal sends best-effort, debounced 2×20 ASCII
+frames containing `TOTAL` and either the received cash amount or payment method.
+After the committed sale, the VFD shows `PAYE` and either `MONNAIE` or the final
+payment method. VFD absence or failure never blocks checkout or drawer opening.
+
+`POS_VFD_COM_PORT` and `POS_VFD_BAUD_RATE` provide deployment-only overrides;
+there is intentionally no cashier-facing hardware settings screen.

@@ -12,6 +12,13 @@ export type SaleHardwareResult = {
   warning: string | null;
 };
 
+export type CustomerDisplayPayment = {
+  method: 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
+  totalMinor: number;
+  cashReceivedMinor: number | null;
+  changeMinor: number;
+};
+
 export function canOpenDrawer(role: string): boolean {
   return ['employee', 'cashier', 'store_manager', 'admin', 'super_admin'].includes(role);
 }
@@ -42,7 +49,20 @@ async function bridgeFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
 }
 
 export async function getBridgeStatus() {
-  return bridgeFetch<{ ok: true; platform: string; drawerPort: string }>('/v1/health');
+  return bridgeFetch<{ ok: true; platform: string; drawerPort: string | null; vfdPort: string | null }>('/v1/health');
+}
+
+let displayUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleCustomerDisplayPayment(payment: CustomerDisplayPayment): void {
+  if (displayUpdateTimer) clearTimeout(displayUpdateTimer);
+  displayUpdateTimer = setTimeout(() => {
+    displayUpdateTimer = null;
+    void bridgeFetch('/v1/display/payment', {
+      method: 'POST',
+      body: JSON.stringify(payment),
+    }).catch(() => undefined);
+  }, 80);
 }
 
 async function recordPaymentEvent(saleId: string, outcome: 'opened' | 'failed' | 'skipped', error?: string) {
@@ -61,7 +81,17 @@ export async function completeSaleHardware(sale: PosSale): Promise<SaleHardwareR
       ok: true; drawerAttempted: boolean; drawerOpened: boolean; autoPrintReceipt: boolean; duplicate: boolean;
     }>('/v1/sale-completed', {
       method: 'POST',
-      body: JSON.stringify({ requestId: `sale:${sale.id}`, saleId: sale.id, paymentMethods }),
+      body: JSON.stringify({
+        requestId: `sale:${sale.id}`,
+        saleId: sale.id,
+        paymentMethods,
+        display: {
+          method: sale.payments[0]?.method || sale.paymentMethod || 'OTHER',
+          totalMinor: sale.totalMinor,
+          cashReceivedMinor: sale.cashReceivedMinor,
+          changeMinor: sale.changeMinor,
+        },
+      }),
     });
     await recordPaymentEvent(sale.id, result.drawerOpened ? 'opened' : 'skipped');
     return { ...result, warning: null };
