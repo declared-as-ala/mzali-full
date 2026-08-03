@@ -64,7 +64,8 @@ purchasing.manage   invoicing.finalize   loyalty.adjust
 
 Role presets extend `ROLE_PERMISSIONS` (same file): a new `cashier` role
 gets the base `pos.*` set (sell, sessions, view both stocks, basic
-discount, print); `store_manager` gets cashier's set plus approvals,
+discount, print, manual cash-drawer opening); the legacy `employee` role also
+gets manual cash-drawer opening for till operation; `store_manager` gets cashier's set plus approvals,
 refunds, cancellations, transfer requests, cost visibility;
 `super_admin`/`admin` already get everything via the existing `ALL`
 wildcard, no change needed there. Enforced with `@RequirePermissions(...)`

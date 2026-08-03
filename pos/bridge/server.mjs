@@ -1,9 +1,8 @@
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { openCashDrawer, shouldOpenDrawer } from './drawer.mjs';
+import { normalizeComPort, openCashDrawer, shouldOpenDrawer } from './drawer.mjs';
 import { createRequestDeduplicator } from './dedupe.mjs';
-import { readSettings, saveSettings } from './settings.mjs';
 
 const execFileAsync = promisify(execFile);
 const host = '127.0.0.1';
@@ -30,24 +29,23 @@ async function body(request) {
   return raw ? JSON.parse(raw) : {};
 }
 
-async function listWindowsPrinters() {
-  if (process.platform !== 'win32') return [];
-  const command = 'Get-Printer | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress';
+async function detectUsbDrawerPort() {
+  if (process.env.POS_DRAWER_COM_PORT) return normalizeComPort(process.env.POS_DRAWER_COM_PORT);
+  if (process.platform !== 'win32') throw new Error('Détection du tiroir USB disponible uniquement sous Windows.');
+  const command = String.raw`$device = Get-CimInstance Win32_PnPEntity | Where-Object { $_.Status -eq 'OK' -and $_.DeviceID -like 'USB\VID_067B&PID_23A3*' -and $_.Name -match '\(COM\d+\)' } | Select-Object -First 1; if ($null -ne $device -and $device.Name -match '\((COM\d+)\)') { $Matches[1] | ConvertTo-Json -Compress }`;
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true, timeout: 8000 });
-  const parsed = stdout.trim() ? JSON.parse(stdout) : [];
-  return (Array.isArray(parsed) ? parsed : [parsed]).filter((value) => typeof value === 'string');
+  if (!stdout.trim()) throw new Error('Tiroir USB non détecté. Vérifiez son câble USB.');
+  return normalizeComPort(JSON.parse(stdout.trim()));
 }
 
-async function getDefaultWindowsPrinter() {
-  if (process.platform !== 'win32') return '';
-  const command = "$printer = Get-CimInstance Win32_Printer | Where-Object { $_.Default } | Select-Object -First 1; if ($null -ne $printer) { $printer.Name | ConvertTo-Json -Compress }";
-  const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { windowsHide: true, timeout: 8000 });
-  return stdout.trim() ? String(JSON.parse(stdout.trim())) : '';
-}
-
-async function withDetectedPrinter(settings) {
-  if (settings.printerName) return settings;
-  return { ...settings, printerName: await getDefaultWindowsPrinter() };
+let drawerPortPromise = detectUsbDrawerPort();
+async function getDrawerPort() {
+  try {
+    return await drawerPortPromise;
+  } catch {
+    drawerPortPromise = detectUsbDrawerPort();
+    return drawerPortPromise;
+  }
 }
 
 const server = createServer(async (request, response) => {
@@ -56,7 +54,7 @@ const server = createServer(async (request, response) => {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Private-Network': 'true',
       'Access-Control-Allow-Headers': 'content-type',
-      'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Max-Age': '600',
     });
     return response.end();
@@ -65,16 +63,7 @@ const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url || '/', `http://${host}:${port}`);
     if (request.method === 'GET' && url.pathname === '/v1/health') {
-      return json(response, 200, { ok: true, platform: process.platform });
-    }
-    if (request.method === 'GET' && url.pathname === '/v1/settings') {
-      return json(response, 200, { ok: true, settings: await withDetectedPrinter(await readSettings()) });
-    }
-    if (request.method === 'PUT' && url.pathname === '/v1/settings') {
-      return json(response, 200, { ok: true, settings: await withDetectedPrinter(await saveSettings(await body(request))) });
-    }
-    if (request.method === 'GET' && url.pathname === '/v1/printers') {
-      return json(response, 200, { ok: true, printers: await listWindowsPrinters() });
+      return json(response, 200, { ok: true, platform: process.platform, drawerPort: await getDrawerPort() });
     }
     if (request.method === 'POST' && url.pathname === '/v1/sale-completed') {
       const input = await body(request);
@@ -84,25 +73,22 @@ const server = createServer(async (request, response) => {
         ? input.paymentMethods.filter((method) => ['CASH', 'CARD', 'BANK_TRANSFER', 'OTHER'].includes(method))
         : [];
       if (!requestId || !saleId || paymentMethods.length === 0) throw new Error('Requête de vente invalide.');
-      const settings = await withDetectedPrinter(await readSettings());
-      const drawerAttempted = shouldOpenDrawer(settings, paymentMethods);
+      const drawerAttempted = shouldOpenDrawer(paymentMethods);
       const result = await saleOnce(requestId, async () => {
-        if (!drawerAttempted) return { ok: true, drawerAttempted: false, drawerOpened: false, autoPrintReceipt: settings.autoPrintReceipt };
-        const drawer = await openCashDrawer(settings);
-        console.info(`[drawer] Vente ${saleId}: ouverture envoyée à ${drawer.printerName}`);
-        return { ok: true, drawerAttempted: true, drawerOpened: true, autoPrintReceipt: settings.autoPrintReceipt };
+        if (!drawerAttempted) return { ok: true, drawerAttempted: false, drawerOpened: false, autoPrintReceipt: false };
+        const drawer = await openCashDrawer(await getDrawerPort());
+        console.info(`[drawer] Vente ${saleId}: ouverture USB envoyée à ${drawer.serialPort}`);
+        return { ok: true, drawerAttempted: true, drawerOpened: true, autoPrintReceipt: false };
       });
       return json(response, 200, result);
     }
     if (request.method === 'POST' && url.pathname === '/v1/drawer/open') {
       const input = await body(request);
       const requestId = String(input.requestId || '').slice(0, 200);
-      const reason = input.reason === 'test' ? 'test' : 'manual';
       if (!requestId) throw new Error('Identifiant de requête manquant.');
-      const settings = await withDetectedPrinter(await readSettings());
       const result = await manualOnce(requestId, async () => {
-        const drawer = await openCashDrawer(settings);
-        console.info(`[drawer] Ouverture ${reason} envoyée à ${drawer.printerName}`);
+        const drawer = await openCashDrawer(await getDrawerPort());
+        console.info(`[drawer] Ouverture manuelle USB envoyée à ${drawer.serialPort}`);
         return { ok: true, drawerAttempted: true, drawerOpened: true };
       });
       return json(response, 200, result);

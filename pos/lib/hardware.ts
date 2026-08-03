@@ -5,17 +5,6 @@ import type { PosSale } from '@/types/pos';
 
 const DEFAULT_URL = 'http://127.0.0.1:17890';
 
-export type DrawerSettings = {
-  autoOpenEnabled: boolean;
-  openOnCashPayment: boolean;
-  openForAllPaymentMethods: boolean;
-  drawerPin: 0 | 1;
-  pulseOnMs: number;
-  pulseOffMs: number;
-  printerName: string;
-  autoPrintReceipt: boolean;
-};
-
 export type SaleHardwareResult = {
   autoPrintReceipt: boolean;
   drawerAttempted: boolean;
@@ -24,7 +13,7 @@ export type SaleHardwareResult = {
 };
 
 export function canOpenDrawer(role: string): boolean {
-  return role === 'store_manager' || role === 'admin' || role === 'super_admin';
+  return ['employee', 'cashier', 'store_manager', 'admin', 'super_admin'].includes(role);
 }
 
 async function bridgeFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -53,21 +42,7 @@ async function bridgeFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
 }
 
 export async function getBridgeStatus() {
-  return bridgeFetch<{ ok: true; platform: string }>('/v1/health');
-}
-
-export async function getDrawerSettings() {
-  return bridgeFetch<{ ok: true; settings: DrawerSettings }>('/v1/settings');
-}
-
-export async function updateDrawerSettings(settings: DrawerSettings) {
-  return bridgeFetch<{ ok: true; settings: DrawerSettings }>('/v1/settings', {
-    method: 'PUT', body: JSON.stringify(settings),
-  });
-}
-
-export async function getLocalPrinters() {
-  return bridgeFetch<{ ok: true; printers: string[] }>('/v1/printers');
+  return bridgeFetch<{ ok: true; platform: string; drawerPort: string }>('/v1/health');
 }
 
 async function recordPaymentEvent(saleId: string, outcome: 'opened' | 'failed' | 'skipped', error?: string) {
@@ -108,7 +83,7 @@ let lastManualAttemptAt = 0;
 
 export async function openManualDrawer(reason: 'manual' | 'test'): Promise<void> {
   const now = Date.now();
-  if (now - lastManualAttemptAt < 2500) throw new Error('Veuillez patienter avant une nouvelle tentative.');
+  if (now - lastManualAttemptAt < 1500) throw new Error('Veuillez patienter avant une nouvelle tentative.');
   lastManualAttemptAt = now;
 
   const authorization = await posFetch('/api/hardware/drawer/manual-authorize', {

@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Banknote, Clock, LogOut, Search, Settings, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
+import { ArrowLeft, Banknote, Clock, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
 import { canOpenDrawer, completeSaleHardware, openManualDrawer } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
@@ -429,7 +429,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     try {
       await openManualDrawer('manual');
       setHardwareWarning(null);
-      setDrawerFeedback({ tone: 'success', message: 'Commande d’ouverture envoyée au tiroir-caisse.' });
+      setDrawerFeedback({ tone: 'success', message: 'Tiroir ouvert par USB.' });
     } catch (error) {
       setDrawerFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'Impossible d’ouvrir le tiroir-caisse.' });
     } finally {
@@ -493,24 +493,14 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
 
         <div className="flex items-center gap-2.5 shrink-0">
           {canOpenDrawer(role) && (
-            <>
-              <button
-                type="button"
-                disabled={manualDrawerBusy}
-                onClick={handleManualDrawer}
-                className="flex min-h-11 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
-              >
-                <Banknote size={15} /> {manualDrawerBusy ? 'Ouverture…' : 'Ouvrir le tiroir'}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/settings/hardware')}
-                className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-blue-700"
-                aria-label="Réglages de l’imprimante et du tiroir"
-              >
-                <Settings size={17} />
-              </button>
-            </>
+            <button
+              type="button"
+              disabled={manualDrawerBusy}
+              onClick={handleManualDrawer}
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-black text-emerald-900 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:cursor-wait disabled:opacity-60"
+            >
+              <Banknote size={16} /> {manualDrawerBusy ? 'Ouverture…' : 'Ouvrir le tiroir'}
+            </button>
           )}
           <button
             onClick={() => router.push('/dashboard')}
