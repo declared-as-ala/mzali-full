@@ -42,6 +42,7 @@ export type PosSaleLine = {
   productId: string;
   descriptionSnapshot: string;
   sku: string;
+  variantAttributesSnapshot?: Record<string, string>;
   qty: number;
   unitPriceMinor: number;
   discountMinor: number;
@@ -65,6 +66,15 @@ export type PosSale = {
   status: 'SUSPENDED' | 'COMPLETED' | 'REFUNDED' | 'CANCELLED';
   lines: PosSaleLine[];
   customerId: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  merchant: {
+    legalName: string;
+    address: string;
+    phone: string;
+    matriculeFiscal: string;
+    rcNumber: string;
+  };
   subtotalMinor: number;
   discountMinor: number;
   totalMinor: number;

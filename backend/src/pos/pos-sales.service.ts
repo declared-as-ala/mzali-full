@@ -12,6 +12,8 @@ import { LoyaltyLedgerService } from '@/loyalty/loyalty-ledger.service';
 import { LoyaltyRulesService } from '@/loyalty/loyalty-rules.service';
 import { LoyaltyService } from '@/loyalty/loyalty.service';
 import { Employee } from '@/users/employee.schema';
+import { Customer } from '@/customers/customer.schema';
+import { SettingsService } from '@/settings/settings.service';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { computeSaleStockDeltas, sumByMethod } from './pos-sale-calc';
 import { PosPayment } from './pos-payment.schema';
@@ -32,6 +34,7 @@ export class PosSalesService {
     @InjectModel(PosSale.name) private readonly sales: Model<PosSale>,
     @InjectModel(PosPayment.name) private readonly payments: Model<PosPayment>,
     @InjectModel(Employee.name) private readonly employees: Model<Employee>,
+    @InjectModel(Customer.name) private readonly customers: Model<Customer>,
     private readonly products: ProductsService,
     private readonly variants: ProductVariantsService,
     private readonly ledger: StockLedgerService,
@@ -40,6 +43,7 @@ export class PosSalesService {
     private readonly loyalty: LoyaltyService,
     private readonly loyaltyRules: LoyaltyRulesService,
     private readonly loyaltyLedger: LoyaltyLedgerService,
+    private readonly settings: SettingsService,
     @InjectConnection() private readonly connection: Connection,
   ) {}
 
@@ -72,6 +76,7 @@ export class PosSalesService {
           productId: variant.productId,
           descriptionSnapshot: product.name,
           sku: variant.sku,
+          variantAttributesSnapshot: variant.attributes ?? {},
           qty,
           unitPriceMinor,
           discountMinor,
@@ -277,6 +282,7 @@ export class PosSalesService {
             productId: variant.productId,
             descriptionSnapshot: product.name,
             sku: variant.sku,
+            variantAttributesSnapshot: variant.attributes ?? {},
             qty,
             unitPriceMinor,
             discountMinor,
@@ -429,11 +435,15 @@ export class PosSalesService {
 
     const saleIds = items.map((s) => s.id);
     const cashierIds = [...new Set(items.map((s) => s.cashierId))];
-    const [paymentRows, employeeDocs] = await Promise.all([
+    const customerIds = [...new Set(items.map((s) => s.customerId).filter((id): id is string => Boolean(id)))];
+    const [paymentRows, employeeDocs, customerDocs, merchant] = await Promise.all([
       this.payments.find({ saleId: { $in: saleIds } }),
       this.employees.find({ _id: { $in: cashierIds } }).select({ name: 1 }),
+      this.customers.find({ _id: { $in: customerIds } }).select({ firstName: 1, lastName: 1, phone: 1 }),
+      this.settings.getCompany(),
     ]);
     const nameByCashier = new Map(employeeDocs.map((e) => [e.id, e.name]));
+    const customerById = new Map(customerDocs.map((customer) => [customer.id, customer]));
     const paymentsBySale = new Map<string, typeof paymentRows>();
     for (const p of paymentRows) {
       const list = paymentsBySale.get(p.saleId) ?? [];
@@ -441,16 +451,32 @@ export class PosSalesService {
       paymentsBySale.set(p.saleId, list);
     }
 
-    const contracts = items.map((doc) => this.toContractSync(doc, nameByCashier.get(doc.cashierId) ?? '', paymentsBySale.get(doc.id) ?? []));
+    const contracts = items.map((doc) => this.toContractSync(
+      doc,
+      nameByCashier.get(doc.cashierId) ?? '',
+      paymentsBySale.get(doc.id) ?? [],
+      doc.customerId ? customerById.get(doc.customerId) : undefined,
+      merchant,
+    ));
     return { items: contracts, total, page, perPage };
   }
 
   async toContract(doc: PosSaleDocument, cashierName: string): Promise<PosSaleContract> {
-    const paymentRows = await this.payments.find({ saleId: doc.id });
-    return this.toContractSync(doc, cashierName, paymentRows);
+    const [paymentRows, customer, merchant] = await Promise.all([
+      this.payments.find({ saleId: doc.id }),
+      doc.customerId ? this.customers.findById(doc.customerId).select({ firstName: 1, lastName: 1, phone: 1 }) : null,
+      this.settings.getCompany(),
+    ]);
+    return this.toContractSync(doc, cashierName, paymentRows, customer ?? undefined, merchant);
   }
 
-  private toContractSync(doc: PosSaleDocument, cashierName: string, paymentRows: PosPayment[]): PosSaleContract {
+  private toContractSync(
+    doc: PosSaleDocument,
+    cashierName: string,
+    paymentRows: PosPayment[],
+    customer: Pick<Customer, 'firstName' | 'lastName' | 'phone'> | undefined,
+    merchant: Awaited<ReturnType<SettingsService['getCompany']>>,
+  ): PosSaleContract {
     return {
       id: doc.id,
       saleNumber: doc.saleNumber,
@@ -463,6 +489,15 @@ export class PosSalesService {
       status: doc.status,
       lines: doc.lines,
       customerId: doc.customerId,
+      customerName: customer ? `${customer.firstName} ${customer.lastName}`.trim() || null : null,
+      customerPhone: customer?.phone ?? null,
+      merchant: {
+        legalName: merchant.legalName,
+        address: merchant.address,
+        phone: merchant.phone,
+        matriculeFiscal: merchant.matriculeFiscal,
+        rcNumber: merchant.rcNumber,
+      },
       subtotalMinor: doc.subtotalMinor,
       discountMinor: doc.discountMinor,
       totalMinor: doc.totalMinor,

@@ -20,6 +20,7 @@ export default function A4InvoicePreview({ sale, onClose }: { sale: PosSale; onC
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4 print:static print:bg-white print:p-0">
+      <style>{'@page { size: A4 portrait; margin: 12mm; }'}</style>
       <div className="modal-pop flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl bg-white shadow-2xl print:max-h-none print:rounded-none print:shadow-none">
         <div className="flex items-center justify-between border-b border-ink-200 p-4 print:hidden">
           <h2 className="text-lg font-black text-ink-900">Facture — Vente #{sale.saleNumber}</h2>

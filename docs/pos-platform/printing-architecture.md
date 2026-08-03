@@ -1,80 +1,77 @@
-# Thermal Ticket Printing
+# Thermal ticket printing and cash drawer
 
-Covers master-prompt §15. Fully net-new
-(`current-state-audit.md` §7). HTML fallback ships in Sprint 2 (part of
-the core sale flow); the local ESC/POS bridge is an **optional** Sprint 9
-stretch per `PLAN.md` decision D6 — the POS must be fully usable without
-it.
+The POS uses one persisted sale contract and one `TicketPreview` component for
+both on-screen preview and 80 mm output. A ticket is reproducible from the sale
+record; printing and drawer I/O happen only after the backend confirms that the
+sale transaction committed.
 
-## Ticket content (80mm)
+## Receipt rendering
 
-Boutique logo/name/address/phone/tax info (from `settings.company`, same
-snapshot pattern as invoices' `companySnapshot`) · ticket number · date/
-time · cashier · register · lines (product/variant/qty/unit price/
-discount/line total) · subtotal/discount/tax/total · payment methods ·
-cash received/change · customer name + loyalty card/points-earned/new-
-balance when applicable · return policy text (settings-configurable) ·
-thank-you message · QR/barcode encoding the ticket number for lookup.
+`pos/components/TicketPreview.tsx` renders the ticket. The HTML print fallback
+uses `window.print()` and dedicated 80 mm print CSS. Automatic receipt printing
+is a local terminal preference; when enabled it opens the browser print flow
+once for the confirmed sale ID.
 
-Rendered from a single `TicketPreview` React component
-(`pos/components/TicketPreview.tsx`) used for **both** the on-screen
-preview and the print output — one template, not two, so the printed
-ticket never drifts from what the cashier saw before printing.
+The browser remains the receipt renderer. Cash-drawer control is never sent
+through a public backend endpoint.
 
-## Strategy 1 — HTML print (ships first, Sprint 2)
+## Local hardware bridge
 
-`window.print()` on a dedicated `@media print` stylesheet sized for 80mm
-stock, triggered from the ticket-preview modal after a sale completes.
-Reprint (`GET /api/v1/pos/sales/:id/ticket`) re-renders the same component
-from the persisted sale document — a ticket is always reproducible from
-data, never a one-shot render that's lost if the browser tab closes.
+The bridge in `pos/bridge/` runs on the Windows till computer, outside the
+public Docker deployment. The browser connects directly to its loopback URL.
 
-Limitations accepted for Sprint 2: cashier must confirm the browser print
-dialog (not silent), no automatic cash-drawer kick, printer must be set as
-the OS default or selected manually. These are exactly the trade-offs
-master-prompt §15 accepts for the fallback tier — acceptable for going
-live, not acceptable as the permanent state if ticket volume is high.
-
-## Strategy 2 — local printing bridge (optional, Sprint 9)
-
-A small local service (Node.js, or a compiled Go/Rust binary if startup
-time on boutique hardware matters) installed on the boutique's till
-computer, **not part of the public Docker Compose stack** — it runs
-outside the deployed infrastructure entirely, matching master-prompt §48's
-"print-bridge as a separate local installation, not public
-infrastructure."
-
-```
-pos (browser) ──HTTPS, local auth token──▶ print-bridge (localhost:PORT)
-                                              │
-                                              ▼
-                                          ESC/POS over USB/network to the thermal printer
-                                              │
-                                              ▼
-                                          optional cash-drawer kick (same ESC/POS command channel)
+```text
+POS browser
+  -> authenticated loopback request
+  -> local bridge
+  -> selected Windows receipt-printer queue (RAW)
+  -> ESC/POS drawer pulse
+  -> drawer connected to the printer
 ```
 
-Bridge responsibilities: accept print requests **only** from the
-approved POS origin (CORS locked to `https://pos.ahmedmzaliboutique.com`,
-or `http://localhost:3001` in dev), require a local bearer token
-(generated once at bridge install time, entered into POS settings, never
-transmitted anywhere except this local link), validate the ticket payload
-against a strict schema (reject anything that isn't a well-formed ticket —
-never accept arbitrary ESC/POS byte sequences from the browser), log
-printer errors to a local file (not shipped anywhere sensitive by
-default), expose a `/status` endpoint the POS can poll for the
-online/offline printer indicator.
+Security properties:
 
-Not built until Sprint 9, and only if the business's actual ticket volume
-or "silent printing" requirement justifies the extra deployed component —
-confirm with the user before starting this piece; it's real effort
-(printer driver quirks, ESC/POS command-set differences between printer
-models) that shouldn't be speculative.
+- binds only to `127.0.0.1`;
+- requires a local bearer token of at least 32 characters;
+- accepts only explicitly configured POS origins;
+- accepts fixed operations, never arbitrary printer bytes;
+- never accepts a printer name from an opening request;
+- clamps pin and pulse values before constructing the command;
+- keeps technical hardware failures local and does not log credentials.
 
-## What's explicitly out of scope
+`/v1/sale-completed` evaluates the configured payment policy and deduplicates
+requests by `sale:<saleId>`. `/v1/drawer/open` handles authorized manual and
+hardware-test operations. Both call `openCashDrawer()`, which sends exactly one
+validated `ESC p m t1 t2` command through the configured printer.
 
-- Cloud print services (Google Cloud Print-style relays) — unnecessary
-  complexity for a single boutique.
-- Printing from the admin console (invoices/quotes/POs print via PDF, see
-  `invoicing-and-quotes.md` and `supplier-management.md` — a completely
-  different rendering path, A4 not 80mm thermal).
+Default pulse:
+
+```text
+1B 70 00 19 FA
+```
+
+Pin 5 changes only `m` from `00` to `01`.
+
+## Payment sequence
+
+1. The cashier confirms payment.
+2. The backend transaction validates stock and payment totals, creates the
+   completed sale and payment rows, applies stock movements and session totals,
+   and commits.
+3. Only after the successful response does the browser notify the local bridge.
+4. Cash opens by default. Card, bank transfer, and other methods do not, unless
+   `openForAllPaymentMethods` is enabled.
+5. The receipt print flow starts according to the local preference.
+6. The completed-sale receipt is shown.
+
+Bridge or printer failure never reverses the committed sale. The cashier sees a
+non-blocking warning and, when authorized, a manual “Ouvrir le tiroir” action.
+Payment, manual, and test outcomes are written to the central audit log through
+backend endpoints that record events but cannot operate hardware.
+
+## Windows driver requirement
+
+The selected printer queue must preserve RAW data. Use the printer vendor’s
+ESC/POS-compatible driver or a suitable Generic/Text Only queue. Some Windows
+drivers consume or transform control bytes; in that case the queue/driver must
+be corrected before the drawer can open reliably.

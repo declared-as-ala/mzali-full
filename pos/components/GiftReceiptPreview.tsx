@@ -17,6 +17,7 @@ export default function GiftReceiptPreview({ sale, onClose }: { sale: PosSale; o
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4 print:static print:bg-white print:p-0">
+      <style>{'@page { size: 80mm auto; margin: 0; }'}</style>
       <div className="modal-pop flex max-h-[90vh] w-full max-w-sm flex-col rounded-3xl bg-white shadow-2xl print:max-h-none print:rounded-none print:shadow-none">
         <div className="flex items-center justify-between border-b border-ink-200 p-4 print:hidden">
           <h2 className="text-lg font-black text-ink-900">Reçu cadeau — Vente #{sale.saleNumber}</h2>

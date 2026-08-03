@@ -6,7 +6,9 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p ${PORT:-3001} -H 0.0.0.0",
-    "lint": "next lint"
+    "lint": "next lint",
+    "bridge:start": "node bridge/server.mjs",
+    "bridge:test": "node --test bridge/*.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

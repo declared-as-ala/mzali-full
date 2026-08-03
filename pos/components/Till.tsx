@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Clock, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
+import { ArrowLeft, Banknote, Clock, LogOut, Search, Settings, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
+import { canOpenDrawer, completeSaleHardware, openManualDrawer } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
 import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
@@ -12,9 +13,9 @@ import QuickPickRail from './QuickPickRail';
 import Cart from './Cart';
 import PaymentModal from './PaymentModal';
 import TicketPreview from './TicketPreview';
-import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosPaymentMethod, PosSale, RedeemPreviewResult } from '@/types/pos';
+import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosSale, PosSalePaymentInput, RedeemPreviewResult } from '@/types/pos';
 
-export default function Till({ cashierName }: { cashierName: string }) {
+export default function Till({ cashierName, role }: { cashierName: string; role: string }) {
   const router = useRouter();
   const [catalog, setCatalog] = useState<PosCatalogResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -43,7 +44,12 @@ export default function Till({ cashierName }: { cashierName: string }) {
   const [paying, setPaying] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [completedSale, setCompletedSale] = useState<PosSale | null>(null);
+  const [hardwareWarning, setHardwareWarning] = useState<string | null>(null);
+  const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
+  const [manualDrawerBusy, setManualDrawerBusy] = useState(false);
+  const [drawerFeedback, setDrawerFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
+  const paymentRequestInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -354,10 +360,15 @@ export default function Till({ cashierName }: { cashierName: string }) {
     }
   }
 
-  async function confirmPayment(method: PosPaymentMethod, cashReceivedMinor: number | null) {
+  async function confirmPayment(method: PosSalePaymentInput['method'], cashReceivedMinor: number | null) {
+    if (paymentRequestInFlightRef.current) return;
+    paymentRequestInFlightRef.current = true;
     setPaying(true);
     setSaveError(null);
+    setHardwareWarning(null);
+    setAutoPrintReceipt(false);
     try {
+      const wasEditing = Boolean(editingSale);
       let res: Response;
       if (editingSale) {
         res = await posFetch(`/api/sales/${editingSale.id}`, {
@@ -387,7 +398,13 @@ export default function Till({ cashierName }: { cashierName: string }) {
       }
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Erreur de paiement');
-      setCompletedSale(data.after || data);
+      const sale: PosSale = data.after || data;
+      if (!wasEditing) {
+        const hardware = await completeSaleHardware(sale);
+        setHardwareWarning(hardware.warning);
+        setAutoPrintReceipt(hardware.autoPrintReceipt);
+      }
+      setCompletedSale(sale);
       setEditingSale(null);
       setRecentlySoldIds((prev) => {
         const ids = [...new Set([...cart.map((l) => l.productId), ...prev])];
@@ -401,6 +418,22 @@ export default function Till({ cashierName }: { cashierName: string }) {
       setSaveError(err instanceof Error ? err.message : 'Erreur');
     } finally {
       setPaying(false);
+      paymentRequestInFlightRef.current = false;
+    }
+  }
+
+  async function handleManualDrawer() {
+    if (manualDrawerBusy) return;
+    setManualDrawerBusy(true);
+    setDrawerFeedback(null);
+    try {
+      await openManualDrawer('manual');
+      setHardwareWarning(null);
+      setDrawerFeedback({ tone: 'success', message: 'Commande d’ouverture envoyée au tiroir-caisse.' });
+    } catch (error) {
+      setDrawerFeedback({ tone: 'error', message: error instanceof Error ? error.message : 'Impossible d’ouvrir le tiroir-caisse.' });
+    } finally {
+      setManualDrawerBusy(false);
     }
   }
 
@@ -459,6 +492,26 @@ export default function Till({ cashierName }: { cashierName: string }) {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
+          {canOpenDrawer(role) && (
+            <>
+              <button
+                type="button"
+                disabled={manualDrawerBusy}
+                onClick={handleManualDrawer}
+                className="flex min-h-11 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Banknote size={15} /> {manualDrawerBusy ? 'Ouverture…' : 'Ouvrir le tiroir'}
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push('/settings/hardware')}
+                className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 hover:text-blue-700"
+                aria-label="Réglages de l’imprimante et du tiroir"
+              >
+                <Settings size={17} />
+              </button>
+            </>
+          )}
           <button
             onClick={() => router.push('/dashboard')}
             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition shadow-2xs"
@@ -480,6 +533,16 @@ export default function Till({ cashierName }: { cashierName: string }) {
           </button>
         </div>
       </header>
+
+      {drawerFeedback && (
+        <div
+          role="status"
+          className={`flex flex-none items-center justify-between px-6 py-2 text-xs font-bold ${drawerFeedback.tone === 'success' ? 'border-b border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-b border-amber-200 bg-amber-50 text-amber-900'}`}
+        >
+          <span>{drawerFeedback.message}</span>
+          <button className="grid h-8 w-8 place-items-center rounded-lg hover:bg-black/5" onClick={() => setDrawerFeedback(null)} aria-label="Fermer le message"><X size={14} /></button>
+        </div>
+      )}
 
       {/* Editing Sale Mode Banner */}
       {editingSale && (
@@ -591,6 +654,11 @@ export default function Till({ cashierName }: { cashierName: string }) {
       {completedSale && (
         <TicketPreview
           sale={completedSale}
+          autoPrint={autoPrintReceipt}
+          hardwareWarning={hardwareWarning}
+          canOpenDrawer={canOpenDrawer(role)}
+          onOpenDrawer={handleManualDrawer}
+          drawerBusy={manualDrawerBusy}
           onClose={() => { setCompletedSale(null); setPaymentOpen(false); }}
           onNewSale={() => { setCompletedSale(null); setPaymentOpen(false); }}
         />

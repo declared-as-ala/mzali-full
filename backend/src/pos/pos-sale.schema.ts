@@ -10,6 +10,7 @@ export class PosSaleLine {
   @Prop({ type: String, required: true }) productId!: string;
   @Prop({ type: String, required: true }) descriptionSnapshot!: string;
   @Prop({ type: String, required: true }) sku!: string;
+  @Prop({ type: Object, default: {} }) variantAttributesSnapshot!: Record<string, string>;
   @Prop({ type: Number, required: true }) qty!: number;
   @Prop({ type: Number, required: true }) unitPriceMinor!: number;
   @Prop({ type: Number, default: 0 }) discountMinor!: number;

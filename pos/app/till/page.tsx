@@ -7,5 +7,5 @@ export const dynamic = 'force-dynamic';
 export default async function TillPage() {
   const session = await getSession();
   if (!session) redirect('/login');
-  return <Till cashierName={session.name} />;
+  return <Till cashierName={session.name} role={session.role} />;
 }
