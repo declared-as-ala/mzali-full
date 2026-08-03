@@ -1,4 +1,5 @@
 import type { Category as CategoryContract } from '@contracts';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { Category as CategorySchema } from './category.schema';
 
 export function toCategoryContract(doc: CategorySchema & { id?: string; _id?: unknown }): CategoryContract {
@@ -8,7 +9,7 @@ export function toCategoryContract(doc: CategorySchema & { id?: string; _id?: un
     name: doc.name,
     slug: doc.slug,
     description: doc.description || undefined,
-    imageUrl: doc.imageUrl ?? undefined,
+    imageUrl: doc.imageUrl ? normalizePublicMediaUrl(doc.imageUrl) : undefined,
     productCount: doc.productCount ?? 0,
   };
 }

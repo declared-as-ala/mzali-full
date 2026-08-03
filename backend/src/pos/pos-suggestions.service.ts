@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Product } from '@/catalog/product.schema';
 import { ProductsService } from '@/catalog/products.service';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { resolveDateRange } from './dto/pos-analytics.dto';
 import { PosAnalyticsService } from './pos-analytics.service';
 import { PosSale } from './pos-sale.schema';
@@ -108,7 +109,7 @@ export class PosSuggestionsService {
         productId: v.productId,
         variantId: v.id,
         name: product.name,
-        imageUrl: product.images?.[0]?.url ?? null,
+        imageUrl: normalizePublicMediaUrl(product.images?.[0]?.url ?? null),
         priceMinor: v.sellingPriceMinor ?? product.salePriceMinor ?? product.regularPriceMinor,
         reason,
       };

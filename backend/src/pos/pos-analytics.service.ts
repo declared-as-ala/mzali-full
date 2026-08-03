@@ -5,6 +5,7 @@ import { Category } from '@/catalog/category.schema';
 import { Product } from '@/catalog/product.schema';
 import { Variant } from '@/catalog/variant.schema';
 import { toDinars } from '@/common/money';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { LoyaltyAccount } from '@/loyalty/loyalty-account.schema';
 import { LoyaltyCard } from '@/loyalty/loyalty-card.schema';
 import { LoyaltyTransaction } from '@/loyalty/loyalty-transaction.schema';
@@ -553,7 +554,7 @@ export class PosAnalyticsService {
         productId: row.productId,
         productName: product?.name ?? row.name,
         sku: variant?.sku ?? row.sku,
-        imageUrl: product?.images?.[0]?.url ?? null,
+        imageUrl: normalizePublicMediaUrl(product?.images?.[0]?.url ?? null),
         categoryIds: product?.categoryIds ?? [],
         quantitySold: row.qty,
         transactionCount: row.txnIds.size,

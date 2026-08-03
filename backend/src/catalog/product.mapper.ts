@@ -1,5 +1,6 @@
 import type { Product as ProductContract } from '@contracts';
 import { toDinars } from '@/common/money';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { Product as ProductSchema } from './product.schema';
 
 /**
@@ -33,7 +34,7 @@ export function toProductContract(doc: ProductSchema & { id?: string; _id?: unkn
     stockQuantity: doc.stockQuantity ?? null,
     images: (doc.images ?? []).map((img) => ({
       id: img.mediaId ?? img.url,
-      url: img.url,
+      url: normalizePublicMediaUrl(img.url),
       alt: img.alt || undefined,
     })),
     categoryIds: doc.categoryIds ?? [],
@@ -52,7 +53,7 @@ export function toProductContract(doc: ProductSchema & { id?: string; _id?: unkn
       deliveryPrice: toDinars(b.deliveryPriceMinor),
       quantity: b.quantity,
       badgeColor: b.badgeColor,
-      imageUrl: b.imageUrl ?? undefined,
+      imageUrl: b.imageUrl ? normalizePublicMediaUrl(b.imageUrl) : undefined,
       isDefault: b.isDefault,
     })),
     upsellIds: doc.upsellIds ?? [],
