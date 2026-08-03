@@ -16,15 +16,18 @@ test('completed cash payment displays change', () => {
   );
 });
 
-test('VFD frame clears the display and contains ASCII only', () => {
-  const frame = encodeVfdFrame({ phase: 'completed', method: 'CARD', totalMinor: 5000 });
+test('plain VFD frame clears the display and contains ASCII only', () => {
+  const frame = encodeVfdFrame({ phase: 'completed', method: 'CARD', totalMinor: 5000 }, { protocol: 'plain' });
   assert.equal(frame[0], 0x0c);
   assert.equal(frame.subarray(1).toString('ascii'), 'PAYE 5.000 DT       \r\nMERCI - CARTE       ');
 });
 
-test('ready message is formatted for a two-line VFD', () => {
+test('CD5220 ready message resets the factory screen and addresses both rows', () => {
   const frame = encodeVfdLines('MZALI POS', 'CAISSE PRETE');
-  assert.equal(frame.subarray(1).toString('ascii'), 'MZALI POS           \r\nCAISSE PRETE        ');
+  assert.deepEqual([...frame.subarray(0, 6)], [0x1b, 0x40, 0x0c, 0x1b, 0x51, 0x41]);
+  assert.equal(frame.subarray(6, 26).toString('ascii'), 'MZALI POS           ');
+  assert.deepEqual([...frame.subarray(27, 30)], [0x1b, 0x51, 0x42]);
+  assert.equal(frame.subarray(30, 50).toString('ascii'), 'CAISSE PRETE        ');
 });
 
 test('writer receives VFD bytes on a port separate from the drawer', async () => {
@@ -33,5 +36,5 @@ test('writer receives VFD bytes on a port separate from the drawer', async () =>
     writer: async (port, bytes) => { observed = { port, bytes }; },
   });
   assert.equal(observed.port, 'COM7');
-  assert.equal(observed.bytes[0], 0x0c);
+  assert.equal(observed.bytes[0], 0x1b);
 });

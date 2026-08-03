@@ -38,13 +38,24 @@ export function formatVfdLines(input) {
   return [fit(`TOTAL ${total}`), fit(input.method === 'CASH' ? `RECU ${amount(input.cashReceivedMinor)}` : `PAIEMENT ${methodLabel(input.method)}`)];
 }
 
-export function encodeVfdFrame(input) {
+export function encodeVfdFrame(input, options = {}) {
   const [line1, line2] = formatVfdLines(input);
-  return encodeVfdLines(line1, line2);
+  return encodeVfdLines(line1, line2, options);
 }
 
-export function encodeVfdLines(line1, line2) {
-  return Buffer.concat([Buffer.from([0x0c]), Buffer.from(`${fit(line1)}\r\n${fit(line2)}`, 'ascii')]);
+export function encodeVfdLines(line1, line2, options = {}) {
+  const first = Buffer.from(fit(line1), 'ascii');
+  const second = Buffer.from(fit(line2), 'ascii');
+  if (options.protocol === 'plain') {
+    return Buffer.concat([Buffer.from([0x0c]), first, Buffer.from('\r\n', 'ascii'), second]);
+  }
+  // CD5220-compatible pole displays address each row with ESC Q A/B and CR.
+  // ESC @ resets the active factory/setup screen before the first update.
+  return Buffer.concat([
+    Buffer.from([0x1b, 0x40, 0x0c]),
+    Buffer.from([0x1b, 0x51, 0x41]), first, Buffer.from([0x0d]),
+    Buffer.from([0x1b, 0x51, 0x42]), second, Buffer.from([0x0d]),
+  ]);
 }
 
 async function configureVfdPort(port, baudRate) {
@@ -84,9 +95,9 @@ async function writeVfdFrame(serialPort, frame, options = {}) {
 }
 
 export function writeVfdLines(serialPort, line1, line2, options = {}) {
-  return writeVfdFrame(serialPort, encodeVfdLines(line1, line2), options);
+  return writeVfdFrame(serialPort, encodeVfdLines(line1, line2, options), options);
 }
 
 export function writeVfdPayment(serialPort, input, options = {}) {
-  return writeVfdFrame(serialPort, encodeVfdFrame(input), options);
+  return writeVfdFrame(serialPort, encodeVfdFrame(input, options), options);
 }
