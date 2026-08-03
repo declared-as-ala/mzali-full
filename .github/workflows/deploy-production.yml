@@ -100,7 +100,6 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           port: ${{ secrets.VPS_PORT || '22' }}
           envs: DEPLOY_SHA
-          script_stop: true
           script: |
             set -Eeuo pipefail
             cd "${{ secrets.VPS_DEPLOY_PATH }}"
@@ -124,8 +123,8 @@ jobs:
           port: ${{ secrets.VPS_PORT || '22' }}
           envs: DEPLOY_SHA
           command_timeout: 20m
-          script_stop: true
           script: |
+            set -Eeuo pipefail
             cd "${{ secrets.VPS_DEPLOY_PATH }}"
             # deploy.sh backs up Mongo+MinIO first, pulls the new images,
             # restarts, waits for health, runs the full domain smoke-test
