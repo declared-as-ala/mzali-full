@@ -68,7 +68,18 @@ export default function EmployeesView() {
     }
   }
 
-  function onSaved() { setDrawerOpen(false); refresh(); startTransition(() => router.refresh()); }
+  function onSaved(saved: EmployeeRow) {
+    setRows((current) => {
+      const exists = current.some((employee) => employee.id === saved.id);
+      if (!exists) return [...current, saved];
+      return current.map((employee) => employee.id === saved.id
+        ? { ...employee, ...saved, activeOrdersCount: employee.activeOrdersCount }
+        : employee);
+    });
+    setDrawerOpen(false);
+    void refresh();
+    startTransition(() => router.refresh());
+  }
 
   return (
     <div className="p-8">
@@ -177,7 +188,7 @@ function EmployeeFormModal({
 }: {
   initial: EmployeeRow | null;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (employee: EmployeeRow) => void;
 }) {
   const toast = useToast();
   const [name, setName] = useState(initial?.name ?? '');
@@ -202,8 +213,14 @@ function EmployeeFormModal({
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? 'Erreur');
-      toast.success(initial ? 'Employé mis à jour' : 'Employé créé');
-      onSaved();
+      if (!data?.id || data.role !== role) {
+        throw new Error("Le serveur n'a pas confirmé le nouveau rôle. Veuillez réessayer.");
+      }
+      const roleChanged = Boolean(initial && (initial.role ?? 'employee') !== data.role);
+      toast.success(roleChanged
+        ? "Employé mis à jour. Le nouvel accès sera actif à sa prochaine connexion."
+        : initial ? 'Employé mis à jour' : 'Employé créé');
+      onSaved(data as EmployeeRow);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Erreur');
     } finally { setSaving(false); }

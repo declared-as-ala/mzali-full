@@ -16,7 +16,15 @@ type BackendEmployeeRecord = {
 };
 
 function toEmployee(r: BackendEmployeeRecord): Employee {
-  return { id: r.id, email: r.email, name: r.name, active: r.active, createdAt: r.createdAt, updatedAt: r.updatedAt };
+  return {
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    role: r.role,
+    active: r.active,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
 }
 
 export class MzaliApiEmployeeService implements EmployeeService {

@@ -186,7 +186,7 @@ function LoginForm() {
       }
 
       const role = data.role as 'admin' | 'employee' | undefined;
-      const home = role === 'employee' ? '/employee' : adminHref('/');
+      const home = role === 'employee' ? adminHref('/commandes') : adminHref('/');
       const fromRaw = sp.get('from');
       // On the admin subdomain, a valid `from` is prefix-free (e.g. '/stock');
       // everywhere else it's /admin-prefixed, matching adminLoginHref()'s callers.
@@ -194,7 +194,7 @@ function LoginForm() {
         (role === 'admin' && (
           onAdminSubdomain() ? !fromRaw.startsWith('/admin') : (fromRaw === '/admin' || fromRaw.startsWith('/admin/'))
         )) ||
-        (role === 'employee' && fromRaw.startsWith('/employee'))
+        (role === 'employee' && fromRaw === home)
       );
       const target = (fromOk && fromRaw) || data.redirect || home;
       notify('success', 'Connexion réussie', 'Accès autorisé. Préparation du tableau de bord…');

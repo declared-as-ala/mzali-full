@@ -51,7 +51,7 @@ async function mzaliApiLogin(username: string, password: string, host: string | 
   const tokens = (await backendRes.json()) as BackendLoginResult;
 
   const role = mapBackendRole(tokens.user.role);
-  const redirect = role === 'admin' ? adminHrefForHost('/', host) : '/employee';
+  const redirect = adminHrefForHost(role === 'admin' ? '/' : '/commandes', host);
   const res = NextResponse.json({ ok: true, role, redirect });
   setSessionCookies(res, tokens);
   return res;
@@ -94,7 +94,11 @@ export async function POST(req: Request) {
   if (!employee) return NextResponse.json({ ok: false }, { status: 401 });
 
   const cookieValue = signSession({ role: 'employee', userId: employee.id, name: employee.name });
-  const res = NextResponse.json({ ok: true, role: 'employee', redirect: '/employee' });
+  const res = NextResponse.json({
+    ok: true,
+    role: 'employee',
+    redirect: adminHrefForHost('/commandes', req.headers.get('host')),
+  });
   res.cookies.set(COOKIE, cookieValue, {
     httpOnly: true, sameSite: 'lax',
     secure: SECURE_COOKIES, path: '/', maxAge: 60 * 60 * 24 * 7,

@@ -27,6 +27,13 @@ export function middleware(req: NextRequest) {
       url.pathname = '/admin-login';
       return NextResponse.rewrite(url);
     }
+    // Employee pages now live in the shared admin shell. Keep old bookmarks
+    // out of the /admin/employee rewrite, which has no matching route.
+    if (pathname === '/employee' || pathname.startsWith('/employee/')) {
+      const url = req.nextUrl.clone();
+      url.pathname = '/commandes';
+      return NextResponse.redirect(url, 308);
+    }
     if (pathname === '/admin' || pathname.startsWith('/admin/') || pathname.startsWith('/admin-login')) {
       return NextResponse.next();
     }

@@ -1,5 +1,7 @@
 import { orderService } from '@/services';
 import CommandesView from '@/components/admin/CommandesView';
+import MyCommandesView from '@/components/employee/MyCommandesView';
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +16,11 @@ export default async function Commandes(props: {
     endDate?: string;
   }>;
 }) {
+  const session = await getSession();
+  if (session?.role === 'employee') {
+    return <MyCommandesView />;
+  }
+
   const sp = await props.searchParams;
   const page = Math.max(1, Number(sp?.page) || 1);
   const q = sp?.q?.trim() || undefined;

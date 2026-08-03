@@ -1,8 +1,7 @@
 import type { Employee } from '@/lib/employee-storage';
 
-// `role` is optional and ignored by the legacy file-based provider (which
-// has no roles concept beyond admin/employee) — only the mzali-api
-// provider acts on it. See backend/src/auth/permissions.ts for the values.
+// `role` stays optional for records created before role-based access was added.
+// Both providers preserve it; see backend/src/auth/permissions.ts for values.
 export type EmployeeInput = { name: string; email: string; password: string; active?: boolean; role?: string };
 export type EmployeeUpdate = { name?: string; email?: string; active?: boolean; password?: string; role?: string };
 
