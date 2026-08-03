@@ -30,12 +30,11 @@ test('CD5220 frame resets the factory screen and addresses both rows', () => {
   assert.equal(frame.subarray(30, 50).toString('ascii'), 'CAISSE PRETE        ');
 });
 
-test('Logic Controls frame clears and writes positions 0 and 20', () => {
+test('Logic Controls frame clears and uses native 20-character row wrap', () => {
   const frame = encodeVfdLines('MZALI POS', 'CAISSE PRETE');
-  assert.deepEqual([...frame.subarray(0, 5)], [0x11, 0x1e, 0x14, 0x10, 0x00]);
-  assert.equal(frame.subarray(5, 25).toString('ascii'), 'MZALI POS           ');
-  assert.deepEqual([...frame.subarray(25, 27)], [0x10, 0x14]);
-  assert.equal(frame.subarray(27, 47).toString('ascii'), 'CAISSE PRETE        ');
+  assert.deepEqual([...frame.subarray(0, 3)], [0x11, 0x1e, 0x14]);
+  assert.equal(frame.subarray(3, 23).toString('ascii'), 'MZALI POS           ');
+  assert.equal(frame.subarray(23, 43).toString('ascii'), 'CAISSE PRETE        ');
 });
 
 test('writer receives VFD bytes on a port separate from the drawer', async () => {

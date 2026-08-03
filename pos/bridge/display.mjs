@@ -57,11 +57,12 @@ export function encodeVfdLines(line1, line2, options = {}) {
       Buffer.from([0x1b, 0x51, 0x42]), second, Buffer.from([0x0d]),
     ]);
   }
-  // Logic Controls (LCI): normal mode, clear, cursor off, then position 0/20.
-  // This matches the "LOGIC CONTROL" command mode selected in the VFD utility.
+  // Logic Controls (LCI): normal mode, clear, cursor off, then exactly 40
+  // characters. In normal mode the device wraps from row 1 to row 2 after
+  // character 20; avoiding Digit Select also avoids this model consuming the
+  // first printable character after each position command.
   return Buffer.concat([
-    Buffer.from([0x11, 0x1e, 0x14, 0x10, 0x00]), first,
-    Buffer.from([0x10, 0x14]), second,
+    Buffer.from([0x11, 0x1e, 0x14]), first, second,
   ]);
 }
 
