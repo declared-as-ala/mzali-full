@@ -58,7 +58,7 @@ async function detectVfdPort(drawerPort) {
     return configured;
   }
   if (process.platform !== 'win32') return null;
-  const command = String.raw`$map = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue; $entries = $map.PSObject.Properties | Where-Object { $_.Value -match '^COM\d+$' -and $_.Value -ne $env:MZALI_DRAWER_PORT }; $entry = $entries | Where-Object { $_.Value -eq 'COM1' } | Select-Object -First 1; if ($null -eq $entry) { $entry = $entries | Select-Object -First 1 }; if ($null -ne $entry) { $entry.Value | ConvertTo-Json -Compress }`;
+  const command = String.raw`$map = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue; $entries = $map.PSObject.Properties | Where-Object { $_.Value -match '^COM\d+$' -and $_.Value -ne $env:MZALI_DRAWER_PORT -and $_.Name -notlike '*ProlificSerial*' }; $entry = $entries | Where-Object { $_.Value -eq 'COM3' } | Select-Object -First 1; if ($null -eq $entry) { $entry = $entries | Select-Object -First 1 }; if ($null -ne $entry) { $entry.Value | ConvertTo-Json -Compress }`;
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
     windowsHide: true,
     timeout: 8000,

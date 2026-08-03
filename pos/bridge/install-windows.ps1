@@ -26,16 +26,12 @@ $serverPath = Join-Path $installFolder 'server.mjs'
 $startupFolder = [Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupFolder 'MZALI POS Bridge.lnk'
 
-# This boutique's customer display is exposed by Windows as COM1. Persist the
-# detected assignment so other serial devices can never be selected instead.
-$serialMap = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction SilentlyContinue
-$hasCom1 = $serialMap -and ($serialMap.PSObject.Properties.Value -contains 'COM1')
-if ($hasCom1) {
-  [Environment]::SetEnvironmentVariable('POS_VFD_COM_PORT', 'COM1', 'User')
-  [Environment]::SetEnvironmentVariable('POS_VFD_PROTOCOL', 'logic-controls', 'User')
-  $env:POS_VFD_COM_PORT = 'COM1'
-  $env:POS_VFD_PROTOCOL = 'logic-controls'
-}
+# Persist the confirmed boutique assignment so stale COM1 settings and other
+# serial devices can never be selected instead.
+[Environment]::SetEnvironmentVariable('POS_VFD_COM_PORT', 'COM3', 'User')
+[Environment]::SetEnvironmentVariable('POS_VFD_PROTOCOL', 'logic-controls', 'User')
+$env:POS_VFD_COM_PORT = 'COM3'
+$env:POS_VFD_PROTOCOL = 'logic-controls'
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)

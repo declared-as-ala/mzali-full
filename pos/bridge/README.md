@@ -24,6 +24,9 @@ npm run bridge:install
 The POS connects automatically to `127.0.0.1:17890`. For service diagnostics
 only, the detected COM port can be overridden with `POS_DRAWER_COM_PORT`.
 
+The boutique customer display is detected on `COM3` and stored as
+`POS_VFD_COM_PORT` by the installer; the Prolific USB drawer port is excluded.
+
 ## Optional customer VFD
 
 When a second serial customer display is connected, the bridge excludes the
