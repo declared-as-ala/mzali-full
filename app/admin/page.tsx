@@ -4,6 +4,8 @@ import { getSession } from '@/lib/auth';
 import { apiRequest } from '@/services/mzali-api/client';
 import type { DashboardStats } from '@/types/dashboard';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
+import { adminHrefForHost } from '@/lib/admin-nav';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +22,8 @@ export default async function Dashboard() {
   const role = session?.role as string | undefined;
   const isAdmin = !role || role === 'admin' || role === 'super_admin' || role === 'store_manager';
   if (!isAdmin) {
-    redirect('/admin/commandes');
+    const host = (await headers()).get('host');
+    redirect(adminHrefForHost('/commandes', host));
   }
 
   const stats = PROVIDER === 'mzali-api' ? await loadMzaliApiStats() : null;

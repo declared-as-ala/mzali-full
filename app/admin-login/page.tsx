@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { adminHref, onAdminSubdomain } from '@/lib/admin-nav';
 import {
   ArrowRight,
   Check,
@@ -185,10 +186,14 @@ function LoginForm() {
       }
 
       const role = data.role as 'admin' | 'employee' | undefined;
-      const home = role === 'employee' ? '/employee' : '/admin';
+      const home = role === 'employee' ? '/employee' : adminHref('/');
       const fromRaw = sp.get('from');
+      // On the admin subdomain, a valid `from` is prefix-free (e.g. '/stock');
+      // everywhere else it's /admin-prefixed, matching adminLoginHref()'s callers.
       const fromOk = fromRaw && (
-        (role === 'admin' && (fromRaw === '/admin' || fromRaw.startsWith('/admin/'))) ||
+        (role === 'admin' && (
+          onAdminSubdomain() ? !fromRaw.startsWith('/admin') : (fromRaw === '/admin' || fromRaw.startsWith('/admin/'))
+        )) ||
         (role === 'employee' && fromRaw.startsWith('/employee'))
       );
       const target = (fromOk && fromRaw) || data.redirect || home;

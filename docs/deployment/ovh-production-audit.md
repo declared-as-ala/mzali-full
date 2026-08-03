@@ -175,21 +175,31 @@ exists). I did not fabricate config for features that don't exist; I noted
 this rather than silently dropping it so you know it was a deliberate
 omission, not an oversight.
 
-## 6. Admin domain — the real decision
+## 6. Admin domain — subdomain-native, no /admin in the URL bar
 
-`admin.ahmedmzaliboutique.tn` **redirects (301)** to
-`https://ahmedmzaliboutique.tn/admin`, implemented entirely in Caddy — zero
-application code changes. Rationale: making the admin *subdomain* transparently
-serve `/admin/*` content (rather than redirect) requires Next.js host-based
-middleware rewriting, which (a) requires creating `middleware.ts` from
-scratch, since none is currently active (§4), and (b) is exactly the kind of
-authentication-routing change that deserves its own reviewed, tested PR —
-not a rider on infrastructure work. The redirect fully satisfies "admin
-works on admin.ahmedmzaliboutique.tn" (it resolves, HTTPS works, you land in
-the real admin app, cookies work perfectly because you're immediately
-same-origin with the storefront) at zero risk. I can build the middleware
-version as a separate follow-up if you want the URL bar to stay on the
-subdomain.
+Superseded: `admin.ahmedmzaliboutique.tn` now serves `/admin/*` content
+directly — no redirect, no `/admin` prefix ever visible. `middleware.ts`
+(repo root) rewrites incoming requests based on the `Host` header: on
+`ADMIN_DOMAIN`, bare paths are rewritten internally to their `/admin/*`
+equivalent (e.g. `/stock` → `/admin/stock`, invisible to the browser);
+`/login` rewrites to `/admin-login`. On the main storefront domain, old
+`/admin/*` links get a 308 redirect over to the subdomain instead, for
+backward compatibility with existing bookmarks.
+
+Every internal admin link/redirect (Sidebar nav, login flow, drawer
+401-handlers, dashboard widgets) had to be updated to be host-aware rather
+than hardcoding `/admin/...` — see `lib/admin-nav.ts` (window/header-based
+checks for use in event handlers, where `window` is reliably available
+post-hydration) and `lib/admin-nav-context.tsx` (`useAdminHref()`, a React
+context fed by `app/admin/layout.tsx`'s server-side `headers()` check — used
+anywhere a link renders directly in JSX, since `window` isn't available
+during SSR/first paint and using it there would show the wrong prefix on
+initial load). Employee (`/employee/*`) and its shared `/admin-login` page
+are unaffected — only admin moved.
+
+Local dev (no `ADMIN_DOMAIN` env var set) is unaffected: middleware no-ops
+entirely, and every host-aware link falls back to its original
+`/admin`-prefixed form, exactly as before this change.
 
 ## 7. CORS — deliberately still off by default
 

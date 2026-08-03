@@ -9,6 +9,7 @@ import {
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { formatPrice } from '@/lib/site-config';
+import { useAdminHref } from '@/lib/admin-nav-context';
 import { useToast } from './Toast';
 
 // ---------------------------------------------------------------------------
@@ -893,6 +894,7 @@ const SEVERITY_STYLE: Record<AlertSeverity, string> = {
 };
 
 function AlertsPanel() {
+  const adminHref = useAdminHref();
   const [alerts, setAlerts] = useState<PosAlert[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -930,7 +932,7 @@ function AlertsPanel() {
               <p className="mt-1 text-xs leading-5">{a.summary}</p>
               {(a.evidence.sessionId || a.evidence.saleId) && (
                 <div className="mt-1.5 flex gap-3 text-[11px] font-black underline">
-                  {a.evidence.sessionId && <a href="/admin/pos-sessions" className="hover:opacity-70">Voir la session</a>}
+                  {a.evidence.sessionId && <a href={adminHref('/pos-sessions')} className="hover:opacity-70">Voir la session</a>}
                   {a.evidence.cashierName && <span className="no-underline opacity-70">{a.evidence.cashierName}</span>}
                 </div>
               )}

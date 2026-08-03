@@ -41,13 +41,25 @@
 }
 
 # Admin has no separate app/container — it's `/admin/*` inside the
-# storefront build (see docs/deployment/ovh-production-audit.md §6). A
-# redirect keeps this zero-risk: no new middleware, no cookie-domain
-# changes, and the moment you land on the storefront origin the existing
-# admin auth just works unchanged.
+# storefront build (see docs/deployment/ovh-production-audit.md §6).
+# middleware.ts in the storefront app rewrites requests here (based on the
+# Host header) to the underlying /admin/* routes, so the URL bar shows a
+# clean admin.<domain> path with no /admin prefix. Session cookies are
+# host-only (no Domain attribute) but that's fine here — login and every
+# subsequent request both happen on this same origin.
 {$ADMIN_DOMAIN} {
 	import security_headers
-	redir https://{$STOREFRONT_DOMAIN}/admin{uri} permanent
+	encode zstd gzip
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy storefront:3000 {
+		header_up X-Real-IP {remote_host}
+		transport http {
+			read_timeout 60s
+			dial_timeout 5s
+		}
+	}
 }
 
 {$POS_DOMAIN} {

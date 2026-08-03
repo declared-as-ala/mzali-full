@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import ImageUploader from '@/components/admin/ImageUploader';
 import { useConfirm } from '@/components/admin/ConfirmModal';
+import { adminLoginHref } from '@/lib/admin-nav';
 
 type Props = {
   username: string;
@@ -179,7 +180,7 @@ export default function ProfileView({
     });
     if (!ok) return;
     await fetch('/api/auth', { method: 'DELETE' });
-    router.push('/admin-login');
+    router.push(adminLoginHref());
   }
 
   return (

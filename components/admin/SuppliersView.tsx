@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Building2, Clock, FileText, History, Package, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmModal';
+import { useAdminHref } from '@/lib/admin-nav-context';
 
 type Supplier = {
   id: string;
@@ -43,6 +44,7 @@ function formatMinor(minor: number | null): string {
 const STATUS_LABEL: Record<string, string> = { ACTIVE: 'Actif', INACTIVE: 'Inactif', BLOCKED: 'Bloqué' };
 
 export default function SuppliersView() {
+  const adminHref = useAdminHref();
   const toast = useToast();
   const confirmModal = useConfirm();
   const [loading, setLoading] = useState(true);
@@ -94,7 +96,7 @@ export default function SuppliersView() {
           <button onClick={refresh} className="btn-ghost inline-flex items-center gap-2">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Actualiser
           </button>
-          <a href="/admin/purchase-orders" className="btn-ghost inline-flex items-center gap-2">
+          <a href={adminHref('/purchase-orders')} className="btn-ghost inline-flex items-center gap-2">
             <FileText size={14} /> Bons de commande
           </a>
           <button onClick={() => setCreating(true)} className="btn-primary inline-flex items-center gap-2">

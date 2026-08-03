@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Building2, Download, FileText, Minus, Plus, Printer, RefreshCw, Search, ShoppingBag, Wallet, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { useAdminHref } from '@/lib/admin-nav-context';
 
 type Supplier = { id: string; companyName: string };
 type SupplierProduct = {
@@ -185,6 +186,7 @@ export default function PurchaseOrdersView() {
 }
 
 function CreatePoDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const adminHref = useAdminHref();
   const toast = useToast();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState('');
@@ -278,7 +280,7 @@ function CreatePoDrawer({ onClose, onCreated }: { onClose: () => void; onCreated
                 </div>
               ) : (
                 <p className="rounded-xl bg-ink-100 p-4 text-sm text-ink-600">
-                  Aucun fournisseur. <a href="/admin/suppliers" className="font-bold text-brand-600 hover:underline">Créez-en un d&apos;abord →</a>
+                  Aucun fournisseur. <a href={adminHref('/suppliers')} className="font-bold text-brand-600 hover:underline">Créez-en un d&apos;abord →</a>
                 </p>
               )
             ) : (
@@ -304,7 +306,7 @@ function CreatePoDrawer({ onClose, onCreated }: { onClose: () => void; onCreated
                 ) : !visible.length ? (
                   <div className="p-4 text-center text-sm text-ink-600">
                     <p className="mb-1">Ce fournisseur n&apos;a pas encore de produits dans son catalogue.</p>
-                    <a href="/admin/suppliers" className="font-bold text-brand-600 hover:underline">Ajouter des produits à ce fournisseur →</a>
+                    <a href={adminHref('/suppliers')} className="font-bold text-brand-600 hover:underline">Ajouter des produits à ce fournisseur →</a>
                   </div>
                 ) : (
                   visible.map((p) => {

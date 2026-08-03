@@ -9,76 +9,82 @@ import {
   ShieldCheck, Award, AlertTriangle, BarChart3, CreditCard,
   ChevronRight, Sparkles, Store
 } from 'lucide-react';
+import { adminLoginHref, normalizeAdminPath } from '@/lib/admin-nav';
+import { useAdminHref } from '@/lib/admin-nav-context';
 
+// Canonical (prefix-free) paths — adminHref() adds /admin back only when
+// not being served from the admin subdomain. See lib/admin-nav.ts.
 const SECTIONS = [
   {
     label: 'Aperçu',
     items: [
-      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-      { href: '/admin/reports', label: 'Rapports', icon: BarChart3, exact: false },
+      { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      { href: '/reports', label: 'Rapports', icon: BarChart3, exact: false },
     ],
   },
   {
     label: 'Ventes',
     items: [
-      { href: '/admin/commandes', label: 'Commandes', icon: ShoppingCart, exact: false },
-      { href: '/admin/clients', label: 'Clients', icon: Contact, exact: false },
-      { href: '/admin/coupons', label: 'Codes promo', icon: Ticket, exact: false },
+      { href: '/commandes', label: 'Commandes', icon: ShoppingCart, exact: false },
+      { href: '/clients', label: 'Clients', icon: Contact, exact: false },
+      { href: '/coupons', label: 'Codes promo', icon: Ticket, exact: false },
     ],
   },
   {
     label: 'Catalogue',
     items: [
-      { href: '/admin/produits', label: 'Produits', icon: Package, exact: false },
-      { href: '/admin/categories', label: 'Catégories', icon: Tag, exact: false },
-      { href: '/admin/stock', label: 'Stock', icon: Boxes, exact: false },
-      { href: '/admin/transfers', label: 'Transferts', icon: ArrowLeftRight, exact: false },
+      { href: '/produits', label: 'Produits', icon: Package, exact: false },
+      { href: '/categories', label: 'Catégories', icon: Tag, exact: false },
+      { href: '/stock', label: 'Stock', icon: Boxes, exact: false },
+      { href: '/transfers', label: 'Transferts', icon: ArrowLeftRight, exact: false },
     ],
   },
   {
     label: 'Équipe',
     items: [
-      { href: '/admin/employees', label: 'Employés', icon: Users, exact: false },
-      { href: '/admin/journal', label: 'Journal', icon: ScrollText, exact: false },
+      { href: '/employees', label: 'Employés', icon: Users, exact: false },
+      { href: '/journal', label: 'Journal', icon: ScrollText, exact: false },
     ],
   },
   {
     label: 'Point de vente',
     items: [
-      { href: '/admin/pos-analytics', label: 'Informations Caisse', icon: MonitorSmartphone, exact: false },
+      { href: '/pos-analytics', label: 'Informations Caisse', icon: MonitorSmartphone, exact: false },
     ],
   },
   {
     label: 'Achats',
     items: [
-      { href: '/admin/suppliers', label: 'Fournisseurs', icon: Building2, exact: false },
-      { href: '/admin/purchase-orders', label: 'Bons de commande', icon: FileText, exact: false },
+      { href: '/suppliers', label: 'Fournisseurs', icon: Building2, exact: false },
+      { href: '/purchase-orders', label: 'Bons de commande', icon: FileText, exact: false },
     ],
   },
   {
     label: 'Documents',
     items: [
-      { href: '/admin/quotes', label: 'Devis', icon: FileSignature, exact: false },
-      { href: '/admin/invoices', label: 'Factures', icon: Receipt, exact: false },
-      { href: '/admin/invoicing-settings', label: 'Facturation', icon: ShieldCheck, exact: false },
+      { href: '/quotes', label: 'Devis', icon: FileSignature, exact: false },
+      { href: '/invoices', label: 'Factures', icon: Receipt, exact: false },
+      { href: '/invoicing-settings', label: 'Facturation', icon: ShieldCheck, exact: false },
     ],
   },
   {
     label: 'Fidélité',
     items: [
-      { href: '/admin/loyalty', label: 'Fidélité', icon: Award, exact: true },
-      { href: '/admin/loyalty/cards', label: 'Cartes fidélité', icon: CreditCard, exact: false },
+      { href: '/loyalty', label: 'Fidélité', icon: Award, exact: true },
+      { href: '/loyalty/cards', label: 'Cartes fidélité', icon: CreditCard, exact: false },
     ],
   },
 ] as const;
 
 export default function Sidebar({ role }: { role?: string }) {
-  const path = usePathname();
+  const rawPath = usePathname();
+  const path = normalizeAdminPath(rawPath);
   const router = useRouter();
+  const adminHref = useAdminHref();
 
   async function logout() {
     await fetch('/api/auth', { method: 'DELETE' });
-    router.push('/admin-login');
+    router.push(adminLoginHref());
   }
 
   const isAdmin = !role || role === 'admin' || role === 'super_admin' || role === 'store_manager';
@@ -89,7 +95,7 @@ export default function Sidebar({ role }: { role?: string }) {
     : [
         {
           label: 'Ventes',
-          items: [{ href: '/admin/commandes', label: 'Commandes', icon: ShoppingCart, exact: false }],
+          items: [{ href: '/commandes', label: 'Commandes', icon: ShoppingCart, exact: false }],
         },
       ];
 
@@ -126,7 +132,7 @@ export default function Sidebar({ role }: { role?: string }) {
                 return (
                   <Link
                     key={it.href}
-                    href={it.href}
+                    href={adminHref(it.href)}
                     aria-current={active ? 'page' : undefined}
                     className={`group flex items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition-all duration-200 ${
                       active
@@ -156,9 +162,9 @@ export default function Sidebar({ role }: { role?: string }) {
       {/* User Profile & Logout */}
       <div className="mt-6 space-y-1 border-t border-slate-800/80 pt-4">
         <Link
-          href="/admin/profile"
+          href={adminHref('/profile')}
           className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold transition-colors ${
-            path.startsWith('/admin/profile')
+            path.startsWith('/profile')
               ? 'bg-blue-600 text-white shadow-md'
               : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
           }`}

@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { AT_COOKIE, COOKIE, LEGACY_COOKIE, RT_COOKIE, Role, signSession } from '@/lib/auth';
 import { verifyPassword as verifyAdminPassword } from '@/lib/admin-storage';
 import { employeeService } from '@/services';
+import { adminHrefForHost } from '@/lib/admin-nav';
 
 const PROVIDER = process.env.COMMERCE_PROVIDER ?? 'woocommerce';
 const API_BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
@@ -39,7 +40,7 @@ function setSessionCookies(res: NextResponse, tokens: BackendLoginResult) {
   res.cookies.set(LEGACY_COOKIE, '', { maxAge: 0, path: '/' });
 }
 
-async function mzaliApiLogin(username: string, password: string): Promise<NextResponse> {
+async function mzaliApiLogin(username: string, password: string, host: string | null): Promise<NextResponse> {
   const backendRes = await fetch(`${API_BASE}/api/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -50,7 +51,8 @@ async function mzaliApiLogin(username: string, password: string): Promise<NextRe
   const tokens = (await backendRes.json()) as BackendLoginResult;
 
   const role = mapBackendRole(tokens.user.role);
-  const res = NextResponse.json({ ok: true, role, redirect: role === 'admin' ? '/admin' : '/employee' });
+  const redirect = role === 'admin' ? adminHrefForHost('/', host) : '/employee';
+  const res = NextResponse.json({ ok: true, role, redirect });
   setSessionCookies(res, tokens);
   return res;
 }
@@ -70,14 +72,14 @@ export async function POST(req: Request) {
   const isAdminLogin = !usernameRaw || usernameRaw.toLowerCase() === 'admin';
 
   if (PROVIDER === 'mzali-api') {
-    return mzaliApiLogin(isAdminLogin ? 'admin' : usernameRaw, password);
+    return mzaliApiLogin(isAdminLogin ? 'admin' : usernameRaw, password, req.headers.get('host'));
   }
 
   if (isAdminLogin) {
     const ok = await verifyAdminPassword(password);
     if (!ok) return NextResponse.json({ ok: false }, { status: 401 });
     const cookieValue = signSession({ role: 'admin', userId: 'admin', name: 'Admin' });
-    const res = NextResponse.json({ ok: true, role: 'admin', redirect: '/admin' });
+    const res = NextResponse.json({ ok: true, role: 'admin', redirect: adminHrefForHost('/', req.headers.get('host')) });
     res.cookies.set(COOKIE, cookieValue, {
       httpOnly: true, sameSite: 'lax',
       secure: SECURE_COOKIES, path: '/', maxAge: 60 * 60 * 24 * 7,

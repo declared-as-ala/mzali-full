@@ -4,6 +4,7 @@ import Drawer from './Drawer';
 import NumberField from './NumberField';
 import { Save, Trash2, Plus, Check, AlertTriangle, History } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
+import { adminLoginHref } from '@/lib/admin-nav';
 import type { OrderResponse, OrderStatus } from '@/types';
 
 type ProductPickerItem = { id: string; name: string; price: number; image?: string };
@@ -238,7 +239,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       fetch(`${apiBase}/orders/${orderId}`)
         .then((r) => {
           if (r.status === 401) {
-            window.location.href = `/admin-login?from=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+            window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
             throw new Error('Session expirée');
           }
           if (!r.ok) throw new Error('Erreur de chargement');

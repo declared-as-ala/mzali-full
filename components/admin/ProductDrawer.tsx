@@ -7,6 +7,8 @@ import NumberField from './NumberField';
 import { Save, Copy, Trash2, Plus, X, GripVertical, Upload, Check, AlertCircle, Barcode, Boxes } from 'lucide-react';
 import type { Product, ProductBundle } from '@/types';
 import type { Variant } from '@/types/variant';
+import { adminLoginHref } from '@/lib/admin-nav';
+import { useAdminHref } from '@/lib/admin-nav-context';
 
 type Tab = 'description' | 'options' | 'bundles' | 'variants' | 'related' | 'reviews';
 
@@ -47,6 +49,7 @@ type Props = {
 };
 
 export default function ProductDrawer({ open, onClose, productId, onSaved }: Props) {
+  const adminHref = useAdminHref();
   const isEdit = Boolean(productId);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,7 +72,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
       Promise.all([
         fetch(`/api/admin/products/${productId}`).then((r) => {
           if (r.status === 401) {
-            window.location.href = `/admin-login?from=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+            window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
             throw new Error('Session expirée');
           }
           if (!r.ok) throw new Error('Erreur de chargement');
@@ -267,7 +270,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
               <div className="mt-4 flex items-center justify-between rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600">
                 <span className="font-semibold">Stock et inventaire</span>
                 <a
-                  href="/admin/stock"
+                  href={adminHref('/stock')}
                   className="inline-flex items-center gap-1.5 font-bold text-blue-600 hover:underline"
                 >
                   <Boxes size={14} /> Gérer les stocks →

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Users, Copy } from 'lucide-react';
 import { formatPrice } from '@/lib/site-config';
+import { useAdminHref } from '@/lib/admin-nav-context';
 
 type CustomerOrder = {
   id: string;
@@ -35,6 +36,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export default function CustomerBadge({ phone, label = 'Client régulier' }: { phone: string; label?: string }) {
+  const adminHref = useAdminHref();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<{ total: number; orders: CustomerOrder[] } | null>(null);
@@ -84,7 +86,7 @@ export default function CustomerBadge({ phone, label = 'Client régulier' }: { p
               Commandes totales: <span className="text-brand-500">{loading ? '…' : data?.total ?? 0}</span>
             </p>
             <Link
-              href={`/admin/commandes?phone=${encodeURIComponent(phone)}`}
+              href={adminHref(`/commandes?phone=${encodeURIComponent(phone)}`)}
               className="text-xs font-bold text-brand-500 hover:underline"
             >
               Voir commandes

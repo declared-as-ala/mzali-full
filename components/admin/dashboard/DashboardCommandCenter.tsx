@@ -21,6 +21,8 @@ import type {
   RevenueSeriesPoint, StatusFunnelPoint
 } from '@/types/dashboard';
 import { STATUS_CHART_COLOR, STATUS_LABEL } from '../CommandesView';
+import { adminLoginHref } from '@/lib/admin-nav';
+import { useAdminHref } from '@/lib/admin-nav-context';
 
 const RANGE_OPTIONS = [
   { days: 1, label: "Aujourd'hui" },
@@ -46,7 +48,7 @@ function useReport<T>(report: string, days?: number, initial: T | null = null) {
     fetch(`/api/admin/stats/${report}${query}`, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
         if (response.status === 401) {
-          window.location.href = `/admin-login?from=${encodeURIComponent(window.location.pathname)}`;
+          window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname)}`);
           throw new Error('Session expirée. Redirection…');
         }
         if (!response.ok) throw new Error('Impossible de charger ces données.');
@@ -109,6 +111,7 @@ const DEFAULT_STATS: DashboardStats = {
 };
 
 export default function DashboardCommandCenter({ initialDashboard }: { initialDashboard?: DashboardStats | null }) {
+  const adminHref = useAdminHref();
   const [days, setDays] = useState(30);
   const [alertVisible, setAlertVisible] = useState(true);
 
@@ -130,19 +133,19 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
     if (stats.period.abandonedCarts > 0) {
       return {
         text: `${stats.period.abandonedCarts} panier${stats.period.abandonedCarts > 1 ? 's' : ''} abandonné${stats.period.abandonedCarts > 1 ? 's' : ''} sur la période — relancez pour récupérer ces ventes.`,
-        href: '/admin/commandes?tab=abandoned',
+        href: adminHref('/commandes?tab=abandoned'),
         action: 'Voir les paniers',
       };
     }
     if (stats.lowStock.length > 0) {
       return {
         text: `${stats.lowStock.length} produit${stats.lowStock.length > 1 ? 's' : ''} sous le seuil de stock recommandé.`,
-        href: '/admin/stock?lowStock=true',
+        href: adminHref('/stock?lowStock=true'),
         action: 'Gérer le stock'
       };
     }
     return null;
-  }, [stats]);
+  }, [stats, adminHref]);
 
   return (
     <div className="min-h-full bg-[#F4F6F9] p-6 lg:p-8 space-y-8">
@@ -295,7 +298,7 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
             title="Point de Vente (Boutique)"
             eyebrow="Tickets & Caisses"
             action={
-              <Link href="/admin/pos-sessions" className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700">
+              <Link href={adminHref('/pos-sessions')} className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700">
                 Voir toutes les sessions <ArrowRight size={13} />
               </Link>
             }
@@ -325,6 +328,7 @@ function KpiStrip({
   series: RevenueSeriesPoint[];
   loading: boolean;
 }) {
+  const adminHref = useAdminHref();
   const cards = [
     {
       label: 'Revenu Total',
@@ -362,7 +366,7 @@ function KpiStrip({
       icon: Boxes,
       bg: 'bg-gradient-to-br from-rose-600 to-pink-700 text-white shadow-rose-500/10',
       detail: 'références à réapprovisionner',
-      href: '/admin/stock?lowStock=true',
+      href: adminHref('/stock?lowStock=true'),
     },
   ];
 
@@ -505,6 +509,7 @@ function StatusFunnel({ data }: { data: StatusFunnelPoint[] }) {
 
 // ─── Top Products ─────────────────────────────────────────────────────────────
 function TopProducts({ products }: { products: DashboardStats['topProducts'] }) {
+  const adminHref = useAdminHref();
   if (!products.length) return <EmptyState className="h-56" />;
   const max = Math.max(...products.map((p) => p.quantity), 1);
   return (
@@ -516,7 +521,7 @@ function TopProducts({ products }: { products: DashboardStats['topProducts'] }) 
               {idx + 1}
             </span>
             <Link
-              href={`/admin/produits?productId=${encodeURIComponent(product.productId)}`}
+              href={adminHref(`/produits?productId=${encodeURIComponent(product.productId)}`)}
               className="min-w-0 flex-1 truncate font-bold text-slate-900 hover:text-blue-600 transition"
             >
               {product.name}
@@ -539,6 +544,7 @@ function TopProducts({ products }: { products: DashboardStats['topProducts'] }) 
 const LOCATION_LABEL: Record<string, string> = { DEPOT: 'Dépôt', BOUTIQUE: 'Boutique' };
 
 function LowStock({ products }: { products: DashboardStats['lowStock'] }) {
+  const adminHref = useAdminHref();
   if (!products.length) {
     return (
       <div className="flex flex-col items-center justify-center h-56 rounded-2xl bg-emerald-50/80 border border-emerald-100 p-4 text-center">
@@ -556,7 +562,7 @@ function LowStock({ products }: { products: DashboardStats['lowStock'] }) {
         return (
           <li key={`${product.productId}-${product.locationId}`}>
             <Link
-              href={`/admin/stock?productId=${encodeURIComponent(product.productId)}`}
+              href={adminHref(`/stock?productId=${encodeURIComponent(product.productId)}`)}
               className="flex items-center gap-3 rounded-2xl bg-rose-50/80 border border-rose-100 p-2.5 hover:bg-rose-100/80 transition"
             >
               <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${product.available <= 0 ? 'bg-rose-600' : 'bg-amber-500'}`} />
@@ -599,6 +605,7 @@ function EmployeeWorkload({ employees }: { employees: DashboardStats['perEmploye
 
 // ─── Carrier Performance ──────────────────────────────────────────────────────
 function CarrierPanel({ data }: { data: CarrierPerformance[] }) {
+  const adminHref = useAdminHref();
   const failures = data.flatMap((c) => c.recentFailures.map((f) => ({ ...f, carrier: c.carrier })));
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_.9fr]">
@@ -627,7 +634,7 @@ function CarrierPanel({ data }: { data: CarrierPerformance[] }) {
           <ul className="space-y-2 text-xs">
             {failures.slice(0, 5).map((failure) => (
               <li key={`${failure.carrier}-${failure.orderId}`} className="border-b border-slate-200/60 pb-2 last:border-0">
-                <Link href={`/admin/commandes?orderId=${failure.orderId}`} className="font-bold text-blue-600 hover:underline">
+                <Link href={adminHref(`/commandes?orderId=${failure.orderId}`)} className="font-bold text-blue-600 hover:underline">
                   #{failure.orderNumber} ({CARRIER_LABEL[failure.carrier]})
                 </Link>
                 <p className="text-rose-600 truncate">{failure.error ?? 'Erreur non spécifiée'}</p>
