@@ -25,15 +25,20 @@ if [[ -f "$LAST_GOOD_FILE" ]]; then
   previous_tag="$(tr -d '[:space:]' < "$LAST_GOOD_FILE")"
 fi
 
-tmp_env="$(mktemp "$ENV_FILE.XXXXXX")"
+# $ENV_FILE (deploy/.env) is normally a symlink to the real secrets file at
+# /opt/mzali/shared/.env.production — resolve it before writing, otherwise
+# `mv` onto the symlink path deletes the symlink and drops a disconnected
+# copy in its place, silently breaking "edit the shared file" forever after.
+real_env_file="$(readlink -f "$ENV_FILE")"
+tmp_env="$(mktemp "$real_env_file.XXXXXX")"
 awk -v tag="$NEW_TAG" '
   BEGIN { replaced=0 }
   /^IMAGE_TAG=/ { print "IMAGE_TAG=" tag; replaced=1; next }
   { print }
   END { if (!replaced) print "IMAGE_TAG=" tag }
-' "$ENV_FILE" > "$tmp_env"
-chmod --reference="$ENV_FILE" "$tmp_env"
-mv -f -- "$tmp_env" "$ENV_FILE"
+' "$real_env_file" > "$tmp_env"
+chmod --reference="$real_env_file" "$tmp_env"
+mv -f -- "$tmp_env" "$real_env_file"
 export IMAGE_TAG="$NEW_TAG"
 
 compose() {
