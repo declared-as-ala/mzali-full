@@ -49,12 +49,19 @@ export function encodeVfdLines(line1, line2, options = {}) {
   if (options.protocol === 'plain') {
     return Buffer.concat([Buffer.from([0x0c]), first, Buffer.from('\r\n', 'ascii'), second]);
   }
-  // CD5220-compatible pole displays address each row with ESC Q A/B and CR.
-  // ESC @ resets the active factory/setup screen before the first update.
+  if (options.protocol === 'cd5220') {
+    // CD5220-compatible pole displays address each row with ESC Q A/B and CR.
+    return Buffer.concat([
+      Buffer.from([0x1b, 0x40, 0x0c]),
+      Buffer.from([0x1b, 0x51, 0x41]), first, Buffer.from([0x0d]),
+      Buffer.from([0x1b, 0x51, 0x42]), second, Buffer.from([0x0d]),
+    ]);
+  }
+  // Logic Controls (LCI): normal mode, clear, cursor off, then position 0/20.
+  // This matches the "LOGIC CONTROL" command mode selected in the VFD utility.
   return Buffer.concat([
-    Buffer.from([0x1b, 0x40, 0x0c]),
-    Buffer.from([0x1b, 0x51, 0x41]), first, Buffer.from([0x0d]),
-    Buffer.from([0x1b, 0x51, 0x42]), second, Buffer.from([0x0d]),
+    Buffer.from([0x11, 0x1e, 0x14, 0x10, 0x00]), first,
+    Buffer.from([0x10, 0x14]), second,
   ]);
 }
 

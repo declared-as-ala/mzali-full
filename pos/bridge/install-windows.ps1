@@ -32,7 +32,9 @@ $serialMap = Get-ItemProperty 'HKLM:\HARDWARE\DEVICEMAP\SERIALCOMM' -ErrorAction
 $hasCom1 = $serialMap -and ($serialMap.PSObject.Properties.Value -contains 'COM1')
 if ($hasCom1) {
   [Environment]::SetEnvironmentVariable('POS_VFD_COM_PORT', 'COM1', 'User')
+  [Environment]::SetEnvironmentVariable('POS_VFD_PROTOCOL', 'logic-controls', 'User')
   $env:POS_VFD_COM_PORT = 'COM1'
+  $env:POS_VFD_PROTOCOL = 'logic-controls'
 }
 
 $shell = New-Object -ComObject WScript.Shell

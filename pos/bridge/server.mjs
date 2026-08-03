@@ -101,7 +101,7 @@ async function showOnVfd(input, phase) {
   if (!vfdPort) return false;
   await writeVfdPayment(vfdPort, paymentDisplayInput(input, phase), {
     baudRate: Number(process.env.POS_VFD_BAUD_RATE || 9600),
-    protocol: process.env.POS_VFD_PROTOCOL || 'cd5220',
+    protocol: process.env.POS_VFD_PROTOCOL || 'logic-controls',
   });
   return true;
 }
@@ -111,7 +111,7 @@ void getVfdPort().then((vfdPort) => {
   if (!vfdPort) return;
   return writeVfdLines(vfdPort, 'MZALI POS', 'CAISSE PRETE', {
     baudRate: Number(process.env.POS_VFD_BAUD_RATE || 9600),
-    protocol: process.env.POS_VFD_PROTOCOL || 'cd5220',
+    protocol: process.env.POS_VFD_PROTOCOL || 'logic-controls',
   });
 }).catch((error) => console.error(`[vfd] ${error instanceof Error ? error.message : 'Erreur VFD'}`));
 
@@ -142,7 +142,7 @@ const server = createServer(async (request, response) => {
       if (!vfdPort) throw new Error('Afficheur client non dÃ©tectÃ©.');
       await writeVfdLines(vfdPort, 'MZALI POS', 'CAISSE PRETE', {
         baudRate: Number(process.env.POS_VFD_BAUD_RATE || 9600),
-        protocol: process.env.POS_VFD_PROTOCOL || 'cd5220',
+        protocol: process.env.POS_VFD_PROTOCOL || 'logic-controls',
       });
       return json(response, 200, { ok: true, displayed: true, vfdPort });
     }
