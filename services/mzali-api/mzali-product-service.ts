@@ -49,6 +49,34 @@ export class MzaliApiProductService implements ProductService {
     }
   }
 
+  async listAdmin(query: ProductListQuery = {}): Promise<ProductListResult> {
+    const bearer = await getValidAccessToken();
+    return apiRequest<ProductListResult>('/admin/products', {
+      bearer: bearer ?? undefined,
+      query: {
+        page: query.page,
+        perPage: query.perPage,
+        search: query.search,
+        status: query.status,
+        categorySlug: query.categorySlug,
+        categoryId: query.categoryId,
+        orderBy: query.orderBy,
+        order: query.order,
+        onSale: query.onSale,
+        featured: query.featured,
+      },
+    });
+  }
+
+  async getByIdAdmin(id: string): Promise<Product | null> {
+    const bearer = await getValidAccessToken();
+    try {
+      return await apiRequest<Product>(`/admin/products/${id}`, { bearer: bearer ?? undefined });
+    } catch {
+      return null;
+    }
+  }
+
   async create(input: ProductInput): Promise<Product> {
     const bearer = await getValidAccessToken();
     return apiRequest<Product>('/admin/products', { method: 'POST', bearer: bearer ?? undefined, body: input });

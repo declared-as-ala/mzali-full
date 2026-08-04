@@ -13,6 +13,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   const { id } = await params;
-  const p = await productService.getById(id);
+  const p = await productService.getByIdAdmin(id);
   return p ? NextResponse.json(p) : NextResponse.json({ error: 'not found' }, { status: 404 });
 }

@@ -25,10 +25,19 @@ export type ProductInput = {
 };
 
 export interface ProductService {
+  /** Storefront-facing reads only: published products, and (mzali-api
+   *  provider) posOnly products excluded. Never use these for admin/employee
+   *  screens — they'd see fewer products than actually exist. Use
+   *  listAdmin/getByIdAdmin instead. */
   list(query?: ProductListQuery): Promise<ProductListResult>;
   getBySlug(slug: string): Promise<Product | null>;
   getById(id: string): Promise<Product | null>;
   getRelated(productId: string, limit?: number): Promise<Product[]>;
+  /** Full, unfiltered reads for admin/employee screens — every status,
+   *  including posOnly products. Requires an authenticated session
+   *  (products.read permission; both admin and employee roles have it). */
+  listAdmin(query?: ProductListQuery): Promise<ProductListResult>;
+  getByIdAdmin(id: string): Promise<Product | null>;
   create(input: ProductInput): Promise<Product>;
   update(id: string, input: Partial<ProductInput>): Promise<Product>;
   remove(id: string): Promise<void>;

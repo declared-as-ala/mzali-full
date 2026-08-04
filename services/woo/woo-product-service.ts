@@ -80,6 +80,17 @@ export class WooCommerceProductService implements ProductService {
     }
   }
 
+  // Woo's list()/getById() already run under the admin Application Password
+  // (Basic Auth) with no public-only filtering, so admin/employee reads are
+  // already "full access" — no separate admin path needed for this provider.
+  async listAdmin(query: ProductListQuery = {}): Promise<ProductListResult> {
+    return this.list({ status: 'any', ...query });
+  }
+
+  async getByIdAdmin(id: string): Promise<Product | null> {
+    return this.getById(id);
+  }
+
   async getRelated(productId: string, limit = 4): Promise<Product[]> {
     const product = await this.getById(productId);
     if (!product) return [];
