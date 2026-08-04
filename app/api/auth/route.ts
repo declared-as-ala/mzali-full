@@ -17,8 +17,10 @@ type BackendLoginResult = {
   user: { id: string; email: string; name: string; role: string; mustChangePassword: boolean };
 };
 
+// 'employee' was merged into 'cashier' (see backend/src/contracts/auth.ts) —
+// cashier is now the role that maps to this type's 'employee' bucket.
 function mapBackendRole(role: string): Role {
-  return role === 'employee' ? 'employee' : 'admin';
+  return role === 'cashier' ? 'employee' : 'admin';
 }
 
 function setSessionCookies(res: NextResponse, tokens: BackendLoginResult) {
@@ -52,14 +54,7 @@ async function mzaliApiLogin(username: string, password: string, host: string | 
   const tokens = (await backendRes.json()) as BackendLoginResult;
 
   const role = mapBackendRole(tokens.user.role);
-  // mapBackendRole() collapses every backend role except 'employee' down to
-  // 'admin' for the legacy session cookie's coarse admin/employee split —
-  // that's fine for permission gating (the backend's own RequirePermissions
-  // guards are the real authorization source of truth), but it means a
-  // 'cashier' login would otherwise land on the full admin dashboard ('/')
-  // instead of the orders screen they actually work from. Check the real
-  // backend role here, not the collapsed one.
-  const landingPath = tokens.user.role === 'employee' || tokens.user.role === 'cashier' ? '/commandes' : '/';
+  const landingPath = tokens.user.role === 'cashier' ? '/commandes' : '/';
   const redirect = adminHrefForHost(landingPath, host);
   const res = NextResponse.json({ ok: true, role, redirect });
   setSessionCookies(res, tokens);

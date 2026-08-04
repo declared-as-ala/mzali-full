@@ -119,7 +119,7 @@ export default function EmployeesView() {
           <tbody>
             {loading && <tr><td colSpan={6} className="p-6 text-center text-ink-700">Chargement…</td></tr>}
             {!loading && filtered.map((e) => {
-              const r = e.role ?? 'employee';
+              const r = e.role ?? 'cashier';
               const isAdmin = r === 'admin' || r === 'super_admin';
               return (
                 <tr key={e.id} className={`border-t border-ink-200 hover:bg-ink-100 ${pending ? 'opacity-60' : ''}`}>
@@ -184,7 +184,7 @@ function EmployeeFormModal({
   const toast = useToast();
   const [name, setName] = useState(initial?.name ?? '');
   const [email, setEmail] = useState(initial?.email ?? '');
-  const [role, setRole] = useState(initial?.role ?? 'employee');
+  const [role, setRole] = useState(initial?.role ?? 'cashier');
   const [password, setPassword] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [active, setActive] = useState(initial?.active ?? true);
@@ -207,7 +207,7 @@ function EmployeeFormModal({
       if (!data?.id || data.role !== role) {
         throw new Error("Le serveur n'a pas confirmé le nouveau rôle. Veuillez réessayer.");
       }
-      const roleChanged = Boolean(initial && (initial.role ?? 'employee') !== data.role);
+      const roleChanged = Boolean(initial && (initial.role ?? 'cashier') !== data.role);
       toast.success(roleChanged
         ? "Employé mis à jour. Le nouvel accès sera actif à sa prochaine connexion."
         : initial ? 'Employé mis à jour' : 'Employé créé');
@@ -234,7 +234,7 @@ function EmployeeFormModal({
               value={role}
               onChange={(e) => setRole(e.target.value)}
             >
-              <option value="employee">💳 Employé — Gestion Commandes Admin & Accès Caisse POS</option>
+              <option value="cashier">💳 Employé — Gestion Commandes Admin & Accès Caisse POS</option>
               <option value="admin">👑 Administrateur — Accès total Admin & POS</option>
             </select>
           </label>

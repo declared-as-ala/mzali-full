@@ -8,14 +8,15 @@ describe('permissions', () => {
     }
   });
 
-  it('scopes employee role to own-order operations', () => {
-    expect(roleHasPermission('employee', 'orders.read')).toBe(true);
-    expect(roleHasPermission('employee', 'orders.write')).toBe(true);
-    expect(roleHasPermission('employee', 'shipping.push')).toBe(true);
-    expect(roleHasPermission('employee', 'orders.delete')).toBe(false);
-    expect(roleHasPermission('employee', 'employees.manage')).toBe(false);
-    expect(roleHasPermission('employee', 'settings.manage')).toBe(false);
-    expect(roleHasPermission('employee', 'coupons.write')).toBe(false);
+  it('scopes cashier role to orders + POS operations (merged former employee role)', () => {
+    expect(roleHasPermission('cashier', 'orders.read')).toBe(true);
+    expect(roleHasPermission('cashier', 'orders.write')).toBe(true);
+    expect(roleHasPermission('cashier', 'shipping.push')).toBe(true);
+    expect(roleHasPermission('cashier', 'pos.sell')).toBe(true);
+    expect(roleHasPermission('cashier', 'orders.delete')).toBe(false);
+    expect(roleHasPermission('cashier', 'employees.manage')).toBe(false);
+    expect(roleHasPermission('cashier', 'settings.manage')).toBe(false);
+    expect(roleHasPermission('cashier', 'coupons.write')).toBe(false);
   });
 
   it('keeps viewer read-only', () => {
@@ -28,7 +29,7 @@ describe('permissions', () => {
   it('identifies admin roles', () => {
     expect(isAdminRole('super_admin')).toBe(true);
     expect(isAdminRole('admin')).toBe(true);
-    expect(isAdminRole('employee')).toBe(false);
+    expect(isAdminRole('cashier')).toBe(false);
     expect(isAdminRole('viewer')).toBe(false);
   });
 });

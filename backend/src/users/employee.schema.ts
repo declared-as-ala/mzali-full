@@ -8,7 +8,6 @@ export const EMPLOYEE_ROLES: EmployeeRole[] = [
   'order_manager',
   'catalog_manager',
   'viewer',
-  'employee',
   'cashier',
   'store_manager',
 ];
@@ -36,7 +35,7 @@ export class Employee {
   @Prop({ type: String, required: true, trim: true })
   name!: string;
 
-  @Prop({ type: String, enum: EMPLOYEE_ROLES, required: true, default: 'employee' })
+  @Prop({ type: String, enum: EMPLOYEE_ROLES, required: true, default: 'cashier' })
   role!: EmployeeRole;
 
   @Prop({ type: PasswordHashSchema, required: true })

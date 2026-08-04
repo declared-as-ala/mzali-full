@@ -1,13 +1,16 @@
 // Backend-only contract (not mirrored from frontend types/).
 // The Next BFF consumes these shapes when proxying /api/auth.
 
+// 'employee' was merged into 'cashier' — the two roles had near-identical
+// permissions (cashier now holds the union, see permissions.ts) and the
+// admin UI only ever exposed a two-way admin/employee choice anyway (see
+// EmployeesView.tsx, which still labels the 'cashier' role "Employé").
 export type EmployeeRole =
   | 'super_admin'
   | 'admin'
   | 'order_manager'
   | 'catalog_manager'
   | 'viewer'
-  | 'employee'
   | 'cashier'
   | 'store_manager';
 

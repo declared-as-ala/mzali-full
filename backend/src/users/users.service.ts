@@ -24,7 +24,7 @@ export class UsersService {
   /** Lightweight labels for pickers — matches the legacy employees-directory route. */
   async directory(): Promise<{ id: string; name: string; active: boolean }[]> {
     const docs = await this.model
-      .find({ role: 'employee' })
+      .find({ role: 'cashier' })
       .select({ name: 1, active: 1 })
       .sort({ name: 1 });
     return docs.map((d) => ({ id: d.id, name: d.name, active: d.active }));
@@ -42,7 +42,7 @@ export class UsersService {
     const doc = await this.model.create({
       email,
       name: input.name.trim(),
-      role: input.role ?? 'employee',
+      role: input.role ?? 'cashier',
       active: input.active ?? true,
       passwordHash: await hashPassword(input.password),
     });

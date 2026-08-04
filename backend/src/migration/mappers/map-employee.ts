@@ -15,7 +15,7 @@ export type MappedEmployee = {
   legacyId: string;
   email: string;
   name: string;
-  role: 'employee' | 'super_admin';
+  role: 'cashier' | 'super_admin';
   active: boolean;
   passwordHash: { algo: 'scrypt-legacy'; hash: string; salt: string };
   mustChangePassword: boolean;
@@ -28,7 +28,7 @@ export function mapLegacyEmployee(row: LegacyEmployeeRow): MappedEmployee {
     legacyId: row.id,
     email: row.email.trim().toLowerCase(),
     name: row.name,
-    role: 'employee',
+    role: 'cashier',
     active: row.active,
     passwordHash: { algo: 'scrypt-legacy', hash: row.passwordHash, salt: row.salt },
     mustChangePassword: false,

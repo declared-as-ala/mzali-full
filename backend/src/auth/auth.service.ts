@@ -41,7 +41,7 @@ export class AuthService implements OnModuleInit {
         await this.employees.create({
           email: 'employe@mzali.com',
           name: 'Employé Test',
-          role: 'employee',
+          role: 'cashier',
           active: true,
           passwordHash: hash,
           failedLoginAttempts: 0,

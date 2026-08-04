@@ -11,7 +11,7 @@ describe('mapLegacyEmployee', () => {
       legacyId: 'uuid-1',
       email: 'test@example.com',
       name: 'Test User',
-      role: 'employee',
+      role: 'cashier',
       active: true,
       passwordHash: { algo: 'scrypt-legacy', hash: 'abcd', salt: 'ef01' },
       mustChangePassword: false,

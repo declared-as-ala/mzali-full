@@ -259,12 +259,12 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     await request(server)
       .post('/api/v1/admin/employees')
       .set('Authorization', adminAuth)
-      .send({ name: 'Commerce Employee A', email: EMPLOYEE_A_EMAIL, password: EMPLOYEE_PASSWORD, role: 'employee' })
+      .send({ name: 'Commerce Employee A', email: EMPLOYEE_A_EMAIL, password: EMPLOYEE_PASSWORD, role: 'cashier' })
       .expect(201);
     await request(server)
       .post('/api/v1/admin/employees')
       .set('Authorization', adminAuth)
-      .send({ name: 'Commerce Employee B', email: EMPLOYEE_B_EMAIL, password: EMPLOYEE_PASSWORD, role: 'employee' })
+      .send({ name: 'Commerce Employee B', email: EMPLOYEE_B_EMAIL, password: EMPLOYEE_PASSWORD, role: 'cashier' })
       .expect(201);
 
     const productId = await createProduct('Commerce Test Ownership', 15);

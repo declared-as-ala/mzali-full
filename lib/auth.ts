@@ -54,9 +54,12 @@ export function signSession(s: Session): string {
   return sign(JSON.stringify(s));
 }
 
-/** Maps a backend EmployeeRole to the legacy two-tier Role for console access. */
+/** Maps a backend EmployeeRole to the legacy two-tier Role for console
+ *  access. 'employee' was merged into 'cashier' (see backend/src/contracts/
+ *  auth.ts) — cashier is now the role that maps to this type's 'employee'
+ *  bucket. */
 function mapBackendRole(role: string): Role {
-  return role === 'employee' ? 'employee' : 'admin';
+  return role === 'cashier' ? 'employee' : 'admin';
 }
 
 export async function getSession(): Promise<Session | null> {

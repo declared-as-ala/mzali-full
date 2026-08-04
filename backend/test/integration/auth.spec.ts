@@ -154,7 +154,7 @@ describe('Auth and employee administration (integration)', () => {
         name: 'Integration Employee',
         email: EMPLOYEE_EMAIL,
         password: EMPLOYEE_PASSWORD,
-        role: 'employee',
+        role: 'cashier',
       })
       .expect(201);
     const employeeId = created.body.id as string;

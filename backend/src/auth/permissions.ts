@@ -104,18 +104,13 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
     'customers.read', 'inventory.read', 'stats.read',
     'pos.analytics.read',
   ],
-  employee: [
-    'orders.read', 'orders.write', 'products.read', 'shipping.push',
-    'pos.open_session', 'pos.close_session', 'pos.sell',
-    'pos.view_boutique_stock', 'pos.view_depot_stock',
-    'pos.apply_basic_discount', 'pos.reprint_ticket',
-    'pos.open_cash_drawer',
-    'categories.read', 'customers.read', 'loyalty.view',
-    'pos.edit_sale', 'pos.view_reports', 'pos.cancel_sale', 'pos.refund',
-  ],
-  /** Boutique till operator — see docs/pos-platform/security-model.md. */
+  /** Boutique till operator, and the only non-admin role exposed in the
+   *  admin UI (labeled "Employé" there — see EmployeesView.tsx). Formerly
+   *  split across a near-identical 'employee' role (orders admin access)
+   *  and this 'cashier' role (POS access); merged into one since every
+   *  account needs both. */
   cashier: [
-    'orders.read', 'orders.write',
+    'orders.read', 'orders.write', 'shipping.push',
     'pos.open_session', 'pos.close_session', 'pos.sell',
     'pos.view_boutique_stock', 'pos.view_depot_stock',
     'pos.apply_basic_discount', 'pos.reprint_ticket',
