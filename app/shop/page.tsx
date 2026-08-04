@@ -21,8 +21,11 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   const t = getDictionary(lang);
   const sp = await searchParams;
   const page = Math.max(1, Number(param(sp, 'page') ?? 1));
-  const sort = (param(sp, 'sort') ?? 'date') as ProductListQuery['orderBy'];
-  const order = (param(sp, 'order') ?? 'desc') as ProductListQuery['order'];
+  // Default to the admin's drag-and-drop product order (matches WooCommerce's
+  // "Default sorting" = menu_order) so reordering in /admin/produits is
+  // immediately visible here without the shopper picking a sort option.
+  const sort = (param(sp, 'sort') ?? 'menu_order') as ProductListQuery['orderBy'];
+  const order = (param(sp, 'order') ?? (sort === 'menu_order' ? 'asc' : 'desc')) as ProductListQuery['order'];
   const search = param(sp, 'q');
 
   const [result, categories] = await Promise.all([
@@ -31,6 +34,7 @@ export default async function ShopPage({ searchParams }: { searchParams: Promise
   ]);
 
   const sortOptions: { value: NonNullable<ProductListQuery['orderBy']>; label: string }[] = [
+    { value: 'menu_order', label: t.shop.sort.menuOrder },
     { value: 'date', label: t.shop.sort.date },
     { value: 'price', label: t.shop.sort.price },
     { value: 'popularity', label: t.shop.sort.popularity },

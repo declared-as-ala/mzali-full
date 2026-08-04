@@ -18,7 +18,9 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
   ]);
   if (!cat) notFound();
 
-  const result = await productService.list({ categoryId: cat.id, perPage: 48 }).catch(() => ({
+  // menu_order/asc matches the admin's drag-and-drop product order (see
+  // app/shop/page.tsx for the same default and why).
+  const result = await productService.list({ categoryId: cat.id, perPage: 48, orderBy: 'menu_order', order: 'asc' }).catch(() => ({
     items: [], total: 0, totalPages: 0, page: 1,
   }));
 

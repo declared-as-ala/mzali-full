@@ -70,6 +70,7 @@ export const dictionaries = {
       placeholder: 'Rechercher...',
       ok: 'OK',
       sort: {
+        menuOrder: 'Tri par défaut',
         date: 'Plus récents',
         price: 'Prix',
         popularity: 'Popularité',
@@ -191,6 +192,7 @@ export const dictionaries = {
       placeholder: 'ابحث...',
       ok: 'موافق',
       sort: {
+        menuOrder: 'الترتيب الافتراضي',
         date: 'الأحدث',
         price: 'السعر',
         popularity: 'الأكثر رواجا',

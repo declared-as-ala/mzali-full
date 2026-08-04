@@ -15,18 +15,20 @@ export default async function Home() {
   const saved = await getSiteSettings();
   const primaryPhone = saved.phones?.[0] ?? SITE.contact.phone;
   const whatsapp = saved.whatsapp ?? SITE.contact.whatsapp;
+  // menu_order/asc matches the admin's drag-and-drop product order (see
+  // app/shop/page.tsx for the same default and why).
   const [firstProductsResult, categories] = await Promise.all([
-    productService.list({ perPage: 100, orderBy: 'date' }).catch(() => ({ items: [] as Product[], total: 0, totalPages: 0, page: 1 })),
+    productService.list({ perPage: 100, orderBy: 'menu_order', order: 'asc' }).catch(() => ({ items: [] as Product[], total: 0, totalPages: 0, page: 1 })),
     categoryService.list({ hideEmpty: true }).catch(() => []),
   ]);
-  
+
   let products: Product[] = firstProductsResult.items;
 
   if (firstProductsResult.totalPages > 1) {
     const promises: Promise<Product[]>[] = [];
     for (let p = 2; p <= firstProductsResult.totalPages; p++) {
       promises.push(
-        productService.list({ perPage: 100, orderBy: 'date', page: p })
+        productService.list({ perPage: 100, orderBy: 'menu_order', order: 'asc', page: p })
           .then((res) => res.items)
           .catch(() => [] as Product[])
       );
