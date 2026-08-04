@@ -12,13 +12,16 @@ import type { PosCatalogItem } from '@/types/pos';
  * always computed server-side via /api/sales/quote — see Till.tsx's
  * fetchQuote() and product-pricing.ts on the backend. Never priced here.
  */
-export default function ProductOfferModal({ item, onClose, onAdd }: {
+export default function ProductOfferModal({ item, initialQty, onClose, onAdd }: {
   item: PosCatalogItem;
+  /** Present when opened to edit an existing cart line — starts the
+   *  stepper at the line's current qty instead of the first offer's. */
+  initialQty?: number;
   onClose: () => void;
   onAdd: (qty: number) => void;
 }) {
   const offers = item.bundles.filter((b) => b.quantity >= 2);
-  const [qty, setQty] = useState(offers[0]?.quantity ?? 1);
+  const [qty, setQty] = useState(initialQty ?? offers[0]?.quantity ?? 1);
   const maxQty = Math.max(1, item.boutiqueAvailable);
 
   function selectOffer(offerQty: number) {
@@ -130,7 +133,7 @@ export default function ProductOfferModal({ item, onClose, onAdd }: {
             onClick={() => onAdd(qty)}
             className="flex h-13 w-full items-center justify-center rounded-2xl bg-blue-600 text-sm font-black uppercase tracking-wider text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 active:scale-[0.99]"
           >
-            Ajouter au panier
+            {initialQty != null ? 'Mettre à jour le panier' : 'Ajouter au panier'}
           </button>
         </div>
       </div>

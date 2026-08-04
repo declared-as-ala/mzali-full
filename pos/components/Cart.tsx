@@ -6,7 +6,7 @@ import CustomerPanel from './CustomerPanel';
 import SuggestionsRail from './SuggestionsRail';
 
 export default function Cart({
-  lines, quote, quoting, onQtyChange, onRemove, onPay, catalog, onAddSuggestion, customerPanelProps,
+  lines, quote, quoting, onQtyChange, onRemove, onEditLine, onPay, catalog, onAddSuggestion, customerPanelProps,
 }: {
   lines: CartLine[];
   /** Authoritative offer-adjusted pricing for the current cart — see
@@ -17,6 +17,10 @@ export default function Cart({
   quoting: boolean;
   onQtyChange: (variantId: string, qty: number) => void;
   onRemove: (variantId: string) => void;
+  /** Opens the offer/quantity picker for this line — the only place the
+   *  popup appears once added, since a plain click on a product just adds
+   *  or bumps qty directly (supermarket-style scanning, no popup). */
+  onEditLine: (variantId: string) => void;
   onPay: () => void;
   catalog: PosCatalogResponse | null;
   onAddSuggestion: (item: PosCatalogItem) => void;
@@ -99,14 +103,21 @@ export default function Cart({
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-bold text-slate-900">{l.name}</p>
-                    {offerNames.length > 0 ? (
-                      <p className="flex items-center gap-1 text-[11px] font-black text-blue-600">
-                        <Tag size={10} /> {offerNames.join(', ')}
-                      </p>
-                    ) : (
-                      <p className="text-[11px] font-semibold text-slate-500">{formatMinor(l.unitPriceMinor)} / unité</p>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onEditLine(l.variantId)}
+                      className="block w-full text-left"
+                      aria-label={`Modifier ${l.name}`}
+                    >
+                      <p className="truncate text-xs font-bold text-slate-900">{l.name}</p>
+                      {offerNames.length > 0 ? (
+                        <p className="flex items-center gap-1 text-[11px] font-black text-blue-600">
+                          <Tag size={10} /> {offerNames.join(', ')}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] font-semibold text-slate-500">{formatMinor(l.unitPriceMinor)} / unité</p>
+                      )}
+                    </button>
                     <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"

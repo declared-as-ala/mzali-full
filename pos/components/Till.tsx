@@ -205,15 +205,22 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     });
   }
 
-  // Products with a configured quantity offer (>=2) open a picker first —
-  // everything else adds straight to the cart as before. Selecting an
-  // offer, or just bumping the qty stepper, only decides how many units
-  // land in the cart; the actual best-price combination is always computed
-  // server-side (see fetchQuote()/product-pricing.ts), never here.
-  const [offerModalItem, setOfferModalItem] = useState<PosCatalogItem | null>(null);
+  // Supermarket-style scanning: every click just adds one unit (or bumps
+  // the existing line's qty by one) straight into the cart — no popup, no
+  // manual step. The best available quantity offer is always detected and
+  // applied automatically as qty crosses a threshold (see fetchQuote()/
+  // product-pricing.ts on the backend) — the cashier never has to ask for
+  // it. The offer picker only ever opens when the cashier explicitly asks
+  // to adjust an existing cart line (see openLineEditor below), never on
+  // the first add.
   function handleProductSelect(item: PosCatalogItem) {
-    if (item.bundles.some((b) => b.quantity >= 2)) { setOfferModalItem(item); return; }
     addToCart(item);
+  }
+
+  const [offerModalItem, setOfferModalItem] = useState<PosCatalogItem | null>(null);
+  function openLineEditor(variantId: string) {
+    const item = catalog?.items.find((i) => i.variantId === variantId);
+    if (item) setOfferModalItem(item);
   }
 
   // Fire-and-forget — a missed log entry is not worth blocking or
@@ -676,6 +683,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           quoting={quoting}
           onQtyChange={changeQty}
           onRemove={removeLine}
+          onEditLine={openLineEditor}
           onPay={() => setPaymentOpen(true)}
           catalog={catalog}
           onAddSuggestion={handleProductSelect}
@@ -712,8 +720,9 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       {offerModalItem && (
         <ProductOfferModal
           item={offerModalItem}
+          initialQty={cart.find((l) => l.variantId === offerModalItem.variantId)?.qty}
           onClose={() => setOfferModalItem(null)}
-          onAdd={(qty) => { addToCart(offerModalItem, qty); setOfferModalItem(null); }}
+          onAdd={(qty) => { changeQty(offerModalItem.variantId, qty); setOfferModalItem(null); }}
         />
       )}
 
