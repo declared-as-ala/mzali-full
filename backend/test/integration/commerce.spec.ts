@@ -251,10 +251,12 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     expect(movements.map((m) => m.type).reverse()).toEqual(['manual_adjust', 'order_commit', 'manual_adjust']);
   });
 
-  test('an employee can only read/update their own assigned orders', async () => {
+  // Order-to-employee assignment was intentionally removed — every employee
+  // can see and act on every order (no per-employee ownership scoping).
+  test('every employee can read/update any order — no per-employee assignment scoping', async () => {
     if (!infraAvailable) return;
     await employees.deleteMany({ email: { $in: [EMPLOYEE_A_EMAIL, EMPLOYEE_B_EMAIL] } });
-    const empA = await request(server)
+    await request(server)
       .post('/api/v1/admin/employees')
       .set('Authorization', adminAuth)
       .send({ name: 'Commerce Employee A', email: EMPLOYEE_A_EMAIL, password: EMPLOYEE_PASSWORD, role: 'employee' })
@@ -279,27 +281,16 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
       .expect(201);
     const orderId = created.body.id as string;
 
-    await request(server)
-      .post(`/api/v1/admin/orders/${orderId}/assign`)
-      .set('Authorization', adminAuth)
-      .send({ employeeId: empA.body.id })
-      .expect(201);
-
     const loginA = await request(server).post('/api/v1/auth/login').send({ username: EMPLOYEE_A_EMAIL, password: EMPLOYEE_PASSWORD }).expect(200);
     const loginB = await request(server).post('/api/v1/auth/login').send({ username: EMPLOYEE_B_EMAIL, password: EMPLOYEE_PASSWORD }).expect(200);
     const authA = `Bearer ${String(loginA.body.accessToken)}`;
     const authB = `Bearer ${String(loginB.body.accessToken)}`;
 
     await request(server).get(`/api/v1/employee/orders/${orderId}`).set('Authorization', authA).expect(200);
-    await request(server).get(`/api/v1/employee/orders/${orderId}`).set('Authorization', authB).expect(403);
+    await request(server).get(`/api/v1/employee/orders/${orderId}`).set('Authorization', authB).expect(200);
     await request(server)
       .put(`/api/v1/employee/orders/${orderId}/status`)
       .set('Authorization', authB)
-      .send({ status: 'confirme' })
-      .expect(403);
-    await request(server)
-      .put(`/api/v1/employee/orders/${orderId}/status`)
-      .set('Authorization', authA)
       .send({ status: 'confirme' })
       .expect(200);
     await request(server)
