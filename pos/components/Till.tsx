@@ -685,8 +685,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           onRemove={removeLine}
           onEditLine={openLineEditor}
           onPay={() => setPaymentOpen(true)}
-          catalog={catalog}
-          onAddSuggestion={handleProductSelect}
           customerPanelProps={{
             phone: customerPhone,
             onPhoneChange: setCustomerPhone,

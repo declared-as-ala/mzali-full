@@ -165,21 +165,6 @@ export type PosCustomerSummary = {
   favoriteProducts: { productId: string; name: string; qtyPurchased: number }[];
 };
 
-export type PosSuggestion = {
-  productId: string;
-  variantId: string;
-  name: string;
-  imageUrl: string | null;
-  priceMinor: number;
-  reason: 'frequently_bought_together' | 'best_seller' | 'similar';
-};
-
-export type PosSuggestionsResponse = {
-  frequentlyBoughtTogether: PosSuggestion[];
-  bestSellers: PosSuggestion[];
-  similar: PosSuggestion[];
-};
-
 export type LoyaltyAccount = {
   id: string;
   customerId: string;

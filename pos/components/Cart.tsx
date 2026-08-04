@@ -1,12 +1,11 @@
 'use client';
 import { Minus, Plus, ShoppingBag, Trash2, Banknote, Tag } from 'lucide-react';
 import { formatMinor } from '@/lib/money';
-import type { CartLine, LoyaltyAccount, PosCatalogItem, PosCatalogResponse, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
+import type { CartLine, LoyaltyAccount, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 import CustomerPanel from './CustomerPanel';
-import SuggestionsRail from './SuggestionsRail';
 
 export default function Cart({
-  lines, quote, quoting, onQtyChange, onRemove, onEditLine, onPay, catalog, onAddSuggestion, customerPanelProps,
+  lines, quote, quoting, onQtyChange, onRemove, onEditLine, onPay, customerPanelProps,
 }: {
   lines: CartLine[];
   /** Authoritative offer-adjusted pricing for the current cart — see
@@ -22,8 +21,6 @@ export default function Cart({
    *  or bumps qty directly (supermarket-style scanning, no popup). */
   onEditLine: (variantId: string) => void;
   onPay: () => void;
-  catalog: PosCatalogResponse | null;
-  onAddSuggestion: (item: PosCatalogItem) => void;
   customerPanelProps: {
     phone: string;
     onPhoneChange: (v: string) => void;
@@ -160,15 +157,6 @@ export default function Cart({
           </ul>
         )}
       </div>
-
-      {lines.length > 0 && (
-        <SuggestionsRail
-          forVariantId={lines[lines.length - 1].variantId}
-          catalog={catalog}
-          cartVariantIds={new Set(lines.map((l) => l.variantId))}
-          onAdd={onAddSuggestion}
-        />
-      )}
 
       <div className="border-t border-slate-200 bg-slate-50/80 p-4">
         {quoting && (
