@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { FilterQuery, Model } from 'mongoose';
 import type { Product as ProductContract, ProductListQuery, ProductListResult } from '@contracts';
 import { clampPagination, paginate } from '@/common/pagination';
 import { slugify } from '@/common/slug';
@@ -35,9 +35,9 @@ export class ProductsService {
       .filter((img): img is { mediaId: string; url: string; alt: string; position: number } => Boolean(img.url));
   }
 
-  async list(query: ProductListQuery, forcePublished: boolean): Promise<ProductListResult> {
+  async list(query: ProductListQuery, forcePublished: boolean, excludePosOnly = false): Promise<ProductListResult> {
     const { page, perPage, skip } = clampPagination(query.page, query.perPage, 100);
-    const filter = buildProductFilter(query, forcePublished);
+    const filter = buildProductFilter(query, forcePublished, excludePosOnly);
     const sort = buildProductSort(query);
     const [docs, total] = await Promise.all([
       this.model.find(filter).sort(sort).skip(skip).limit(perPage),
@@ -47,26 +47,30 @@ export class ProductsService {
     return result;
   }
 
-  async getBySlug(slug: string, forcePublished: boolean): Promise<ProductContract | null> {
-    const filter = forcePublished ? { slug, status: 'published', deletedAt: null } : { slug, deletedAt: null };
+  async getBySlug(slug: string, forcePublished: boolean, excludePosOnly = false): Promise<ProductContract | null> {
+    const filter: FilterQuery<Product> = forcePublished ? { slug, status: 'published', deletedAt: null } : { slug, deletedAt: null };
+    if (excludePosOnly) filter.posOnly = { $ne: true };
     const doc = await this.model.findOne(filter);
     return doc ? this.withLiveAvailability(toProductContract(doc), doc) : null;
   }
 
-  async getById(id: string): Promise<ProductContract | null> {
-    const doc = await this.model.findOne({ _id: id, deletedAt: null }).catch(() => null);
+  async getById(id: string, excludePosOnly = false): Promise<ProductContract | null> {
+    const filter: FilterQuery<Product> = { _id: id, deletedAt: null };
+    if (excludePosOnly) filter.posOnly = { $ne: true };
+    const doc = await this.model.findOne(filter).catch(() => null);
     return doc ? this.withLiveAvailability(toProductContract(doc), doc) : null;
   }
 
-  async getRelated(productId: string, limit = 4): Promise<ProductContract[]> {
+  async getRelated(productId: string, limit = 4, excludePosOnly = false): Promise<ProductContract[]> {
     const source = await this.model.findById(productId).catch(() => null);
     if (!source) return [];
+    const posOnlyFilter: FilterQuery<Product> = excludePosOnly ? { posOnly: { $ne: true } } : {};
     const ids = source.upsellIds.length > 0 || source.crossSellIds.length > 0
       ? [...source.upsellIds, ...source.crossSellIds]
       : [];
     let docs: ProductDocument[];
     if (ids.length > 0) {
-      docs = await this.model.find({ _id: { $in: ids }, status: 'published', deletedAt: null }).limit(limit);
+      docs = await this.model.find({ _id: { $in: ids }, status: 'published', deletedAt: null, ...posOnlyFilter }).limit(limit);
     } else {
       docs = await this.model
         .find({
@@ -74,6 +78,7 @@ export class ProductsService {
           categoryIds: { $in: source.categoryIds },
           status: 'published',
           deletedAt: null,
+          ...posOnlyFilter,
         })
         .limit(limit);
     }
@@ -120,6 +125,7 @@ export class ProductsService {
       deliveryPriceMinor: toMinor(input.deliveryPrice ?? 0),
       deliveryCostMinor: toMinor(input.deliveryCost ?? 0),
       supplierId: input.supplierId ?? null,
+      posOnly: input.posOnly ?? false,
     });
     return toProductContract(doc);
   }
@@ -175,6 +181,7 @@ export class ProductsService {
     if (input.deliveryPrice !== undefined) doc.deliveryPriceMinor = toMinor(input.deliveryPrice);
     if (input.deliveryCost !== undefined) doc.deliveryCostMinor = toMinor(input.deliveryCost);
     if (input.supplierId !== undefined) doc.supplierId = input.supplierId;
+    if (input.posOnly !== undefined) doc.posOnly = input.posOnly;
     await doc.save();
     return toProductContract(doc);
   }

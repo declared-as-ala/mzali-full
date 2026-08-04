@@ -51,6 +51,7 @@ export class CreateProductDto {
   @IsOptional() @IsNumber() deliveryPrice?: number;
   @IsOptional() @IsNumber() deliveryCost?: number;
   @IsOptional() @IsString() supplierId?: string | null;
+  @IsOptional() @IsBoolean() posOnly?: boolean;
 }
 
 /** Every field optional — this is a PATCH-style partial update. */
@@ -74,6 +75,7 @@ export class UpdateProductDto {
   @IsOptional() @IsNumber() deliveryPrice?: number;
   @IsOptional() @IsNumber() deliveryCost?: number;
   @IsOptional() @IsString() supplierId?: string | null;
+  @IsOptional() @IsBoolean() posOnly?: boolean;
 }
 
 class ReorderItemDto {

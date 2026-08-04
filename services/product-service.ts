@@ -19,6 +19,9 @@ export type ProductInput = {
   cost?: number;
   deliveryPrice?: number;
   deliveryCost?: number;
+  /** Sold only at the till — hidden from the storefront, still sellable in
+   *  POS. mzali-api provider only; ignored by the WooCommerce provider. */
+  posOnly?: boolean;
 };
 
 export interface ProductService {

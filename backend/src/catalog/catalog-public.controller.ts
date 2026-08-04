@@ -20,24 +20,24 @@ export class CatalogPublicController {
 
   @Get('products')
   listProducts(@Query() query: ProductListQueryDto) {
-    return this.products.list(query, true);
+    return this.products.list(query, true, true);
   }
 
   @Get('products/slug/:slug')
   async productBySlug(@Param('slug') slug: string) {
-    const product = await this.products.getBySlug(slug, true);
+    const product = await this.products.getBySlug(slug, true, true);
     if (!product) throw new NotFoundException('Produit introuvable');
     return product;
   }
 
   @Get('products/:id/related')
   relatedProducts(@Param('id') id: string, @Query('limit') limit?: string) {
-    return this.products.getRelated(id, limit ? Number(limit) : undefined);
+    return this.products.getRelated(id, limit ? Number(limit) : undefined, true);
   }
 
   @Get('products/:id')
   async productById(@Param('id') id: string) {
-    const product = await this.products.getById(id);
+    const product = await this.products.getById(id, true);
     if (!product) throw new NotFoundException('Produit introuvable');
     return product;
   }

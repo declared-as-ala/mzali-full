@@ -500,6 +500,7 @@ export class OrdersService {
     return dto.items.map((item) => {
       const product = byId.get(item.productId);
       if (!product) throw new BadRequestException(`Produit introuvable: ${item.productId}`);
+      if (product.posOnly) throw new BadRequestException(`Produit non disponible à la vente en ligne: ${product.name}`);
 
       let unitPriceMinor: number;
       const bundle = item.bundleId ? product.bundles.find((b) => b.id === item.bundleId) : undefined;

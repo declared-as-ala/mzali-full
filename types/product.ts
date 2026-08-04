@@ -51,6 +51,9 @@ export type Product = {
   crossSellIds: string[];
   supplierId: string | null;
   meta: Record<string, unknown>; // free-form extras (kept for WC carryover; future backend can drop it)
+  /** Sold only at the till — never shown on the storefront and rejected if
+   *  ordered through online checkout, but still sellable in the POS. */
+  posOnly: boolean;
 };
 
 export type ProductListQuery = {

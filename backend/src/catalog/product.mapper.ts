@@ -59,6 +59,7 @@ export function toProductContract(doc: ProductSchema & { id?: string; _id?: unkn
     upsellIds: doc.upsellIds ?? [],
     crossSellIds: doc.crossSellIds ?? [],
     supplierId: doc.supplierId ?? null,
+    posOnly: doc.posOnly ?? false,
     meta: {
       cost: toDinars(doc.costMinor ?? 0),
       deliveryPrice: toDinars(doc.deliveryPriceMinor ?? 0),

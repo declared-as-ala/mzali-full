@@ -13,13 +13,14 @@ const ORDERBY_FIELD: Record<string, keyof Product | '_score'> = {
   menu_order: 'menuOrder',
 };
 
-export function buildProductFilter(query: ProductListQuery, forcePublished: boolean): FilterQuery<Product> {
+export function buildProductFilter(query: ProductListQuery, forcePublished: boolean, excludePosOnly = false): FilterQuery<Product> {
   const filter: FilterQuery<Product> = { deletedAt: null };
   if (forcePublished) {
     filter.status = 'published';
   } else if (query.status && query.status !== 'any') {
     filter.status = query.status;
   }
+  if (excludePosOnly) filter.posOnly = { $ne: true };
   if (query.search) filter.$text = { $search: query.search };
   if (query.categorySlug) filter.categorySlugs = query.categorySlug;
   if (query.categoryId) filter.categoryIds = query.categoryId;

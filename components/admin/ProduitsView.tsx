@@ -446,6 +446,14 @@ export default function ProduitsView({ initialProducts, totals, initialEditingId
                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}>
                       {p.status === 'published' ? 'Affiché' : p.status === 'draft' ? 'Brouillon' : 'Privé'}
                     </span>
+                    {p.posOnly && (
+                      <span
+                        className="ml-1.5 inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-200"
+                        title="N'apparaît pas sur le site web — vendu uniquement en caisse"
+                      >
+                        POS uniquement
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1.5">

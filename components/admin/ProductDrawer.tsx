@@ -31,6 +31,8 @@ type FormState = {
   options: { label: string; type: 'text' | 'select' | 'radio'; values: string[] }[];
   bundles: ProductBundle[];
   upsellIds: string[];
+  /** Sold only at the till — hidden from the storefront, still sellable in POS. */
+  posOnly: boolean;
 };
 
 const EMPTY: FormState = {
@@ -38,7 +40,7 @@ const EMPTY: FormState = {
   regularPrice: 0, salePrice: 0, cost: 0, deliveryPrice: 0, deliveryCost: 0,
   purchasePrice: 0, supplierId: '',
   description: '', status: 'published', images: [],
-  options: [], bundles: [], upsellIds: [],
+  options: [], bundles: [], upsellIds: [], posOnly: false,
 };
 
 type Props = {
@@ -109,6 +111,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
             })) : [],
             bundles: p.bundles,
             upsellIds: p.upsellIds,
+            posOnly: p.posOnly ?? false,
           });
         })
         .catch(() => alert('Erreur de chargement du produit'))
@@ -146,6 +149,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
         upsellIds: form.upsellIds,
         bundles: form.bundles,
         options: form.options.map((o) => ({ label: o.label, type: o.type, values: o.values.join(',') })),
+        posOnly: form.posOnly,
       };
       const url = isEdit ? `/api/admin/products/${productId}` : '/api/admin/products';
       const method = isEdit ? 'PUT' : 'POST';
@@ -190,6 +194,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
       categoryIds: original.categoryIds,
       imageIds: original.images.map((i) => i.id),
       bundles: original.bundles,
+      posOnly: original.posOnly,
     };
     const create = await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!create.ok) return alert('Erreur de duplication');
@@ -276,6 +281,21 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
                   <Boxes size={14} /> Gérer les stocks →
                 </a>
               </div>
+
+              <label className="mt-3 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.posOnly}
+                  onChange={(e) => up('posOnly', e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span>
+                  <span className="block font-bold">Vendre uniquement en caisse (POS)</span>
+                  <span className="block mt-0.5 text-amber-700">
+                    Ce produit n&apos;apparaîtra pas sur le site web (boutique, catégories, accueil) et ne pourra pas être commandé en ligne — mais reste disponible en caisse.
+                  </span>
+                </span>
+              </label>
             </div>
           </section>
 

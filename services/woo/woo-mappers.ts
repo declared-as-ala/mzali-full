@@ -87,6 +87,7 @@ export function mapProduct(p: WooProductRaw): Product {
     crossSellIds: (p.cross_sell_ids ?? []).map(String),
     supplierId: null,
     meta,
+    posOnly: false, // WooCommerce provider has no concept of a POS-only product
   };
 }
 

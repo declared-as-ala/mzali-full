@@ -146,6 +146,12 @@ export class Product {
   @Prop({ type: Boolean, default: false })
   featured!: boolean;
 
+  /** Sold only at the till — never listed on the storefront (shop/category/
+   *  home/related) and rejected if ordered through online checkout, but
+   *  still sellable in the POS and counted normally in stock/reports. */
+  @Prop({ type: Boolean, default: false })
+  posOnly!: boolean;
+
   @Prop({ type: String, unique: true, sparse: true })
   legacyId?: string;
 
