@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { InventoryCoreModule } from '@/inventory/inventory-core.module';
+import { MediaModule } from '@/media/media.module';
 import { CatalogPublicController } from './catalog-public.controller';
 import { CategoriesAdminController } from './categories-admin.controller';
 import { CategoriesService } from './categories.service';
@@ -19,7 +20,7 @@ const CatalogMongoose = MongooseModule.forFeature([
 ]);
 
 @Module({
-  imports: [CatalogMongoose, InventoryCoreModule],
+  imports: [CatalogMongoose, InventoryCoreModule, MediaModule],
   controllers: [
     CatalogPublicController,
     ProductsAdminController,

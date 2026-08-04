@@ -6,6 +6,7 @@ import { clampPagination, paginate } from '@/common/pagination';
 import { slugify } from '@/common/slug';
 import { toMinor } from '@/common/money';
 import { OnlineAvailabilityService } from '@/inventory/online-availability.service';
+import { MediaService } from '@/media/media.service';
 import { Category } from './category.schema';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import { parseOptionValues, toProductContract } from './product.mapper';
@@ -20,7 +21,19 @@ export class ProductsService {
     @InjectModel(Category.name) private readonly categoryModel: Model<Category>,
     private readonly variants: ProductVariantsService,
     private readonly availability: OnlineAvailabilityService,
+    private readonly media: MediaService,
   ) {}
+
+  /** Resolves imageIds (media document ids) to their real, publicly
+   *  fetchable URLs — never store the bare id as url (see MediaService.
+   *  getUrlsByIds). An id with no matching media doc is dropped rather
+   *  than saved with a broken url. */
+  private async resolveImages(imageIds: string[]): Promise<{ mediaId: string; url: string; alt: string; position: number }[]> {
+    const urlById = await this.media.getUrlsByIds(imageIds);
+    return imageIds
+      .map((id, i) => ({ mediaId: id, url: urlById.get(id), alt: '', position: i }))
+      .filter((img): img is { mediaId: string; url: string; alt: string; position: number } => Boolean(img.url));
+  }
 
   async list(query: ProductListQuery, forcePublished: boolean): Promise<ProductListResult> {
     const { page, perPage, skip } = clampPagination(query.page, query.perPage, 100);
@@ -70,6 +83,7 @@ export class ProductsService {
   async create(input: CreateProductDto): Promise<ProductContract> {
     const slug = input.slug ? slugify(input.slug) : slugify(input.name);
     await this.assertSlugFree(slug);
+    const images = await this.resolveImages(input.imageIds ?? []);
     const doc = await this.model.create({
       name: input.name,
       slug,
@@ -83,7 +97,7 @@ export class ProductsService {
       status: input.status ?? 'draft',
       categoryIds: input.categoryIds ?? [],
       categorySlugs: await this.resolveCategorySlugs(input.categoryIds ?? []),
-      images: (input.imageIds ?? []).map((id, i) => ({ mediaId: id, url: id, alt: '', position: i })),
+      images,
       upsellIds: input.upsellIds ?? [],
       bundles: (input.bundles ?? []).map((b) => ({
         id: b.id,
@@ -133,7 +147,7 @@ export class ProductsService {
       doc.categorySlugs = await this.resolveCategorySlugs(input.categoryIds);
     }
     if (input.imageIds !== undefined) {
-      doc.images = input.imageIds.map((mid, i) => ({ mediaId: mid, url: mid, alt: '', position: i }));
+      doc.images = await this.resolveImages(input.imageIds);
     }
     if (input.upsellIds !== undefined) doc.upsellIds = input.upsellIds;
     if (input.bundles !== undefined) {

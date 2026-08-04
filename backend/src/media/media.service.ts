@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Readable } from 'node:stream';
-import { Model } from 'mongoose';
+import { isValidObjectId, Model } from 'mongoose';
 import type { Client } from 'minio';
 import sharp from 'sharp';
 import { clampPagination, paginate } from '@/common/pagination';
@@ -118,6 +118,20 @@ export class MediaService {
     if (!doc) return null;
     const stream = await this.minio.getObject(doc.bucket, doc.objectKey);
     return { stream, mime: doc.mime, filename: doc.alt || doc.objectKey };
+  }
+
+  /**
+   * Resolves media document ids (e.g. a product's imageIds) to their real
+   * public URLs — never store/return the bare id as a url; that isn't a
+   * fetchable path and any <img src> using it 404s against whatever page
+   * it's rendered on. Invalid/unknown ids are simply absent from the map.
+   */
+  async getUrlsByIds(ids: string[]): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(ids)].filter((id) => isValidObjectId(id));
+    if (!uniqueIds.length) return new Map();
+    const docs = await this.model.find({ _id: { $in: uniqueIds } }).select({ bucket: 1, objectKey: 1 });
+    const base = this.config.getOrThrow<string>('MINIO_PUBLIC_URL').replace(/\/$/, '');
+    return new Map(docs.map((doc) => [doc.id, `${base}/${doc.bucket}/${doc.objectKey}`]));
   }
 
   async list(page?: number, perPage?: number, search?: string) {

@@ -33,6 +33,7 @@ import { MigratePurchasePricesCommand } from './commands/migrate-purchase-prices
 import { MigrateSeedLocationsCommand } from './commands/migrate-seed-locations.command';
 import { MigrateSettingsCommand } from './commands/migrate-settings.command';
 import { MigrateVerifyCommand } from './commands/migrate-verify.command';
+import { RepairProductImagesCommand } from './commands/repair-product-images.command';
 import { VerifyInventoryFoundationCommand } from './commands/verify-inventory-foundation.command';
 
 /**
@@ -82,6 +83,7 @@ import { VerifyInventoryFoundationCommand } from './commands/verify-inventory-fo
     MigrateGenerateVariantsCommand,
     MigrateInventoryFoundationCommand,
     VerifyInventoryFoundationCommand,
+    RepairProductImagesCommand,
   ],
 })
 export class MigrationModule {}
