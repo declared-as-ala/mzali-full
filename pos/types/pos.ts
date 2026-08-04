@@ -1,6 +1,19 @@
 // Hand-kept in sync with backend/src/contracts/pos.ts (not enforced by
 // check-contracts.mjs — same convention as the main frontend's types/inventory.ts).
 
+/** Quantity-offer definition — same shape/semantics as the storefront's
+ *  Product.bundles, in minor units. Only bundles with quantity >= 2 are
+ *  real quantity offers; display-only here, the server always recomputes
+ *  and validates the final price at sale time. */
+export type PosProductBundle = {
+  id: string;
+  name: string;
+  label: string | null;
+  priceMinor: number;
+  regularPriceMinor: number;
+  quantity: number;
+};
+
 export type PosCatalogItem = {
   productId: string;
   variantId: string;
@@ -14,6 +27,7 @@ export type PosCatalogItem = {
   boutiqueAvailable: number;
   depotAvailable: number;
   favorite: boolean;
+  bundles: PosProductBundle[];
 };
 
 export type PosCategory = { id: string; name: string; slug: string };
@@ -35,6 +49,11 @@ export type CartLine = {
   unitPriceMinor: number;
   qty: number;
   boutiqueAvailable: number;
+  /** Always the product's id — every cart line for a product shares this,
+   *  so the server groups all of its units together and automatically
+   *  applies the best available quantity offer as qty changes. See
+   *  PosSalesService.resolveSaleLines on the backend. */
+  bundleGroupId: string;
 };
 
 export type PosSaleLine = {
@@ -47,12 +66,28 @@ export type PosSaleLine = {
   unitPriceMinor: number;
   discountMinor: number;
   lineTotalMinor: number;
+  /** Immutable pricing snapshot — set only when a quantity offer applied to
+   *  this line, so historical receipts stay correct even if the product's
+   *  offers change or are removed later. `regularUnitPriceMinor` is always
+   *  set (even with no offer applied) so the receipt can always show what
+   *  the line would have cost at plain price. */
+  bundleGroupId?: string | null;
+  bundleId?: string | null;
+  bundleName?: string | null;
+  regularUnitPriceMinor?: number | null;
 };
 
 export type PosSalePaymentInput = {
   method: 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'OTHER';
   amountMinor: number;
 };
+
+/** Live pricing preview for the cart-in-progress — same offer-pricing logic
+ *  the server uses to record the sale, with no stock/session side effects.
+ *  Always call this before building a payment amount: once any cart line
+ *  carries a bundleGroupId, the server's real total may differ from a naive
+ *  qty*unitPrice sum, and payments must sum to EXACTLY the server total. */
+export type PosSaleQuote = { lines: PosSaleLine[]; subtotalMinor: number };
 
 export type PosSale = {
   id: string;

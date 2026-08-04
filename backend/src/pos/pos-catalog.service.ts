@@ -69,6 +69,14 @@ export class PosCatalogService {
         boutiqueAvailable: b ? b.quantityOnHand - b.quantityReserved : 0,
         depotAvailable: d ? d.quantityOnHand - d.quantityReserved : 0,
         favorite: favoriteProductIds.has(p.id),
+        bundles: p.bundles.map((bundle) => ({
+          id: bundle.id,
+          name: bundle.name,
+          label: bundle.label ?? null,
+          priceMinor: toMinor(bundle.price),
+          regularPriceMinor: toMinor(bundle.regularPrice),
+          quantity: bundle.quantity,
+        })),
       });
     }
 

@@ -18,6 +18,7 @@ import { LoyaltyLedgerService } from '@/loyalty/loyalty-ledger.service';
 import { LoyaltyRulesService } from '@/loyalty/loyalty-rules.service';
 import { LoyaltyService } from '@/loyalty/loyalty.service';
 import { SettingsService } from '@/settings/settings.service';
+import { priceExplicitBundle } from '@/catalog/product-pricing';
 import { CheckoutDto } from './dto/checkout.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
@@ -503,7 +504,7 @@ export class OrdersService {
       let unitPriceMinor: number;
       const bundle = item.bundleId ? product.bundles.find((b) => b.id === item.bundleId) : undefined;
       if (bundle) {
-        unitPriceMinor = Math.round(bundle.priceMinor / Math.max(1, bundle.quantity));
+        unitPriceMinor = Math.round(priceExplicitBundle(bundle).totalMinor / Math.max(1, bundle.quantity));
       } else {
         unitPriceMinor = product.salePriceMinor ?? product.regularPriceMinor;
       }

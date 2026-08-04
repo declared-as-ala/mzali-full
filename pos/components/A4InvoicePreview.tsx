@@ -33,7 +33,7 @@ export default function A4InvoicePreview({ sale, onClose }: { sale: PosSale; onC
           <div className="mb-8 flex items-start justify-between">
             <div>
               <p className="text-2xl font-black">MZALI BOUTIQUE</p>
-              <p className="text-xs text-slate-500">ahmedmzaliboutique.com</p>
+              <p className="text-xs text-slate-500">ahmedmzaliboutique.tn</p>
             </div>
             <div className="text-right">
               <p className="text-lg font-black">Facture #{sale.saleNumber}</p>

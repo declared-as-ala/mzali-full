@@ -6,7 +6,7 @@ import { formatMinor } from '@/lib/money';
 import type { PosSale, PosSalePaymentInput } from '@/types/pos';
 import QRCodeSvg from './QRCodeSvg';
 
-const WEBSITE_URL = 'https://ahmedmzaliboutique.com/';
+const WEBSITE_URL = 'https://ahmedmzaliboutique.tn/';
 
 const PAYMENT_LABEL: Record<string, string> = {
   CASH: 'Espèces',
@@ -108,19 +108,41 @@ export default function TicketPreview({ sale, onClose, onNewSale, duplicate, aut
           <section className="receipt-items" aria-label="Articles">
             {sale.lines.map((line, index) => {
               const attributes = Object.entries(line.variantAttributesSnapshot ?? {});
+              const regularLineTotalMinor = line.regularUnitPriceMinor != null ? line.regularUnitPriceMinor * line.qty : null;
+              const offerSavingsMinor = line.bundleId && regularLineTotalMinor != null
+                ? Math.max(0, regularLineTotalMinor - (line.lineTotalMinor + line.discountMinor))
+                : 0;
               return (
                 <div key={`${line.variantId}-${index}`} className="receipt-item">
-                  <p className="receipt-item-name">{line.descriptionSnapshot}</p>
+                  <p className="receipt-item-name">{line.descriptionSnapshot} × {line.qty}</p>
                   {(line.sku || attributes.length > 0) && (
                     <p className="receipt-item-detail">
                       {[line.sku ? `Réf. ${line.sku}` : '', ...attributes.map(([label, value]) => `${label}: ${value}`)]
                         .filter(Boolean).join(' · ')}
                     </p>
                   )}
-                  <div className="receipt-item-price">
-                    <span>{line.qty} × {formatMinor(line.unitPriceMinor)}</span>
-                    <strong>{formatMinor(line.lineTotalMinor)}</strong>
-                  </div>
+                  {line.bundleId && regularLineTotalMinor != null ? (
+                    <>
+                      <div className="receipt-item-price">
+                        <span>Prix normal</span>
+                        <span>{formatMinor(regularLineTotalMinor)}</span>
+                      </div>
+                      {offerSavingsMinor > 0 && (
+                        <div className="receipt-item-discount">
+                          <span>Offre {line.bundleName}</span><span>−{formatMinor(offerSavingsMinor)}</span>
+                        </div>
+                      )}
+                      <div className="receipt-item-price">
+                        <span>Total</span>
+                        <strong>{formatMinor(line.lineTotalMinor)}</strong>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="receipt-item-price">
+                      <span>{line.qty} × {formatMinor(line.unitPriceMinor)}</span>
+                      <strong>{formatMinor(line.lineTotalMinor)}</strong>
+                    </div>
+                  )}
                   {line.discountMinor > 0 && (
                     <div className="receipt-item-discount">
                       <span>Remise article</span><span>−{formatMinor(line.discountMinor)}</span>
@@ -172,7 +194,7 @@ export default function TicketPreview({ sale, onClose, onNewSale, duplicate, aut
           <footer className="receipt-footer">
             <div className="receipt-qr"><QRCodeSvg value={WEBSITE_URL} size={120} /></div>
             <p className="receipt-thanks">Merci pour votre confiance.</p>
-            <p>Retrouvez-nous sur ahmedmzaliboutique.com</p>
+            <p>Retrouvez-nous sur ahmedmzaliboutique.tn</p>
             <p>Conservez ce ticket comme preuve d&apos;achat.</p>
           </footer>
         </article>

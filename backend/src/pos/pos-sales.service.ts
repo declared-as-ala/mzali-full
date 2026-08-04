@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, FilterQuery, Model, Types } from 'mongoose';
-import type { CreatePosSaleInput, EmployeeRole, PosSale as PosSaleContract, PosSalePaymentInput } from '@contracts';
+import type { CreatePosSaleInput, EmployeeRole, PosSale as PosSaleContract, PosSaleLineInput, PosSalePaymentInput } from '@contracts';
+import { Product } from '@/catalog/product.schema';
+import { distributeGroupPricing, priceBestCombination, ProductBundleLike } from '@/catalog/product-pricing';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
 import { ProductsService } from '@/catalog/products.service';
 import { addMinor, clampDiscount, toMinor } from '@/common/money';
@@ -35,6 +37,7 @@ export class PosSalesService {
     @InjectModel(PosPayment.name) private readonly payments: Model<PosPayment>,
     @InjectModel(Employee.name) private readonly employees: Model<Employee>,
     @InjectModel(Customer.name) private readonly customers: Model<Customer>,
+    @InjectModel(Product.name) private readonly productModel: Model<Product>,
     private readonly products: ProductsService,
     private readonly variants: ProductVariantsService,
     private readonly ledger: StockLedgerService,
@@ -60,30 +63,7 @@ export class PosSalesService {
 
     // Recalculate every price server-side — never trust a client-sent
     // amount (same principle as online checkout).
-    const categoryIdsByProductId = new Map<string, string[]>();
-    const resolved = await Promise.all(
-      input.lines.map(async (line) => {
-        const variant = await this.variants.findById(line.variantId);
-        if (!variant) throw new NotFoundException(`Variante introuvable: ${line.variantId}`);
-        const product = await this.products.getById(variant.productId);
-        if (!product) throw new NotFoundException(`Produit introuvable pour la variante ${line.variantId}`);
-        categoryIdsByProductId.set(variant.productId, product.categoryIds ?? []);
-        const unitPriceMinor = variant.sellingPriceMinor ?? toMinor(product.price);
-        const qty = Math.max(1, Math.round(line.qty));
-        const discountMinor = clampDiscount(line.discountMinor ?? 0, unitPriceMinor * qty);
-        return {
-          variantId: variant.id,
-          productId: variant.productId,
-          descriptionSnapshot: product.name,
-          sku: variant.sku,
-          variantAttributesSnapshot: variant.attributes ?? {},
-          qty,
-          unitPriceMinor,
-          discountMinor,
-          lineTotalMinor: unitPriceMinor * qty - discountMinor,
-        } satisfies PosSaleLine;
-      }),
-    );
+    const { lines: resolved, categoryIdsByProductId } = await this.resolveSaleLines(input.lines);
 
     const saleId = new Types.ObjectId();
     const run = async (session?: ClientSession) => {
@@ -244,6 +224,136 @@ export class PosSalesService {
   }
 
   /**
+   * Live pricing preview — runs the exact same offer-pricing logic as
+   * create(), with no stock deduction or persistence, so the till screen can
+   * show the authoritative total as the cashier edits the cart without the
+   * frontend ever computing a price itself.
+   */
+  async quote(inputLines: PosSaleLineInput[]): Promise<{ lines: PosSaleLine[]; subtotalMinor: number }> {
+    const { lines } = await this.resolveSaleLines(inputLines);
+    return { lines, subtotalMinor: addMinor(...lines.map((l) => l.lineTotalMinor)) };
+  }
+
+  /**
+   * Resolves raw cart lines into priced `PosSaleLine`s — the single place
+   * where POS pricing happens, shared by create() and update() so a sale
+   * edit re-prices offers exactly the same way a fresh sale does. Never
+   * trusts a client-sent price (same principle as online checkout).
+   *
+   * Lines that carry a `bundleGroupId` are grouped by (productId,
+   * bundleGroupId), their quantities summed, and priced together via
+   * `priceBestCombination()` — the product's configured quantity offers
+   * (`Product.bundles`) plus regular-priced leftover units, picked by true
+   * price-minimizing search, not a greedy heuristic. `distributeGroupPricing()`
+   * then splits that group total back down to one priced line per physical
+   * variant (so two different sizes bought under one "2 for 45 DT" offer
+   * stay two lines, sharing the same bundleId for the receipt/cart to group
+   * visually). Lines without a bundleGroupId are priced individually at the
+   * plain regular price, exactly as before offers existed — a line simply
+   * opts out of automatic offer pricing by omitting it.
+   */
+  private async resolveSaleLines(inputLines: PosSaleLineInput[]): Promise<{ lines: PosSaleLine[]; categoryIdsByProductId: Map<string, string[]> }> {
+    const categoryIdsByProductId = new Map<string, string[]>();
+
+    const resolvedInputs = await Promise.all(
+      inputLines.map(async (line) => {
+        const variant = await this.variants.findById(line.variantId);
+        if (!variant) throw new NotFoundException(`Variante introuvable: ${line.variantId}`);
+        const product = await this.products.getById(variant.productId);
+        if (!product) throw new NotFoundException(`Produit introuvable pour la variante ${line.variantId}`);
+        categoryIdsByProductId.set(variant.productId, product.categoryIds ?? []);
+        const qty = Math.max(1, Math.round(line.qty));
+        const regularUnitPriceMinor = variant.sellingPriceMinor ?? toMinor(product.price);
+        return { line, variant, product, qty, regularUnitPriceMinor };
+      }),
+    );
+    type ResolvedInput = (typeof resolvedInputs)[number];
+
+    // Split into offer-priced groups (same product + client-shared
+    // bundleGroupId) vs. plain lines (no bundleGroupId — no offer logic).
+    const groups = new Map<string, ResolvedInput[]>();
+    const ungrouped: ResolvedInput[] = [];
+    for (const r of resolvedInputs) {
+      if (!r.line.bundleGroupId) {
+        ungrouped.push(r);
+        continue;
+      }
+      const key = `${r.variant.productId}::${r.line.bundleGroupId}`;
+      const list = groups.get(key) ?? [];
+      list.push(r);
+      groups.set(key, list);
+    }
+
+    const lines: PosSaleLine[] = [];
+
+    for (const r of ungrouped) {
+      const discountMinor = clampDiscount(r.line.discountMinor ?? 0, r.regularUnitPriceMinor * r.qty);
+      lines.push({
+        variantId: r.variant.id,
+        productId: r.variant.productId,
+        descriptionSnapshot: r.product.name,
+        sku: r.variant.sku,
+        variantAttributesSnapshot: r.variant.attributes ?? {},
+        qty: r.qty,
+        unitPriceMinor: r.regularUnitPriceMinor,
+        discountMinor,
+        lineTotalMinor: r.regularUnitPriceMinor * r.qty - discountMinor,
+        bundleGroupId: null,
+        bundleId: null,
+        bundleName: null,
+        regularUnitPriceMinor: r.regularUnitPriceMinor,
+      });
+    }
+
+    for (const group of groups.values()) {
+      const regularUnitPriceMinor = group[0].regularUnitPriceMinor;
+      const rawProduct = await this.productModel.findById(group[0].variant.productId);
+      const bundles: ProductBundleLike[] = rawProduct?.bundles ?? [];
+      const totalQty = group.reduce((s, r) => s + r.qty, 0);
+      const plan = priceBestCombination(totalQty, regularUnitPriceMinor, bundles);
+
+      const units = group.flatMap((r) => Array.from({ length: r.qty }, () => ({ unitKey: r.variant.id })));
+      const runs = distributeGroupPricing(units, plan, regularUnitPriceMinor);
+
+      // Manual per-line discounts (rare alongside an automatic offer) are
+      // summed per variant and applied once, to that variant's first priced
+      // run in this group.
+      const discountByVariant = new Map<string, number>();
+      for (const r of group) {
+        if (!r.line.discountMinor) continue;
+        discountByVariant.set(r.variant.id, (discountByVariant.get(r.variant.id) ?? 0) + r.line.discountMinor);
+      }
+      const appliedDiscountVariants = new Set<string>();
+
+      for (const run of runs) {
+        const source = group.find((r) => r.variant.id === run.unitKey)!;
+        let discountMinor = 0;
+        if (!appliedDiscountVariants.has(run.unitKey) && discountByVariant.has(run.unitKey)) {
+          discountMinor = clampDiscount(discountByVariant.get(run.unitKey)!, run.lineTotalMinor);
+          appliedDiscountVariants.add(run.unitKey);
+        }
+        lines.push({
+          variantId: source.variant.id,
+          productId: source.variant.productId,
+          descriptionSnapshot: source.product.name,
+          sku: source.variant.sku,
+          variantAttributesSnapshot: source.variant.attributes ?? {},
+          qty: run.qty,
+          unitPriceMinor: run.unitPriceMinor,
+          discountMinor,
+          lineTotalMinor: run.lineTotalMinor - discountMinor,
+          bundleGroupId: source.line.bundleGroupId ?? null,
+          bundleId: run.bundleId,
+          bundleName: run.bundleName,
+          regularUnitPriceMinor,
+        });
+      }
+    }
+
+    return { lines, categoryIdsByProductId };
+  }
+
+  /**
    * Edits a completed sale — customer/products/qty/discount/payment
    * method/notes. Only allowed while the sale's session is still OPEN: once
    * a session closes its Z-report snapshot is immutable (see
@@ -268,28 +378,7 @@ export class PosSalesService {
 
     let resolvedLines: PosSaleLine[] = doc.lines;
     if (dto.lines) {
-      resolvedLines = await Promise.all(
-        dto.lines.map(async (line) => {
-          const variant = await this.variants.findById(line.variantId);
-          if (!variant) throw new NotFoundException(`Variante introuvable: ${line.variantId}`);
-          const product = await this.products.getById(variant.productId);
-          if (!product) throw new NotFoundException(`Produit introuvable pour la variante ${line.variantId}`);
-          const unitPriceMinor = variant.sellingPriceMinor ?? toMinor(product.price);
-          const qty = Math.max(1, Math.round(line.qty));
-          const discountMinor = clampDiscount(line.discountMinor ?? 0, unitPriceMinor * qty);
-          return {
-            variantId: variant.id,
-            productId: variant.productId,
-            descriptionSnapshot: product.name,
-            sku: variant.sku,
-            variantAttributesSnapshot: variant.attributes ?? {},
-            qty,
-            unitPriceMinor,
-            discountMinor,
-            lineTotalMinor: unitPriceMinor * qty - discountMinor,
-          } satisfies PosSaleLine;
-        }),
-      );
+      resolvedLines = (await this.resolveSaleLines(dto.lines)).lines;
     }
 
     const subtotalMinor = resolvedLines.length > 0 ? addMinor(...resolvedLines.map((l) => l.lineTotalMinor)) : 0;

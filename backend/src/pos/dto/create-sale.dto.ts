@@ -5,6 +5,7 @@ export class SaleLineDto {
   @IsString() variantId!: string;
   @IsInt() @IsPositive() qty!: number;
   @IsOptional() @IsInt() @Min(0) discountMinor?: number;
+  @IsOptional() @IsString() bundleGroupId?: string;
 }
 
 export class SalePaymentDto {

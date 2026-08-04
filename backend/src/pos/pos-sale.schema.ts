@@ -15,6 +15,13 @@ export class PosSaleLine {
   @Prop({ type: Number, required: true }) unitPriceMinor!: number;
   @Prop({ type: Number, default: 0 }) discountMinor!: number;
   @Prop({ type: Number, required: true }) lineTotalMinor!: number;
+  /** Immutable quantity-offer pricing snapshot — see contracts/pos.ts's
+   *  PosSaleLine for why this must never be recomputed from current
+   *  product data after the sale is recorded. */
+  @Prop({ type: String, default: null }) bundleGroupId!: string | null;
+  @Prop({ type: String, default: null }) bundleId!: string | null;
+  @Prop({ type: String, default: null }) bundleName!: string | null;
+  @Prop({ type: Number, default: null }) regularUnitPriceMinor!: number | null;
 }
 const PosSaleLineSchema = SchemaFactory.createForClass(PosSaleLine);
 

@@ -9,11 +9,12 @@ import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
 import { DUPLICATE_CART_KEY } from './RecentSalesPanel';
 import ProductGrid from './ProductGrid';
+import ProductOfferModal from './ProductOfferModal';
 import QuickPickRail from './QuickPickRail';
 import Cart from './Cart';
 import PaymentModal from './PaymentModal';
 import TicketPreview from './TicketPreview';
-import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosSale, PosSalePaymentInput, RedeemPreviewResult } from '@/types/pos';
+import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 
 export default function Till({ cashierName, role }: { cashierName: string; role: string }) {
   const router = useRouter();
@@ -95,6 +96,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
             unitPriceMinor: item.priceMinor,
             qty: line.qty,
             boutiqueAvailable: item.boutiqueAvailable,
+            bundleGroupId: item.productId,
           });
         }
         if (nextCart.length) {
@@ -124,6 +126,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           unitPriceMinor: item.priceMinor,
           qty: Math.min(line.qty, Math.max(1, item.boutiqueAvailable)),
           boutiqueAvailable: item.boutiqueAvailable,
+          bundleGroupId: item.productId,
         });
       }
       if (nextCart.length) setCart(nextCart);
@@ -175,12 +178,12 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     return recentlySoldIds.map((id) => byId.get(id)).filter((i): i is PosCatalogItem => Boolean(i));
   }, [catalog, recentlySoldIds]);
 
-  function addToCart(item: PosCatalogItem) {
+  function addToCart(item: PosCatalogItem, qty = 1) {
     setCart((prev) => {
       const existing = prev.find((l) => l.variantId === item.variantId);
       if (existing) {
         if (existing.qty >= item.boutiqueAvailable) return prev;
-        return prev.map((l) => (l.variantId === item.variantId ? { ...l, qty: l.qty + 1 } : l));
+        return prev.map((l) => (l.variantId === item.variantId ? { ...l, qty: Math.min(l.qty + qty, l.boutiqueAvailable) } : l));
       }
       return [
         ...prev,
@@ -191,11 +194,26 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           sku: item.sku,
           imageUrl: item.imageUrl,
           unitPriceMinor: item.priceMinor,
-          qty: 1,
+          qty: Math.min(qty, Math.max(1, item.boutiqueAvailable)),
           boutiqueAvailable: item.boutiqueAvailable,
+          // Every cart line for this product shares this id, so the server
+          // groups them and automatically applies the best quantity offer
+          // as qty changes — see resolveSaleLines() on the backend.
+          bundleGroupId: item.productId,
         },
       ];
     });
+  }
+
+  // Products with a configured quantity offer (>=2) open a picker first —
+  // everything else adds straight to the cart as before. Selecting an
+  // offer, or just bumping the qty stepper, only decides how many units
+  // land in the cart; the actual best-price combination is always computed
+  // server-side (see fetchQuote()/product-pricing.ts), never here.
+  const [offerModalItem, setOfferModalItem] = useState<PosCatalogItem | null>(null);
+  function handleProductSelect(item: PosCatalogItem) {
+    if (item.bundles.some((b) => b.quantity >= 2)) { setOfferModalItem(item); return; }
+    addToCart(item);
   }
 
   // Fire-and-forget — a missed log entry is not worth blocking or
@@ -216,7 +234,50 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     setCart((prev) => prev.filter((l) => l.variantId !== variantId));
   }
 
-  const subtotalMinor = cart.reduce((sum, l) => sum + l.unitPriceMinor * l.qty, 0);
+  const naiveSubtotalMinor = cart.reduce((sum, l) => sum + l.unitPriceMinor * l.qty, 0);
+
+  // Live, authoritative pricing preview — recalculated on every cart edit so
+  // offers apply/drop the moment qty crosses a threshold. Never priced
+  // client-side (see product-pricing.ts): this is the exact same logic the
+  // server uses to record the sale.
+  const [quote, setQuote] = useState<PosSaleQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const quoteRequestIdRef = useRef(0);
+
+  async function fetchQuote(lines: CartLine[]): Promise<PosSaleQuote | null> {
+    if (!lines.length) return { lines: [], subtotalMinor: 0 };
+    try {
+      const res = await posFetch('/api/sales/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: lines.map((l) => ({ variantId: l.variantId, qty: l.qty, bundleGroupId: l.bundleGroupId })) }),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as PosSaleQuote;
+    } catch {
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    if (!cart.length) { setQuote(null); setQuoting(false); return; }
+    const requestId = ++quoteRequestIdRef.current;
+    setQuoting(true);
+    const timer = setTimeout(() => {
+      fetchQuote(cart).then((result) => {
+        if (quoteRequestIdRef.current !== requestId) return; // superseded by a newer cart edit
+        setQuote(result);
+        setQuoting(false);
+      });
+    }, 200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart]);
+
+  // Fall back to the naive qty*unitPrice sum only while the authoritative
+  // quote hasn't landed yet (first render, mid-debounce) — never trusted
+  // for the actual payment amount, only for the number shown on screen.
+  const subtotalMinor = quote?.subtotalMinor ?? naiveSubtotalMinor;
   const loyaltyDiscountMinor = redeemPreview?.valid ? redeemPreview.discountMinor : 0;
   const totalMinor = Math.max(0, subtotalMinor - loyaltyDiscountMinor);
   const redeemPointsValue = redeemPreview?.valid ? Number(redeemInput) : 0;
@@ -368,6 +429,15 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     setHardwareWarning(null);
     setAutoPrintReceipt(false);
     try {
+      // Re-quote right before submitting — the background quote may be
+      // stale (mid-debounce, a rapid last-second qty edit). Payments must
+      // sum to EXACTLY the server's total, so the amount charged always
+      // comes from a fresh authoritative price, never the on-screen value.
+      const freshQuote = await fetchQuote(cart);
+      if (!freshQuote) throw new Error('Impossible de calculer le prix — vérifiez la connexion.');
+      const finalTotalMinor = Math.max(0, freshQuote.subtotalMinor - loyaltyDiscountMinor);
+      const lines = cart.map((l) => ({ variantId: l.variantId, qty: l.qty, bundleGroupId: l.bundleGroupId }));
+
       const wasEditing = Boolean(editingSale);
       let res: Response;
       if (editingSale) {
@@ -375,8 +445,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            lines: cart.map((l) => ({ variantId: l.variantId, qty: l.qty })),
-            payments: [{ method, amountMinor: totalMinor }],
+            lines,
+            payments: [{ method, amountMinor: finalTotalMinor }],
             reason: 'Modification de vente en Caisse',
           }),
         });
@@ -385,8 +455,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKeyRef.current },
           body: JSON.stringify({
-            lines: cart.map((l) => ({ variantId: l.variantId, qty: l.qty })),
-            payments: [{ method, amountMinor: totalMinor }],
+            lines,
+            payments: [{ method, amountMinor: finalTotalMinor }],
             cashTenderedMinor: method === 'CASH' ? cashReceivedMinor : null,
             customerId: customerId ?? undefined,
             redeemPoints: redeemPointsValue > 0 ? redeemPointsValue : undefined,
@@ -402,7 +472,13 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       if (!wasEditing) {
         const hardware = await completeSaleHardware(sale);
         setHardwareWarning(hardware.warning);
-        setAutoPrintReceipt(hardware.autoPrintReceipt);
+        // Always print the receipt immediately after a completed sale — no
+        // manual "Imprimer" click required. The hardware bridge's own
+        // autoPrintReceipt flag only reflects local printer-driver auto-print
+        // (currently always false — the bridge doesn't drive the printer
+        // itself), which is a separate concern from the on-screen ticket's
+        // window.print() trigger this controls.
+        setAutoPrintReceipt(true);
       }
       setCompletedSale(sale);
       setEditingSale(null);
@@ -576,8 +652,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
 
           {!query && !activeCategory && (
             <div className="space-y-3">
-              <QuickPickRail title="Favoris Vente" icon={<Star size={13} className="text-amber-500" />} items={favoriteItems} onSelect={addToCart} />
-              <QuickPickRail title="Récemment Vendus" icon={<Clock size={13} className="text-blue-600" />} items={recentlySoldItems} onSelect={addToCart} />
+              <QuickPickRail title="Favoris Vente" icon={<Star size={13} className="text-amber-500" />} items={favoriteItems} onSelect={handleProductSelect} />
+              <QuickPickRail title="Récemment Vendus" icon={<Clock size={13} className="text-blue-600" />} items={recentlySoldItems} onSelect={handleProductSelect} />
             </div>
           )}
 
@@ -590,17 +666,19 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
             </div>
           ) : (
-            <ProductGrid items={filteredItems} onSelect={addToCart} onUnavailableAttempt={logUnavailableAttempt} />
+            <ProductGrid items={filteredItems} onSelect={handleProductSelect} onUnavailableAttempt={logUnavailableAttempt} />
           )}
         </main>
 
         <Cart
           lines={cart}
+          quote={quote}
+          quoting={quoting}
           onQtyChange={changeQty}
           onRemove={removeLine}
           onPay={() => setPaymentOpen(true)}
           catalog={catalog}
-          onAddSuggestion={addToCart}
+          onAddSuggestion={handleProductSelect}
           customerPanelProps={{
             phone: customerPhone,
             onPhoneChange: setCustomerPhone,
@@ -630,6 +708,14 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           }}
         />
       </div>
+
+      {offerModalItem && (
+        <ProductOfferModal
+          item={offerModalItem}
+          onClose={() => setOfferModalItem(null)}
+          onAdd={(qty) => { addToCart(offerModalItem, qty); setOfferModalItem(null); }}
+        />
+      )}
 
       {paymentOpen && !completedSale && (
         <PaymentModal

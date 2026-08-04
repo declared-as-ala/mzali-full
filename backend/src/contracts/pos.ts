@@ -62,6 +62,18 @@ export type PosTerminal = {
   createdAt: string;
 };
 
+/** Quantity-offer definition exposed to the POS — same shape/semantics as
+ *  the storefront's Product.bundles, in minor units. Only bundles with
+ *  quantity >= 2 are real quantity offers (see product-pricing.ts). */
+export type PosProductBundle = {
+  id: string;
+  name: string;
+  label: string | null;
+  priceMinor: number;
+  regularPriceMinor: number;
+  quantity: number;
+};
+
 export type PosCatalogItem = {
   productId: string;
   variantId: string;
@@ -75,6 +87,11 @@ export type PosCatalogItem = {
   boutiqueAvailable: number;
   depotAvailable: number;
   favorite: boolean;
+  /** This product's configured quantity offers (may be empty). The POS
+   *  shows these in the "Offres disponibles" section and uses them purely
+   *  for display — the server always recomputes and validates the final
+   *  price at sale time (see PosSalesService.resolveSaleLines). */
+  bundles: PosProductBundle[];
 };
 
 export type PosCategory = { id: string; name: string; slug: string };
@@ -89,6 +106,14 @@ export type PosSaleLineInput = {
   variantId: string;
   qty: number;
   discountMinor?: number;
+  /** Client-generated id shared by every line that together form one
+   *  quantity-offer purchase of the same product (e.g. two lines for two
+   *  different sizes bought under the same "2 for 45 DT" offer). The server
+   *  sums every line sharing this id and re-prices the whole group with the
+   *  best available combination of that product's configured offers — the
+   *  client never sends a price or picks which offer applies. Omit for a
+   *  plain line with no quantity offer. */
+  bundleGroupId?: string;
 };
 
 export type PosPaymentMethod = 'CASH' | 'CARD' | 'MIXED' | 'OTHER';
@@ -129,7 +154,23 @@ export type PosSaleLine = {
   unitPriceMinor: number;
   discountMinor: number;
   lineTotalMinor: number;
+  /** Immutable pricing snapshot — set only when a quantity offer applied to
+   *  this line, so historical receipts stay correct even if the product's
+   *  offers change or are removed later. `regularUnitPriceMinor` is always
+   *  set (even with no offer applied) so the receipt can always show what
+   *  the line would have cost at plain price. */
+  bundleGroupId?: string | null;
+  bundleId?: string | null;
+  bundleName?: string | null;
+  regularUnitPriceMinor?: number | null;
 };
+
+/** Live pricing preview for the cart-in-progress — same resolveSaleLines()
+ *  logic create() uses, with no stock/session side effects. Lets the POS
+ *  screen show the authoritative offer-adjusted total as the cashier edits
+ *  the cart, without duplicating any pricing math in the frontend. */
+export type QuotePosSaleInput = { lines: PosSaleLineInput[] };
+export type PosSaleQuote = { lines: PosSaleLine[]; subtotalMinor: number };
 
 export type PosSaleStatus = 'SUSPENDED' | 'COMPLETED' | 'REFUNDED' | 'CANCELLED';
 

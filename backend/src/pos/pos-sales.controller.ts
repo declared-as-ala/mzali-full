@@ -7,6 +7,7 @@ import { PermissionsGuard, RequirePermissions } from '@/auth/guards/permissions.
 import { roleHasPermission } from '@/auth/permissions';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { ListSalesQueryDto } from './dto/list-sales.dto';
+import { QuoteSaleDto } from './dto/quote-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { PosTerminalGuard, PosRequest } from './guards/pos-terminal.guard';
 import { PosSalesService } from './pos-sales.service';
@@ -52,6 +53,15 @@ export class PosSalesController {
       });
     }
     return this.sales.toContract(doc, user.name);
+  }
+
+  /** Live pricing preview for the cart-in-progress — no stock/session
+   *  side effects, called on every cart edit so the till screen shows the
+   *  authoritative offer-adjusted total without pricing anything client-side. */
+  @Post('quote')
+  @RequirePermissions('pos.sell')
+  async quote(@Body() dto: QuoteSaleDto) {
+    return this.sales.quote(dto.lines);
   }
 
   @Get(':id/ticket')
