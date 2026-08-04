@@ -1,4 +1,5 @@
 'use client';
+import { ShoppingBag } from 'lucide-react';
 import type { PosCatalogItem } from '@/types/pos';
 
 export default function QuickPickRail({
@@ -29,8 +30,8 @@ export default function QuickPickRail({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover transition-transform group-hover:scale-110" draggable={false} />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] font-bold text-slate-500">
-                    {item.name.slice(0, 2).toUpperCase()}
+                  <div className="flex h-full w-full items-center justify-center text-slate-300">
+                    <ShoppingBag size={18} />
                   </div>
                 )}
               </div>

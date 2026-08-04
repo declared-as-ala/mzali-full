@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Banknote, Clock, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
+import { ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
 import { canOpenDrawer, completeSaleHardware, openManualDrawer, scheduleCustomerDisplayPayment } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
@@ -40,7 +40,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const [cardLooking, setCardLooking] = useState(false);
   const [cardUnassigned, setCardUnassigned] = useState(false);
   const [cardAssigning, setCardAssigning] = useState(false);
-  const [recentlySoldIds, setRecentlySoldIds] = useState<string[]>([]);
   const [editingSale, setEditingSale] = useState<{ id: string; saleNumber: number } | null>(null);
   const [paying, setPaying] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -172,11 +171,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   }, [catalog, activeCategory, query]);
 
   const favoriteItems = useMemo(() => catalog?.items.filter((i) => i.favorite) ?? [], [catalog]);
-  const recentlySoldItems = useMemo(() => {
-    if (!catalog) return [];
-    const byId = new Map(catalog.items.map((i) => [i.productId, i]));
-    return recentlySoldIds.map((id) => byId.get(id)).filter((i): i is PosCatalogItem => Boolean(i));
-  }, [catalog, recentlySoldIds]);
 
   function addToCart(item: PosCatalogItem, qty = 1) {
     setCart((prev) => {
@@ -489,10 +483,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       }
       setCompletedSale(sale);
       setEditingSale(null);
-      setRecentlySoldIds((prev) => {
-        const ids = [...new Set([...cart.map((l) => l.productId), ...prev])];
-        return ids.slice(0, 10);
-      });
       setCart([]);
       resetCustomer();
       idempotencyKeyRef.current = crypto.randomUUID();
@@ -660,7 +650,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           {!query && !activeCategory && (
             <div className="space-y-3">
               <QuickPickRail title="Favoris Vente" icon={<Star size={13} className="text-amber-500" />} items={favoriteItems} onSelect={handleProductSelect} />
-              <QuickPickRail title="Récemment Vendus" icon={<Clock size={13} className="text-blue-600" />} items={recentlySoldItems} onSelect={handleProductSelect} />
             </div>
           )}
 
