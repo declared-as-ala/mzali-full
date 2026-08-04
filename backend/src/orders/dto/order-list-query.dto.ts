@@ -7,5 +7,4 @@ export class OrderListQueryDto {
   @IsOptional() @IsString() search?: string;
   @IsOptional() @IsString() after?: string;
   @IsOptional() @IsString() before?: string;
-  @IsOptional() @IsString() assignedEmployeeId?: string;
 }

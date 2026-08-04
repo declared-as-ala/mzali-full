@@ -276,7 +276,7 @@ export default function MyCommandesView() {
         <h1 className="text-3xl font-black">Mes commandes</h1>
         <p className="text-ink-700">
           {activeTab === 'normal'
-            ? `${counts.normal} commande${counts.normal > 1 ? 's' : ''} assignée${counts.normal > 1 ? 's' : ''}`
+            ? `${counts.normal} commande${counts.normal > 1 ? 's' : ''}`
             : activeTab === 'abandoned'
             ? `${counts.abandoned} commande${counts.abandoned > 1 ? 's' : ''} abandonnée${counts.abandoned > 1 ? 's' : ''}`
             : `${counts.trash} commande${counts.trash > 1 ? 's' : ''} supprimée${counts.trash > 1 ? 's' : ''}`}
@@ -541,7 +541,7 @@ export default function MyCommandesView() {
               );
             })}
             {!loading && !filteredOrders.length && (
-              <tr><td colSpan={10} className="p-8 text-center text-ink-700">{orders.length === 0 ? 'Aucune commande assignée.' : 'Aucun résultat.'}</td></tr>
+              <tr><td colSpan={10} className="p-8 text-center text-ink-700">{orders.length === 0 ? 'Aucune commande.' : 'Aucun résultat.'}</td></tr>
             )}
           </tbody>
         </table>

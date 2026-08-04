@@ -44,10 +44,6 @@ export type MappedOrder = {
   manualTotalMinor: number | null;
   attempts: number;
   source: string;
-  employeeLegacyId: string | null;
-  assignedAt: string | null;
-  assignedBy: 'auto' | 'admin' | null;
-  assignmentHistory: { employeeId: string | null; at: string; by: 'auto' | 'admin' }[];
   carrier: { navex: MappedCarrierResult | null; firstdelivery: MappedCarrierResult | null; axess: MappedCarrierResult | null };
 };
 
@@ -71,17 +67,6 @@ function mapCarrier(meta: WooMetaEntry[], prefix: string): MappedCarrierResult |
     tracking: typeof tracking === 'string' ? tracking : null,
     error: typeof error === 'string' ? error : null,
   };
-}
-
-function parseAssignmentHistory(meta: WooMetaEntry[]): { employeeId: string | null; at: string; by: 'auto' | 'admin' }[] {
-  const raw = findMeta(meta, '_mzem_assignment_history');
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (Array.isArray(parsed)) return parsed;
-  } catch {
-    /* malformed history — treat as empty, not fatal */
-  }
-  return [];
 }
 
 function numberish(value: unknown): number | null {
@@ -128,8 +113,6 @@ export function mapWooOrder(raw: WooOrderRaw): MappedOrder {
     totalMinor = items.reduce((s, i) => s + (i.totalMinor || i.unitPriceMinor * i.qty), 0) + shippingMinor;
   }
 
-  const employeeLegacyId = metaString(meta, '_mzem_employee_id') || null;
-
   return {
     legacyId: String(raw.id),
     status: raw.status || 'pending',
@@ -155,10 +138,6 @@ export function mapWooOrder(raw: WooOrderRaw): MappedOrder {
     manualTotalMinor: manualTotal !== null ? Math.round(manualTotal * 1000) : null,
     attempts: Number(metaString(meta, '_mzem_attempts')) || 0,
     source: metaString(meta, '_mzem_source'),
-    employeeLegacyId,
-    assignedAt: metaString(meta, '_mzem_assigned_at') || null,
-    assignedBy: (metaString(meta, '_mzem_assigned_by') as 'auto' | 'admin') || null,
-    assignmentHistory: parseAssignmentHistory(meta),
     carrier: {
       navex: mapCarrier(meta, '_navex'),
       firstdelivery: mapCarrier(meta, '_fd'),

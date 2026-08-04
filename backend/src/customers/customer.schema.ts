@@ -1,16 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
-@Schema({ _id: false })
-class LastAssignment {
-  @Prop({ type: String, default: null })
-  employeeId!: string | null;
-
-  @Prop({ type: Date, default: null })
-  at!: Date | null;
-}
-const LastAssignmentSchema = SchemaFactory.createForClass(LastAssignment);
-
 /**
  * Guest customer record, keyed by normalized phone (`common/phone.ts`).
  * Account-readiness fields (authUserId, emailVerifiedAt) are unused today —
@@ -51,9 +41,6 @@ export class Customer {
 
   @Prop({ type: Date, default: null })
   lastOrderAt!: Date | null;
-
-  @Prop({ type: LastAssignmentSchema, default: () => ({ employeeId: null, at: null }) })
-  lastAssignment!: LastAssignment;
 
   @Prop({ type: String, default: null })
   authUserId!: string | null;

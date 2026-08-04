@@ -13,7 +13,6 @@ export const ALL_PERMISSIONS = [
   'categories.write',
   'orders.read',
   'orders.write',
-  'orders.assign',
   'orders.delete',
   'orders.print',
   'orders.export',
@@ -86,7 +85,7 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
   super_admin: ALL,
   admin: ALL,
   order_manager: [
-    'orders.read', 'orders.write', 'orders.assign', 'orders.print', 'orders.export', 'orders.bulk_update',
+    'orders.read', 'orders.write', 'orders.print', 'orders.export', 'orders.bulk_update',
     'customers.read', 'products.read', 'categories.read',
     'shipping.push', 'stats.read',
     'documents.manage', 'documents.finalize',

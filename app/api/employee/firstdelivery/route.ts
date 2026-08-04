@@ -32,9 +32,6 @@ export async function POST(req: Request) {
   return withDeliveryLock(`firstdelivery:${orderId}`, async () => {
     const order = await orderService.getById(String(orderId));
     if (!order) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if (order.assignedEmployeeId !== session.userId) {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
 
     const existingTracking = String((order.meta?._fd_tracking as string) ?? '').trim();
     if (existingTracking || order.meta?._fd_status === 'sent') {

@@ -57,7 +57,5 @@ export type OrderResponse = {
   customer: CheckoutCustomer;
   items: OrderLineItem[];
   shipping: number;
-  assignedEmployeeId?: string | null;
-  assignedAt?: string | null;
   meta?: Record<string, unknown>;
 };

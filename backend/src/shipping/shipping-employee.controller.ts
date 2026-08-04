@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, NotFoundException, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
@@ -16,21 +16,13 @@ export class ShippingEmployeeController {
 
   @Post('navex')
   @RequirePermissions('shipping.push')
-  async pushNavex(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
-    await this.assertOwnOrder(dto.orderId, user.userId);
+  pushNavex(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
     return this.shipping.push('navex', dto.orderId, { type: 'employee', id: user.userId, name: user.name });
   }
 
   @Post('firstdelivery')
   @RequirePermissions('shipping.push')
-  async pushFirstDelivery(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
-    await this.assertOwnOrder(dto.orderId, user.userId);
+  pushFirstDelivery(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
     return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name });
-  }
-
-  private async assertOwnOrder(orderId: string, employeeId: string): Promise<void> {
-    const order = await this.shipping.orderContract(orderId);
-    if (!order) throw new NotFoundException('Commande introuvable');
-    if (order.assignedEmployeeId !== employeeId) throw new ForbiddenException();
   }
 }

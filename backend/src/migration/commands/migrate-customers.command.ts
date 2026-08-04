@@ -47,7 +47,6 @@ export class MigrateCustomersCommand extends CommandRunner {
 
       const last = custOrders[custOrders.length - 1];
       const totalSpentMinor = custOrders.reduce((s, o) => s + (o.manualTotalMinor ?? o.totalMinor), 0);
-      const lastAssignedOrder = [...custOrders].reverse().find((o) => o.assignment.employeeId);
 
       const existed = await this.customers.exists({ phone });
       await this.customers.findOneAndUpdate(
@@ -63,9 +62,6 @@ export class MigrateCustomersCommand extends CommandRunner {
             totalSpentMinor,
             firstOrderAt: custOrders[0].createdAt,
             lastOrderAt: last.createdAt,
-            lastAssignment: lastAssignedOrder
-              ? { employeeId: lastAssignedOrder.assignment.employeeId, at: lastAssignedOrder.assignment.assignedAt }
-              : { employeeId: null, at: null },
           },
         },
         { upsert: true },

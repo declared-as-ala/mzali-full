@@ -4,101 +4,19 @@ import { wooClient } from './woo-client';
 import type { WooOrderRaw } from './woo-types';
 import { mapOrder } from './woo-mappers';
 import { navex, navexConfigured, buildNavexDesignation } from '@/lib/navex';
-import { employeeStore } from '@/lib/employee-storage';
-import { pickNextInRoundRobin } from '@/lib/round-robin';
-
-/**
- * Assign a new order to an employee.
- *
- * Algorithm (in order):
- *  1. STICKY CUSTOMER — if this customer was already handled by an active
- *     employee (within the last 30 days), send to the same employee.
- *  2. ROUND-ROBIN — for new customers, assign via strict turn order between
- *     all active employees (safe from race conditions via file locking).
- */
-async function pickEmployeeForOrder(customerEmail: string, customerPhone: string): Promise<string | null> {
-  const employees = await employeeStore.list();
-  const activeEmployees = employees
-    .filter((e) => e.active)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  if (!activeEmployees.length) return null;
-
-  const activeIds = activeEmployees.map((e) => e.id);
-
-  // STEP 1 — sticky customer (30-day window)
-  const stickyId = await findStickyEmployee(customerEmail, customerPhone, activeIds);
-  if (stickyId) return stickyId;
-
-  // STEP 2 — round-robin between active employees (race-safe via file lock)
-  return pickNextInRoundRobin(activeIds);
-}
-
-/**
- * Search for recent orders from the same customer (by email or phone).
- * If found and assigned to a still-active employee, return that employee ID.
- */
-async function findStickyEmployee(
-  customerEmail: string,
-  customerPhone: string,
-  activeIds: string[],
-): Promise<string | null> {
-  const email = customerEmail?.trim().toLowerCase();
-  const phone = customerPhone?.trim().replace(/\s/g, '');
-  const lookup = email || phone;
-  if (!lookup) return null;
-
-  const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
-  try {
-    // Search WooCommerce by email first (most precise), then by phone
-    const queries = [];
-    if (email) queries.push(email);
-    if (phone && phone !== email) queries.push(phone);
-
-    for (const q of queries) {
-      const res = await wooClient.get<WooOrderRaw[]>('/orders', {
-        search: q, per_page: 5, after: since, orderby: 'date', order: 'desc',
-      });
-      for (const o of res.data) {
-        const oEmail = (o.billing?.email ?? '').toLowerCase();
-        const oPhone = (o.billing?.phone ?? '').replace(/\s/g, '');
-        const matchesEmail = email && oEmail === email;
-        const matchesPhone = phone && oPhone === phone;
-        if (!matchesEmail && !matchesPhone) continue;
-
-        const empMeta = (o.meta_data ?? []).find((m) => m.key === '_mzem_employee_id');
-        const prevId = typeof empMeta?.value === 'string' ? empMeta.value : '';
-        if (prevId && activeIds.includes(prevId)) return prevId;
-      }
-    }
-  } catch {
-    // WC failure is non-fatal — fall through to round-robin
-  }
-  return null;
-}
 
 export class WooCommerceOrderService implements OrderService {
   async list(query: OrderListQuery = {}): Promise<OrderListResult> {
-    const wantsEmployeeFilter = query.assignedEmployeeId !== undefined && query.assignedEmployeeId !== 'any';
-    // WC has no native filter on our meta key — overfetch when filtering, then filter in memory.
-    const perPage = query.perPage ?? 50;
     const res = await wooClient.get<WooOrderRaw[]>('/orders', {
       page: query.page ?? 1,
-      per_page: wantsEmployeeFilter ? 100 : perPage,
+      per_page: query.perPage ?? 50,
       status: query.status && query.status !== 'any' ? query.status : 'any',
       search: query.search || undefined,
       after: query.after || undefined,
       before: query.before || undefined,
     });
-    let items = res.data.map(mapOrder);
-    if (wantsEmployeeFilter) {
-      const wanted = query.assignedEmployeeId;
-      items = items.filter((o) => {
-        const id = o.assignedEmployeeId ?? null;
-        if (wanted === 'unassigned') return id === null;
-        return id === wanted;
-      });
-    }
-    return { items, total: wantsEmployeeFilter ? items.length : res.total, totalPages: res.totalPages, page: query.page ?? 1 };
+    const items = res.data.map(mapOrder);
+    return { items, total: res.total, totalPages: res.totalPages, page: query.page ?? 1 };
   }
 
   async create(payload: CheckoutPayload): Promise<OrderResponse> {
@@ -163,22 +81,7 @@ export class WooCommerceOrderService implements OrderService {
       ],
     };
     const res = await wooClient.post<WooOrderRaw>('/orders', wcPayload);
-    let order = mapOrder(res.data);
-
-    // Auto-assign to an employee (sticky customer → least loaded)
-    try {
-      const employeeId = await pickEmployeeForOrder(customer.email ?? '', customer.phone);
-      if (employeeId) {
-        const upd = await wooClient.put<WooOrderRaw>(`/orders/${order.id}`, {
-          meta_data: [
-            { key: '_mzem_employee_id', value: employeeId },
-            { key: '_mzem_assigned_at', value: new Date().toISOString() },
-            { key: '_mzem_assigned_by', value: 'auto' },
-          ],
-        });
-        order = mapOrder(upd.data);
-      }
-    } catch { /* assignment failure must never block the order */ }
+    const order = mapOrder(res.data);
 
     // Auto-push to Navex when the carrier label matches NAVEX_AUTO_PUSH_LABEL
     const label = (process.env.NAVEX_AUTO_PUSH_LABEL ?? 'navex').toLowerCase();
@@ -350,31 +253,5 @@ export class WooCommerceOrderService implements OrderService {
     } else {
       await wooClient.trash(`/orders/${id}`);
     }
-  }
-
-  async assignEmployee(orderId: string, employeeId: string | null, assignedBy: 'auto' | 'admin' = 'admin'): Promise<OrderResponse> {
-    // Read previous history so we can append to it (not replace).
-    let history: { employeeId: string | null; at: string; by: 'auto' | 'admin' }[] = [];
-    try {
-      const existing = await wooClient.get<WooOrderRaw>(`/orders/${orderId}`);
-      const m = (existing.data.meta_data ?? []).find((x) => x.key === '_mzem_assignment_history');
-      if (m && typeof m.value === 'string' && m.value.trim().startsWith('[')) {
-        history = JSON.parse(m.value);
-      } else if (Array.isArray(m?.value)) {
-        history = m.value as typeof history;
-      }
-    } catch { /* keep history empty */ }
-
-    const at = new Date().toISOString();
-    history.push({ employeeId, at, by: assignedBy });
-
-    const meta: { key: string; value: unknown }[] = [
-      { key: '_mzem_employee_id', value: employeeId ?? '' },
-      { key: '_mzem_assigned_at', value: employeeId ? at : '' },
-      { key: '_mzem_assigned_by', value: employeeId ? assignedBy : '' },
-      { key: '_mzem_assignment_history', value: JSON.stringify(history) },
-    ];
-    const res = await wooClient.put<WooOrderRaw>(`/orders/${orderId}`, { meta_data: meta });
-    return mapOrder(res.data);
   }
 }

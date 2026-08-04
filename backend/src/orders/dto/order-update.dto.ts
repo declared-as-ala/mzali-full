@@ -41,7 +41,3 @@ export class UpdateOrderDto {
 export class UpdateStatusDto {
   @IsString() status!: string;
 }
-
-export class AssignOrderDto {
-  @IsOptional() @IsString() employeeId?: string | null;
-}

@@ -21,7 +21,6 @@ export async function POST(req: Request) {
   if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
 
   if (PROVIDER === 'mzali-api') {
-    // Ownership is enforced server-side by the backend (403 if not own order).
     const bearer = await getValidAccessToken();
     if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     const { status, body } = await pushCarrier('employee', 'navex', String(orderId), bearer);
@@ -33,9 +32,6 @@ export async function POST(req: Request) {
   return withDeliveryLock(`navex:${orderId}`, async () => {
     const order = await orderService.getById(String(orderId));
     if (!order) return NextResponse.json({ error: 'not found' }, { status: 404 });
-    if (order.assignedEmployeeId !== session.userId) {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-    }
 
     const existingTracking = String((order.meta?._navex_tracking as string) ?? '').trim();
     if (existingTracking || order.meta?._navex_status === 'sent') {

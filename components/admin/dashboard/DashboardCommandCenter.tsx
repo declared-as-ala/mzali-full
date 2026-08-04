@@ -100,7 +100,6 @@ const DEFAULT_STATS: DashboardStats = {
   statusMix: {},
   topProducts: [],
   lowStock: [],
-  perEmployee: [],
   period: {
     days: 30, revenue: 0, orders: 0, averageOrderValue: 0,
     repeatCustomerRate: 0, cancelledRate: 0, exchangeRate: 0,
@@ -268,13 +267,8 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
         </LuxePanel>
 
         {/* Low Stock Watchlist */}
-        <LuxePanel className="xl:col-span-3" title="Stock à surveiller" eyebrow="Alertes de réapprovisionnement">
+        <LuxePanel className="xl:col-span-7" title="Stock à surveiller" eyebrow="Alertes de réapprovisionnement">
           <LowStock products={stats.lowStock} />
-        </LuxePanel>
-
-        {/* Employee Workload */}
-        <LuxePanel className="xl:col-span-4" title="Charge de l'équipe" eyebrow="Commandes actives assignées">
-          <EmployeeWorkload employees={stats.perEmployee} />
         </LuxePanel>
 
         {/* Carrier Performance */}
@@ -578,27 +572,6 @@ function LowStock({ products }: { products: DashboardStats['lowStock'] }) {
           </li>
         );
       })}
-    </ul>
-  );
-}
-
-// ─── Employee Workload ────────────────────────────────────────────────────────
-function EmployeeWorkload({ employees }: { employees: DashboardStats['perEmployee'] }) {
-  if (!employees.length) return <EmptyState className="h-56" />;
-  const max = Math.max(...employees.map((e) => e.activeOrders), 1);
-  return (
-    <ul className="space-y-3">
-      {employees.map((employee) => (
-        <li key={employee.employeeId} className="space-y-1">
-          <div className="flex justify-between text-xs font-bold text-slate-900">
-            <span>{employee.name}</span>
-            <span className="text-blue-600 font-black">{employee.activeOrders} active{employee.activeOrders !== 1 ? 's' : ''}</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-blue-600" style={{ width: `${(employee.activeOrders / max) * 100}%` }} />
-          </div>
-        </li>
-      ))}
     </ul>
   );
 }

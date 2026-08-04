@@ -41,7 +41,6 @@ export class MzaliApiOrderService implements OrderService {
         search: query.search,
         after: query.after,
         before: query.before,
-        assignedEmployeeId: query.assignedEmployeeId,
       },
     });
   }
@@ -58,15 +57,5 @@ export class MzaliApiOrderService implements OrderService {
   async remove(id: string): Promise<void> {
     const bearer = await getValidAccessToken();
     await apiRequest(`/admin/orders/${id}`, { method: 'DELETE', bearer: bearer ?? undefined });
-  }
-
-  async assignEmployee(orderId: string, employeeId: string | null, assignedBy: 'auto' | 'admin' = 'admin'): Promise<OrderResponse> {
-    void assignedBy; // the backend always records 'admin' for manually-triggered assigns from this endpoint
-    const bearer = await getValidAccessToken();
-    return apiRequest<OrderResponse>(`/admin/orders/${orderId}/assign`, {
-      method: 'POST',
-      bearer: bearer ?? undefined,
-      body: { employeeId },
-    });
   }
 }

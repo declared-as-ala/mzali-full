@@ -8,7 +8,6 @@ export type DashboardStats = {
   statusMix: Record<string, number>;
   topProducts: { productId: string; name: string; quantity: number; revenue: number }[];
   lowStock: { productId: string; name: string; locationId: string; available: number; threshold: number }[];
-  perEmployee: { employeeId: string; name: string; activeOrders: number }[];
   period: {
     days: number;
     revenue: number;

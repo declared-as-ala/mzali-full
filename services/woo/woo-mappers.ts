@@ -109,18 +109,12 @@ export function mapOrder(o: WooOrderRaw): OrderResponse {
       0,
     ) + shippingTotal;
   }
-  const assignedEmployeeId = typeof metaMap._mzem_employee_id === 'string' && metaMap._mzem_employee_id
-    ? metaMap._mzem_employee_id
-    : null;
-  const assignedAt = typeof metaMap._mzem_assigned_at === 'string' ? metaMap._mzem_assigned_at : null;
   return {
     id: String(o.id),
     number: o.number,
     status,
     currency: o.currency || CURRENCY,
     total,
-    assignedEmployeeId,
-    assignedAt,
     createdAt: o.date_created,
     customer: {
       firstName: o.billing.first_name,

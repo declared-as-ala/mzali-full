@@ -18,9 +18,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const order = await orderService.getById(id);
   if (!order) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  if (order.assignedEmployeeId !== session.userId) {
-    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
-  }
   const { status } = await req.json();
   if (!status || typeof status !== 'string' || !ALLOWED_FOR_EMPLOYEE.has(status)) {
     return NextResponse.json({ error: 'Statut non autorisé' }, { status: 400 });

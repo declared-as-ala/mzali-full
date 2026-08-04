@@ -62,9 +62,6 @@ describe('mapWooOrder', () => {
         { id: 4, key: '_mzem_exchange', value: 'yes' },
         { id: 5, key: '_mzem_attempts', value: '3' },
         { id: 6, key: '_mzem_source', value: 'facebook' },
-        { id: 7, key: '_mzem_employee_id', value: 'emp-uuid-1' },
-        { id: 8, key: '_mzem_assigned_at', value: '2026-01-16T00:00:00Z' },
-        { id: 9, key: '_mzem_assigned_by', value: 'auto' },
       ],
     });
     const m = mapWooOrder(raw);
@@ -74,20 +71,6 @@ describe('mapWooOrder', () => {
     expect(m.exchange).toBe(true);
     expect(m.attempts).toBe(3);
     expect(m.source).toBe('facebook');
-    expect(m.employeeLegacyId).toBe('emp-uuid-1');
-    expect(m.assignedAt).toBe('2026-01-16T00:00:00Z');
-    expect(m.assignedBy).toBe('auto');
-  });
-
-  it('parses a JSON-stringified assignment history', () => {
-    const history = [{ employeeId: 'e1', at: '2026-01-01T00:00:00Z', by: 'auto' }];
-    const raw = baseRaw({ meta_data: [{ id: 1, key: '_mzem_assignment_history', value: JSON.stringify(history) }] });
-    expect(mapWooOrder(raw).assignmentHistory).toEqual(history);
-  });
-
-  it('tolerates a malformed assignment history without throwing', () => {
-    const raw = baseRaw({ meta_data: [{ id: 1, key: '_mzem_assignment_history', value: 'not json[' }] });
-    expect(mapWooOrder(raw).assignmentHistory).toEqual([]);
   });
 
   it('maps carrier meta into structured results only when a status is present', () => {

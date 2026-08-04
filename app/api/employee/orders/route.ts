@@ -15,7 +15,6 @@ export async function GET(req: Request) {
     perPage: 100,
     status: (status && status !== 'any' ? status : undefined) as never,
     search,
-    assignedEmployeeId: session.userId, // server-enforced scope
   });
 
   // If no status is requested, or it's 'any', fetch trash orders as well
@@ -24,9 +23,8 @@ export async function GET(req: Request) {
       perPage: 100,
       status: 'trash' as never,
       search,
-      assignedEmployeeId: session.userId,
     });
-    
+
     const [result, trashResult] = await Promise.all([resultPromise, trashPromise]);
     result.items = [...result.items, ...trashResult.items];
     return NextResponse.json(result);

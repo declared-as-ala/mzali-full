@@ -37,7 +37,6 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     _mzem_manual_total: doc.manualTotalMinor != null ? toDinars(doc.manualTotalMinor) : undefined,
     _mzem_attempts: doc.attempts,
     _mzem_source: doc.source || undefined,
-    _mzem_assignment_history: JSON.stringify(doc.assignment.history ?? []),
   };
   if (doc.carrier.navex) {
     meta._navex_status = doc.carrier.navex.status;
@@ -78,8 +77,6 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     },
     items,
     shipping: toDinars(doc.shippingMinor),
-    assignedEmployeeId: doc.assignment.employeeId,
-    assignedAt: doc.assignment.assignedAt ? doc.assignment.assignedAt.toISOString() : null,
     meta,
   };
 }

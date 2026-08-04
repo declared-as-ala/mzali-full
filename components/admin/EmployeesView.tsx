@@ -5,7 +5,7 @@ import { Plus, Edit, Trash2, Search, X, Check, AlertCircle } from 'lucide-react'
 import { useToast } from './Toast';
 import type { Employee } from '@/services';
 
-type EmployeeRow = Employee & { activeOrdersCount?: number };
+type EmployeeRow = Employee;
 
 export default function EmployeesView() {
   const router = useRouter();
@@ -53,10 +53,7 @@ export default function EmployeesView() {
   }
 
   async function deleteEmployee(e: EmployeeRow) {
-    const warning = e.activeOrdersCount && e.activeOrdersCount > 0
-      ? ` Ses ${e.activeOrdersCount} commande${e.activeOrdersCount > 1 ? 's' : ''} active${e.activeOrdersCount > 1 ? 's' : ''} seront désassignée${e.activeOrdersCount > 1 ? 's' : ''} (non touchée${e.activeOrdersCount > 1 ? 's' : ''} sinon).`
-      : '';
-    if (!confirm(`Supprimer définitivement l'employé ${e.name} ?${warning} Cette action est irréversible.`)) return;
+    if (!confirm(`Supprimer définitivement l'employé ${e.name} ? Cette action est irréversible.`)) return;
     try {
       const res = await fetch(`/api/admin/employees/${e.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
@@ -73,7 +70,7 @@ export default function EmployeesView() {
       const exists = current.some((employee) => employee.id === saved.id);
       if (!exists) return [...current, saved];
       return current.map((employee) => employee.id === saved.id
-        ? { ...employee, ...saved, activeOrdersCount: employee.activeOrdersCount }
+        ? { ...employee, ...saved }
         : employee);
     });
     setDrawerOpen(false);
@@ -115,13 +112,12 @@ export default function EmployeesView() {
               <th className="px-4 py-3 text-left">Email</th>
               <th className="px-4 py-3 text-left">Rôle</th>
               <th className="px-4 py-3 text-left">Statut</th>
-              <th className="px-4 py-3 text-left">Commandes actives</th>
               <th className="px-4 py-3 text-left">Créé</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="p-6 text-center text-ink-700">Chargement…</td></tr>}
+            {loading && <tr><td colSpan={6} className="p-6 text-center text-ink-700">Chargement…</td></tr>}
             {!loading && filtered.map((e) => {
               const r = e.role ?? 'employee';
               const isAdmin = r === 'admin' || r === 'super_admin';
@@ -146,11 +142,6 @@ export default function EmployeesView() {
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700"><AlertCircle size={12} /> Inactif</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700">
-                      {e.activeOrdersCount ?? 0}
-                    </span>
                   </td>
                   <td className="px-4 py-3 text-ink-700">{new Date(e.createdAt).toLocaleDateString('fr-FR')}</td>
                   <td className="px-4 py-3">

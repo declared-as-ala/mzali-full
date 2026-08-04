@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -28,8 +27,8 @@ export class OrdersEmployeeController {
 
   @Get()
   @RequirePermissions('orders.read')
-  list(@Query() query: OrderListQueryDto, @CurrentUser() user: RequestUser) {
-    return this.orders.list(query, user.userId);
+  list(@Query() query: OrderListQueryDto) {
+    return this.orders.list(query);
   }
 
   @Get('statuses')
@@ -40,34 +39,30 @@ export class OrdersEmployeeController {
 
   @Get(':id')
   @RequirePermissions('orders.read')
-  async get(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    const order = await this.requireOwnOrder(id, user.userId);
-    return order;
+  async get(@Param('id') id: string) {
+    return this.requireOrder(id);
   }
 
   @Put(':id')
   @RequirePermissions('orders.write')
   async update(@Param('id') id: string, @Body() dto: UpdateOrderDto, @CurrentUser() user: RequestUser) {
-    await this.requireOwnOrder(id, user.userId);
-    // Employees may edit order content but never reassign it.
+    await this.requireOrder(id);
     return this.orders.update(id, dto, { type: 'employee', id: user.userId, name: user.name });
   }
 
   @Put(':id/status')
   @RequirePermissions('orders.write')
   async updateStatus(@Param('id') id: string, @Body() dto: UpdateStatusDto, @CurrentUser() user: RequestUser) {
-    await this.requireOwnOrder(id, user.userId);
+    await this.requireOrder(id);
     if (!dto.status || !ALLOWED_FOR_EMPLOYEE.has(dto.status)) {
       throw new BadRequestException('Statut non autorisé');
     }
     return this.orders.changeStatus(id, dto.status, { type: 'employee', id: user.userId, name: user.name });
   }
 
-  /** Ported from app/api/employee/orders/[id]/... : 404 unknown, 403 not own. */
-  private async requireOwnOrder(id: string, employeeId: string) {
+  private async requireOrder(id: string) {
     const order = await this.orders.getById(id);
     if (!order) throw new NotFoundException('Commande introuvable');
-    if (order.assignedEmployeeId !== employeeId) throw new ForbiddenException();
     return order;
   }
 }

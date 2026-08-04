@@ -5,7 +5,6 @@ import { CouponsModule } from '@/coupons/coupons.module';
 import { CustomersModule } from '@/customers/customers.module';
 import { InventoryModule } from '@/inventory/inventory.module';
 import { LoyaltyCoreModule } from '@/loyalty/loyalty-core.module';
-import { AssignmentService } from './assignment.service';
 import { Order, OrderSchema } from './order.schema';
 import { OrdersAdminController } from './orders-admin.controller';
 import { OrdersEmployeeController } from './orders-employee.controller';
@@ -17,7 +16,7 @@ const OrderMongoose = MongooseModule.forFeature([{ name: Order.name, schema: Ord
 @Module({
   imports: [OrderMongoose, CatalogModule, InventoryModule, CouponsModule, CustomersModule, LoyaltyCoreModule],
   controllers: [OrdersPublicController, OrdersAdminController, OrdersEmployeeController],
-  providers: [OrdersService, AssignmentService],
+  providers: [OrdersService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

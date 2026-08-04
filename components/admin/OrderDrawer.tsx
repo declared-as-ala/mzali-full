@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import NumberField from './NumberField';
-import { Save, Trash2, Plus, Check, AlertTriangle, History } from 'lucide-react';
+import { Save, Trash2, Plus, Check, AlertTriangle } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
 import type { OrderResponse, OrderStatus } from '@/types';
@@ -22,13 +22,6 @@ type LineDraft = {
 type ProductInfo = {
   options: { name: string; values: string[] }[];   // {name:'size', values:['s','m','l',...]}
   bundles: { id: string; name: string; quantity: number; price: number }[];
-};
-
-type AssignmentEntry = {
-  employeeId: string | null;
-  employeeName?: string;
-  at: string;
-  by?: 'auto' | 'admin' | 'employee';
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -140,9 +133,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [axessTracking, setAxessTracking] = useState<string>('');
   const [axessStatus, setAxessStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
   const [axessMsg, setAxessMsg] = useState<string>('');
-  const [assignmentHistory, setAssignmentHistory] = useState<AssignmentEntry[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [employeeNames, setEmployeeNames] = useState<Record<string, string>>({});
   const [exchange, setExchange] = useState(false);
   const [shipping, setShipping] = useState(8);
   const [deliveryCompany, setDeliveryCompany] = useState('');
@@ -226,13 +216,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     if (!statusList.length) {
       setStatusList(['confirme', 'en-attente', 'tentative', 'annule']);
     }
-    if (!Object.keys(employeeNames).length) {
-      fetch('/api/employees-directory').then(async (r) => {
-        if (!r.ok) return;
-        const list = (await r.json()) as { id: string; name: string }[];
-        setEmployeeNames(Object.fromEntries(list.map((e) => [e.id, e.name])));
-      }).catch(() => {});
-    }
     if (orderId) {
       setLoading(true);
       setProductInfo({});
@@ -259,22 +242,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           setAxessStatus(((o.meta?._axess_status as 'sent' | 'failed') ?? 'idle'));
           setAxessMsg(String((o.meta?._axess_error as string) ?? ''));
 
-          // Assignment history — fall back to current pointer if no array is stored.
-          let history: AssignmentEntry[] = [];
-          const rawHistory = o.meta?._mzem_assignment_history;
-          if (typeof rawHistory === 'string' && rawHistory.trim().startsWith('[')) {
-            try { history = JSON.parse(rawHistory) as AssignmentEntry[]; } catch { /* ignore malformed */ }
-          } else if (Array.isArray(rawHistory)) {
-            history = rawHistory as AssignmentEntry[];
-          }
-          if (history.length === 0 && o.assignedEmployeeId) {
-            history = [{
-              employeeId: o.assignedEmployeeId,
-              at: o.assignedAt ?? o.createdAt,
-              by: (o.meta?._mzem_assigned_by as 'auto' | 'admin' | 'employee') ?? 'auto',
-            }];
-          }
-          setAssignmentHistory(history);
           setDeliveryCompany(String((o.meta?._mzem_delivery_company as string) ?? ''));
           setExchange(o.meta?._mzem_exchange === 'yes');
           setShipping(o.shipping ?? 8);
@@ -310,8 +277,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setAxessTracking('');
       setAxessStatus('idle');
       setAxessMsg('');
-      setAssignmentHistory([]);
-      setHistoryOpen(false);
       setDeliveryCompany('');
       setExchange(false);
       setShipping(8);
@@ -704,33 +669,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                     <span className="text-xs text-ink-700">Pas encore envoyé à First Delivery.</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {assignmentHistory.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setHistoryOpen((v) => !v)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs font-bold text-ink-900 hover:bg-ink-100"
-                    >
-                      <History size={12} /> Historique ({assignmentHistory.length})
-                    </button>
-                  )}
-                </div>
-                {historyOpen && assignmentHistory.length > 0 && (
-                  <ul className="mt-2 w-full space-y-1 border-t border-ink-200 pt-2 text-xs">
-                    {assignmentHistory.slice().reverse().map((h, i) => {
-                      const label = h.employeeId ? (employeeNames[h.employeeId] ?? h.employeeName ?? h.employeeId) : 'Non assigné';
-                      return (
-                        <li key={i} className="flex items-center justify-between rounded-lg bg-ink-100 px-3 py-2">
-                          <span>
-                            <strong className="text-ink-900">{label}</strong>
-                            {h.by && <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase text-ink-700">{h.by}</span>}
-                          </span>
-                          <span className="text-ink-700">{new Date(h.at).toLocaleString('fr-FR')}</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
               </div>
             </div>
           )}

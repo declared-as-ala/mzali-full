@@ -8,14 +8,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type { EmployeeCreateInput, EmployeeRecord, EmployeeUpdateInput } from '@contracts';
 import { hashPassword } from '@/auth/password';
-import { Order } from '@/orders/order.schema';
 import { Employee, EmployeeDocument } from './employee.schema';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(Employee.name) private readonly model: Model<Employee>,
-    @InjectModel(Order.name) private readonly orders: Model<Order>,
   ) {}
 
   async list(): Promise<EmployeeRecord[]> {
@@ -75,21 +73,6 @@ export class UsersService {
 
   async remove(id: string): Promise<void> {
     const doc = await this.findDoc(id);
-    // Unassign rather than block — a deleted employee's orders go back to the
-    // unassigned pool instead of leaving a dangling employeeId reference.
-    await this.orders.updateMany(
-      { 'assignment.employeeId': id },
-      {
-        $set: { 'assignment.employeeId': null, 'assignment.assignedAt': null, 'assignment.assignedBy': null },
-        $push: {
-          'assignment.history': {
-            employeeId: null,
-            at: new Date(),
-            by: 'admin',
-          },
-        },
-      },
-    );
     await doc.deleteOne();
   }
 

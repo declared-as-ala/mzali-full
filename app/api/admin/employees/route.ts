@@ -1,25 +1,11 @@
 import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
-import { employeeService, orderService } from '@/services';
+import { employeeService } from '@/services';
 
 export async function GET() {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const employees = await employeeService.list();
-
-  // Count active assigned orders per employee (single WC fetch, then group)
-  const counts: Record<string, number> = {};
-  try {
-    const ACTIVE = 'pending,en-attente,on-hold,processing,confirme,tentative';
-    const res = await orderService.list({ perPage: 100, status: ACTIVE as never });
-    for (const o of res.items) {
-      const id = o.assignedEmployeeId;
-      if (id) counts[id] = (counts[id] ?? 0) + 1;
-    }
-  } catch { /* leave counts at 0 */ }
-
-  return NextResponse.json(
-    employees.map((e) => ({ ...e, activeOrdersCount: counts[e.id] ?? 0 })),
-  );
+  return NextResponse.json(employees);
 }
 
 export async function POST(req: Request) {

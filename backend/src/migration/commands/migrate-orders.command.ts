@@ -68,10 +68,6 @@ export class MigrateOrdersCommand extends CommandRunner {
             continue;
           }
 
-          const employeeNewId = mapped.employeeLegacyId
-            ? await this.mappings.getNewId('file', 'employee', mapped.employeeLegacyId)
-            : null;
-
           const items = await Promise.all(
             mapped.items.map(async (i) => {
               const productNewId = await this.mappings.getNewId('woocommerce', 'product', i.legacyProductId);
@@ -128,12 +124,6 @@ export class MigrateOrdersCommand extends CommandRunner {
                 coupon: null,
                 deliveryCompany: mapped.deliveryCompany,
                 carrier: mapped.carrier,
-                assignment: {
-                  employeeId: employeeNewId,
-                  assignedAt: mapped.assignedAt ? new Date(mapped.assignedAt) : null,
-                  assignedBy: mapped.assignedBy,
-                  history: mapped.assignmentHistory.map((h) => ({ ...h, at: new Date(h.at) })),
-                },
                 privateNote: mapped.privateNote,
                 exchange: mapped.exchange,
                 attempts: mapped.attempts,

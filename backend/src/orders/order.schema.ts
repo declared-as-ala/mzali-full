@@ -71,23 +71,6 @@ class Carrier {
 }
 const CarrierSchema = SchemaFactory.createForClass(Carrier);
 
-@Schema({ _id: false })
-class AssignmentHistoryEntry {
-  @Prop({ type: String, default: null }) employeeId!: string | null;
-  @Prop({ type: Date, required: true, default: () => new Date() }) at!: Date;
-  @Prop({ type: String, enum: ['auto', 'admin'], required: true }) by!: 'auto' | 'admin';
-}
-const AssignmentHistoryEntrySchema = SchemaFactory.createForClass(AssignmentHistoryEntry);
-
-@Schema({ _id: false })
-class Assignment {
-  @Prop({ type: String, default: null }) employeeId!: string | null;
-  @Prop({ type: Date, default: null }) assignedAt!: Date | null;
-  @Prop({ type: String, enum: ['auto', 'admin'], default: null }) assignedBy!: 'auto' | 'admin' | null;
-  @Prop({ type: [AssignmentHistoryEntrySchema], default: [] }) history!: AssignmentHistoryEntry[];
-}
-const AssignmentSchema = SchemaFactory.createForClass(Assignment);
-
 @Schema({ collection: 'orders', timestamps: true })
 export class Order {
   @Prop({ type: Number, required: true, unique: true, index: true })
@@ -125,9 +108,6 @@ export class Order {
   @Prop({ type: CarrierSchema, default: () => ({ navex: null, firstdelivery: null, axess: null }) })
   carrier!: Carrier;
 
-  @Prop({ type: AssignmentSchema, default: () => ({ employeeId: null, assignedAt: null, assignedBy: null, history: [] }) })
-  assignment!: Assignment;
-
   @Prop({ type: String, default: '' }) privateNote!: string;
   @Prop({ type: Boolean, default: false }) exchange!: boolean;
   @Prop({ type: Number, default: 0 }) attempts!: number;
@@ -150,5 +130,4 @@ export const OrderSchema = SchemaFactory.createForClass(Order);
 
 OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ 'customer.phone': 1, createdAt: -1 });
-OrderSchema.index({ 'assignment.employeeId': 1, createdAt: -1 });
 OrderSchema.index({ createdAt: -1 });

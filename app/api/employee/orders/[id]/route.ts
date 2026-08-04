@@ -2,12 +2,9 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { orderService } from '@/services';
 
-async function requireOwnOrder(id: string, sessionUserId: string) {
+async function requireOrder(id: string) {
   const order = await orderService.getById(id);
   if (!order) return { error: NextResponse.json({ error: 'not found' }, { status: 404 }) };
-  if (order.assignedEmployeeId !== sessionUserId) {
-    return { error: NextResponse.json({ error: 'forbidden' }, { status: 403 }) };
-  }
   return { order };
 }
 
@@ -17,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   const { id } = await params;
-  const guard = await requireOwnOrder(id, session.userId);
+  const guard = await requireOrder(id);
   if (guard.error) return guard.error;
   return NextResponse.json(guard.order);
 }
@@ -28,13 +25,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   const { id } = await params;
-  const guard = await requireOwnOrder(id, session.userId);
+  const guard = await requireOrder(id);
   if (guard.error) return guard.error;
   try {
     const body = await req.json();
-    // Reject any field that would change ownership — server-enforced safety.
-    delete body.assignedEmployeeId;
-    delete body.assignedAt;
     const updated = await orderService.update(id, body);
     return NextResponse.json(updated);
   } catch (e) {
@@ -48,7 +42,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   const { id } = await params;
-  const guard = await requireOwnOrder(id, session.userId);
+  const guard = await requireOrder(id);
   if (guard.error) return guard.error;
   try {
     await orderService.remove(id);

@@ -16,7 +16,6 @@ export default async function EmployeeDashboard() {
 
   const result = await orderService.list({
     perPage: 100,
-    assignedEmployeeId: session.userId,
   }).catch(() => ({ items: [], total: 0, totalPages: 0, page: 1 }));
 
   const items = result.items;
@@ -37,7 +36,7 @@ export default async function EmployeeDashboard() {
       <header className="mb-8">
         <p className="text-sm font-bold uppercase tracking-widest text-brand-500">Espace employé</p>
         <h1 className="text-3xl font-black">Bonjour, {session.name}</h1>
-        <p className="text-ink-700">Voici vos commandes assignées</p>
+        <p className="text-ink-700">Toutes les commandes</p>
       </header>
 
       <div className="mb-8 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -67,7 +66,7 @@ export default async function EmployeeDashboard() {
               <span className="font-black text-brand-500">{formatPrice(o.total)}</span>
             </li>
           ))}
-          {!items.length && <li className="p-4 text-center text-ink-700">Aucune commande assignée pour l&apos;instant.</li>}
+          {!items.length && <li className="p-4 text-center text-ink-700">Aucune commande pour l&apos;instant.</li>}
         </ul>
       </section>
     </div>

@@ -64,16 +64,6 @@ export class CustomersService {
     return this.model.findOneAndUpdate({ phone: normalized }, update, { new: true, upsert: true, session });
   }
 
-  async recordAssignment(phone: string, employeeId: string | null, session?: ClientSession): Promise<void> {
-    const normalized = normalizePhone(phone);
-    if (!normalized) return;
-    await this.model.updateOne(
-      { phone: normalized },
-      { $set: { lastAssignment: { employeeId, at: employeeId ? new Date() : null } } },
-      { session },
-    );
-  }
-
   async findByPhone(phone: string): Promise<CustomerDocument | null> {
     const normalized = normalizePhone(phone);
     if (!normalized) return null;

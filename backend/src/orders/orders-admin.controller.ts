@@ -4,7 +4,7 @@ import { AuditService } from '@/audit/audit.service';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { AuthedRequest, JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePermissions } from '@/auth/guards/permissions.guard';
-import { AssignOrderDto, UpdateOrderDto } from './dto/order-update.dto';
+import { UpdateOrderDto } from './dto/order-update.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { CheckoutDto } from './dto/checkout.dto';
 import { OrdersService } from './orders.service';
@@ -68,15 +68,5 @@ export class OrdersAdminController {
       ip: req.ip,
     });
     return { ok: true };
-  }
-
-  @Post('admin/orders/:id/assign')
-  @RequirePermissions('orders.assign')
-  assign(@Param('id') id: string, @Body() dto: AssignOrderDto, @CurrentUser() user: RequestUser) {
-    return this.orders.assignEmployee(id, dto.employeeId ?? null, 'admin', {
-      type: 'employee',
-      id: user.userId,
-      name: user.name,
-    });
   }
 }

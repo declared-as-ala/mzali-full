@@ -18,7 +18,6 @@ import { LoyaltyLedgerService } from '@/loyalty/loyalty-ledger.service';
 import { LoyaltyRulesService } from '@/loyalty/loyalty-rules.service';
 import { LoyaltyService } from '@/loyalty/loyalty.service';
 import { SettingsService } from '@/settings/settings.service';
-import { AssignmentService } from './assignment.service';
 import { CheckoutDto } from './dto/checkout.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
@@ -57,7 +56,6 @@ export class OrdersService {
     private readonly inventory: InventoryService,
     private readonly coupons: CouponsService,
     private readonly customers: CustomersService,
-    private readonly assignment: AssignmentService,
     private readonly settings: SettingsService,
     private readonly loyalty: LoyaltyService,
     private readonly loyaltyRules: LoyaltyRulesService,
@@ -190,10 +188,9 @@ export class OrdersService {
         saved = created;
       });
 
-      // Assignment and carrier auto-push are best-effort and run after the
-      // transaction commits — a failure here must never roll back or fail
-      // the order (matches the legacy try/catch-and-swallow behavior).
-      await this.tryAssign(saved, 'auto');
+      // Carrier auto-push is best-effort and runs after the transaction
+      // commits — a failure here must never roll back or fail the order
+      // (matches the legacy try/catch-and-swallow behavior).
       if (saved.status !== DRAFT_STATUS) await this.maybeEnqueueAutoPush(saved);
       return toOrderContract(await this.model.findById(saved._id) as OrderDocument);
     } finally {
@@ -255,7 +252,6 @@ export class OrdersService {
         await this.customers.upsertFromOrder(dto.customer, totals.totalMinor, new Date(), session);
       });
       if (doc.status !== DRAFT_STATUS) {
-        if (!doc.assignment.employeeId) await this.tryAssign(doc, 'auto');
         await this.maybeEnqueueAutoPush(doc);
       }
       return toOrderContract(await this.model.findById(doc._id) as OrderDocument);
@@ -269,10 +265,9 @@ export class OrdersService {
     return doc ? toOrderContract(doc) : null;
   }
 
-  async list(query: OrderListQueryDto, ownerEmployeeId?: string) {
+  async list(query: OrderListQueryDto) {
     const { page, perPage, skip } = clampPagination(query.page, query.perPage, 100);
     const filter: Record<string, unknown> = {};
-    if (ownerEmployeeId) filter['assignment.employeeId'] = ownerEmployeeId;
     if (query.status && query.status !== 'any') {
       const statuses = query.status.split(',').map((status) => status.trim()).filter(Boolean);
       filter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
@@ -289,9 +284,6 @@ export class OrdersService {
         ...(query.after ? { $gte: new Date(query.after) } : {}),
         ...(query.before ? { $lte: new Date(query.before) } : {}),
       };
-    }
-    if (!ownerEmployeeId && query.assignedEmployeeId && query.assignedEmployeeId !== 'any') {
-      filter['assignment.employeeId'] = query.assignedEmployeeId === 'unassigned' ? null : query.assignedEmployeeId;
     }
 
     const [docs, total] = await Promise.all([
@@ -487,26 +479,6 @@ export class OrdersService {
     }
   }
 
-  async assignEmployee(orderId: string, employeeId: string | null, assignedBy: 'auto' | 'admin', actor: AuditActor): Promise<OrderResponse> {
-    const doc = await this.findDoc(orderId);
-    const at = new Date();
-    doc.assignment.history.push({ employeeId, at, by: assignedBy } as Order['assignment']['history'][number]);
-    doc.assignment.employeeId = employeeId;
-    doc.assignment.assignedAt = employeeId ? at : null;
-    doc.assignment.assignedBy = employeeId ? assignedBy : null;
-    await doc.save();
-    await this.customers.recordAssignment(doc.customer.phone, employeeId);
-    await this.audit.log({
-      actor,
-      action: 'order.assign',
-      entityType: 'order',
-      entityId: orderId,
-      summary: employeeId ? `Commande assignée à ${employeeId}` : 'Commande désassignée',
-      ip: null,
-    });
-    return toOrderContract(doc);
-  }
-
   async distinctStatuses(): Promise<string[]> {
     const used = await this.model.distinct('status');
     const standard = ['pending', 'processing', 'on-hold', 'completed', 'cancelled', 'refunded', 'failed'];
@@ -665,16 +637,6 @@ export class OrdersService {
       sourceId: doc.id,
       session,
     });
-  }
-
-  private async tryAssign(doc: OrderDocument, by: 'auto' | 'admin'): Promise<void> {
-    try {
-      const employeeId = await this.assignment.pickEmployee(doc.customer.phone);
-      if (!employeeId) return;
-      await this.assignEmployee(doc.id, employeeId, by, SYSTEM_ACTOR);
-    } catch (err) {
-      this.logger.warn(`Auto-assignment failed for order ${doc.id}: ${String(err)}`);
-    }
   }
 
   /**

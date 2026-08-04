@@ -72,7 +72,6 @@ export class StatsService {
       statusMixAgg,
       topProductsAgg,
       lowStockAgg,
-      perEmployeeAgg,
       ordersToday,
       orders7,
       orders30,
@@ -133,11 +132,6 @@ export class StatsService {
         { $sort: { available: 1 } },
         { $limit: 20 },
       ]),
-      this.orders.aggregate<{ _id: string; count: number }>([
-        { $match: { ...periodFilter, 'assignment.employeeId': { $ne: null } } },
-        { $group: { _id: '$assignment.employeeId', count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-      ]),
       this.orders.countDocuments({ ...baseFilter, createdAt: { $gte: startOfToday, $lte: now } }),
       this.orders.countDocuments({ ...baseFilter, createdAt: { $gte: last7, $lte: now } }),
       this.orders.countDocuments({ ...baseFilter, createdAt: { $gte: last30, $lte: now } }),
@@ -159,12 +153,6 @@ export class StatsService {
       : [];
     const productNameById = new Map(productDocs.map((product) => [product.id, product.name]));
 
-    const employeeIds = perEmployeeAgg.map((employee) => employee._id);
-    const employeeDocs = employeeIds.length
-      ? await this.employees.find({ _id: { $in: employeeIds } }).select({ name: 1 })
-      : [];
-    const employeeNameById = new Map(employeeDocs.map((employee) => [employee.id, employee.name]));
-
     const statusMix = Object.fromEntries(statusMixAgg.map((status) => [status._id, status.count]));
     return {
       revenue: { today: toDinars(revenueToday), last7Days: toDinars(revenue7), last30Days: toDinars(revenue30) },
@@ -183,11 +171,6 @@ export class StatsService {
         locationId: item.locationId,
         available: item.available,
         threshold: item.threshold,
-      })),
-      perEmployee: perEmployeeAgg.map((employee) => ({
-        employeeId: employee._id,
-        name: employeeNameById.get(employee._id) ?? employee._id,
-        activeOrders: employee.count,
       })),
       period: {
         days,
