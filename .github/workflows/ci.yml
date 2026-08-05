@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# A newer commit makes an unfinished CI run for the same branch obsolete.
+# Production deployment has its own non-cancelling concurrency guard, so this
+# only saves runner time and never interrupts a deployment in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   frontend:
     runs-on: ubuntu-latest
@@ -145,72 +152,74 @@ jobs:
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml config -q
 
   docker:
+    needs: [frontend, pos, backend, compose-validate]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: storefront
+            context: .
+            dockerfile: Dockerfile
+            cache_scope: storefront
+          - service: pos
+            context: pos
+            dockerfile: pos/Dockerfile
+            cache_scope: pos
+          - service: api
+            context: backend
+            dockerfile: backend/Dockerfile.api
+            cache_scope: backend-api
+          - service: worker
+            context: backend
+            dockerfile: backend/Dockerfile.worker
+            cache_scope: backend-worker
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build storefront image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: false
-          load: true
-          tags: mzali-storefront:ci
-      - name: Build POS image
-        uses: docker/build-push-action@v6
-        with:
-          context: pos
-          file: pos/Dockerfile
-          push: false
-          load: true
-          tags: mzali-pos:ci
-      - name: Build API image
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          file: backend/Dockerfile.api
-          push: false
-          load: true
-          tags: mzali-api:ci
-      - name: Build worker image
-        uses: docker/build-push-action@v6
-        with:
-          context: backend
-          file: backend/Dockerfile.worker
-          push: false
-          load: true
-          tags: mzali-worker:ci
+      - name: Normalize GHCR owner
+        shell: bash
+        run: echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
 
-      - name: Scan storefront image for known-critical CVEs
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: |
+            mzali-${{ matrix.service }}:ci
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/mzali-${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
+
+      - name: Scan ${{ matrix.service }} image for known-critical CVEs
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
-          image-ref: mzali-storefront:ci
+          image-ref: mzali-${{ matrix.service }}:ci
           severity: CRITICAL
           exit-code: "1"
           ignore-unfixed: true
-      - name: Scan POS image
-        uses: aquasecurity/trivy-action@v0.36.0
+
+      # Only trusted master runs publish. Pull requests still build and scan
+      # the exact same Dockerfiles, but never authenticate to the registry.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        uses: docker/login-action@v3
         with:
-          scan-type: image
-          image-ref: mzali-pos:ci
-          severity: CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
-      - name: Scan API image
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: mzali-api:ci
-          severity: CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
-      - name: Scan worker image
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          scan-type: image
-          image-ref: mzali-worker:ci
-          severity: CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish approved ${{ matrix.service }} image
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        shell: bash
+        run: |
+          docker push "ghcr.io/$IMAGE_OWNER/mzali-${{ matrix.service }}:${GITHUB_SHA}"
+          docker push "ghcr.io/$IMAGE_OWNER/mzali-${{ matrix.service }}:latest"
