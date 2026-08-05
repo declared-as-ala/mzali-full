@@ -138,7 +138,7 @@ export default async function Commandes(props: {
   // Count orders per phone for "Client régulier" badge in the loaded subset
   const counts: Record<string, number> = {};
   for (const o of items) {
-    const p = (o.customer.phone || '').replace(/\s/g, '');
+    const p = (o.customer?.phone || '').replace(/\s/g, '');
     if (!p) continue;
     counts[p] = (counts[p] ?? 0) + 1;
   }

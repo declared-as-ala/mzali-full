@@ -6,6 +6,7 @@ import OrderDrawer from './OrderDrawer';
 import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
 import { formatPrice } from '@/lib/site-config';
+import { adminLoginHref } from '@/lib/admin-nav';
 import type { OrderResponse } from '@/types';
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -321,17 +322,17 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         return cleanPhone.includes(cleanQ);
       };
 
-      const matchesPhone = (o.customer.phone && matchPhone(o.customer.phone)) || 
+      const matchesPhone = (o.customer?.phone && matchPhone(o.customer.phone)) ||
                            (o.meta?._mzem_phone_2 && typeof o.meta._mzem_phone_2 === 'string' && matchPhone(o.meta._mzem_phone_2));
       if (matchesPhone) return true;
 
       const hay = [
         o.number,
-        o.customer.firstName,
-        o.customer.lastName,
-        o.customer.phone,
-        o.customer.city,
-        o.customer.email,
+        o.customer?.firstName,
+        o.customer?.lastName,
+        o.customer?.phone,
+        o.customer?.city,
+        o.customer?.email,
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
@@ -361,6 +362,11 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     const snapshot = orders;
     setOrders((prev) => prev.filter((o) => o.id !== id));
     const res = await fetch(`${apiBase}/orders/${id}`, { method: 'DELETE' });
+    if (res.status === 401) {
+      setOrders(snapshot);
+      window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     if (!res.ok) {
       setOrders(snapshot);
       toast.error('Erreur de suppression');
@@ -379,8 +385,19 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     setSelected(new Set());
 
     const results = await Promise.allSettled(
-      ids.map((id) => fetch(`${apiBase}/orders/${id}`, { method: 'DELETE' }).then((r) => (r.ok ? id : Promise.reject(id)))),
+      ids.map((id) =>
+        fetch(`${apiBase}/orders/${id}`, { method: 'DELETE' }).then((r) => {
+          if (r.status === 401) throw new Error('unauthorized');
+          if (!r.ok) throw new Error('failed');
+          return id;
+        }),
+      ),
     );
+    if (results.some((r) => r.status === 'rejected' && r.reason instanceof Error && r.reason.message === 'unauthorized')) {
+      setOrders(snapshot);
+      window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+      return;
+    }
     const ok = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.length - ok;
     if (ok) toast.success(`${ok} commande${ok > 1 ? 's' : ''} supprimée${ok > 1 ? 's' : ''}`);
@@ -603,7 +620,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
           </thead>
           <tbody>
             {filteredOrders.map((o) => {
-              const phoneKey = (o.customer.phone || '').replace(/\s/g, '');
+              const phoneKey = (o.customer?.phone || '').replace(/\s/g, '');
               const repeats = phoneKey ? (repeatCounts[phoneKey] ?? 0) : 0;
               const isRegular = repeats > 1;
               const tone = STATUS_TONE[String(o.status)] ?? 'bg-ink-100 text-ink-700 ring-1 ring-ink-200';
@@ -625,13 +642,13 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                   <td className="px-4 py-3 font-bold">#{o.number}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span>{o.customer.firstName} {o.customer.lastName ?? ''}</span>
-                      {isRegular && <CustomerBadge phone={o.customer.phone} />}
+                      <span>{o.customer?.firstName} {o.customer?.lastName ?? ''}</span>
+                      {isRegular && <CustomerBadge phone={o.customer?.phone ?? ''} />}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-ink-700">{new Date(o.createdAt).toLocaleDateString('fr-FR')}</td>
-                  <td className="px-4 py-3">{o.customer.phone}</td>
-                  <td className="px-4 py-3">{o.customer.city}</td>
+                  <td className="px-4 py-3">{o.customer?.phone}</td>
+                  <td className="px-4 py-3">{o.customer?.city}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}>
                       {o.status === 'tentative' ? `Tentative ${o.meta?._mzem_attempts ?? 1}` : (STATUS_LABEL[o.status] ?? o.status)}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { orderService } from '@/services';
+import { ApiError } from '@/services/mzali-api/client';
 
 async function requireOrder(id: string) {
   const order = await orderService.getById(id);
@@ -32,7 +33,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const updated = await orderService.update(id, body);
     return NextResponse.json(updated);
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status: 500 });
+    const status = e instanceof ApiError ? e.status : 500;
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status });
   }
 }
 
@@ -52,6 +54,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (/\b404\b/.test(msg) || /invalid_id/i.test(msg)) {
       return NextResponse.json({ ok: true, alreadyDeleted: true });
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const status = e instanceof ApiError ? e.status : 500;
+    return NextResponse.json({ error: msg }, { status });
   }
 }

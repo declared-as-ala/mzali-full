@@ -255,12 +255,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           setShipping(o.shipping ?? 8);
           setPrivateNote(String((o.meta?._mzem_private_note as string) ?? ''));
           setCustomer({
-            firstName: o.customer.firstName ?? '',
-            phone: o.customer.phone ?? '',
-            city: o.customer.city ?? '',
-            address: o.customer.address ?? '',
+            firstName: o.customer?.firstName ?? '',
+            phone: o.customer?.phone ?? '',
+            city: o.customer?.city ?? '',
+            address: o.customer?.address ?? '',
             phone2: String((o.meta?._mzem_phone_2 as string) ?? ''),
-            email: o.customer.email ?? '',
+            email: o.customer?.email ?? '',
             note: '',
           });
           setLines(o.items.map((i) => parseLine(i)));
@@ -435,6 +435,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       const url = isEdit ? `${apiBase}/orders/${orderId}` : `${apiBase}/orders`;
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (res.status === 401) {
+        window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        throw new Error('Session expirée');
+      }
       if (!res.ok) throw new Error((await res.json()).error ?? 'Erreur');
       const order = await res.json();
 
