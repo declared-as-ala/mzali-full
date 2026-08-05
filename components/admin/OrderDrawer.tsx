@@ -206,9 +206,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
 
   useEffect(() => {
     if (!open) return;
-    // Load products list once
+    // Load products list once — posOnly products (sold only at the till,
+    // see Product.posOnly) are excluded: online orders can't contain them
+    // anyway (checkout/order-update both reject them server-side), so they
+    // shouldn't be offered here to begin with.
     if (!products.length) {
-      fetch(`${apiBase}/products-picker`).then(async (r) => {
+      fetch(`${apiBase}/products-picker?excludePosOnly=true`).then(async (r) => {
         if (r.ok) setProducts(await r.json());
       }).catch(() => {});
     }
