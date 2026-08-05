@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { describeFetchError } from '@/common/fetch-error';
 import { normalizeCarrierString, sanitizeCarrierPhone } from './carrier-phone';
 import type { CarrierResult } from './navex.service';
 
@@ -161,7 +162,7 @@ export class FirstDeliveryService {
       if (ok) return { ok: true, barcode, raw };
       return { ok: false, raw, error: extractError(raw) ?? `HTTP ${res.status}` };
     } catch (e) {
-      return { ok: false, raw: null, error: e instanceof Error ? e.message : 'network error' };
+      return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }
 
@@ -173,7 +174,7 @@ export class FirstDeliveryService {
       const ok = isSuccess(res.status, raw);
       return { ok, barcode, raw, error: ok ? undefined : (extractError(raw) ?? `HTTP ${res.status}`) };
     } catch (e) {
-      return { ok: false, raw: null, error: e instanceof Error ? e.message : 'network error' };
+      return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }
 
@@ -185,7 +186,7 @@ export class FirstDeliveryService {
       const ok = isSuccess(res.status, raw);
       return { ok, barcode, raw, error: ok ? undefined : (extractError(raw) ?? `HTTP ${res.status}`) };
     } catch (e) {
-      return { ok: false, raw: null, error: e instanceof Error ? e.message : 'network error' };
+      return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }
 }

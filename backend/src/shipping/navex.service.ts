@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { describeFetchError } from '@/common/fetch-error';
 import { extractNavexBarcode, isNavexSuccessStatus, navexStatusMessage, normalizeGov } from './navex.helpers';
 
 export type NavexShipmentInput = {
@@ -81,7 +82,7 @@ export class NavexService {
       if (ok && !barcode) return { ok: true, raw };
       return { ok: false, raw, error: navexStatusMessage(raw) ?? `HTTP ${res.status}` };
     } catch (e) {
-      return { ok: false, raw: null, error: e instanceof Error ? e.message : 'network error' };
+      return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }
 
@@ -98,7 +99,7 @@ export class NavexService {
       const ok = isNavexSuccessStatus(raw);
       return { ok, barcode, raw, error: ok ? undefined : navexStatusMessage(raw) };
     } catch (e) {
-      return { ok: false, raw: null, error: e instanceof Error ? e.message : 'network error' };
+      return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }
 
@@ -115,7 +116,7 @@ export class NavexService {
       const ok = isNavexSuccessStatus(raw);
       return { ok, barcode, raw, error: ok ? undefined : navexStatusMessage(raw) };
     } catch (e) {
-      return { ok: false, raw: null, error: e instanceof Error ? e.message : 'network error' };
+      return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }
 }
