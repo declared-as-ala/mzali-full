@@ -8,12 +8,12 @@ describe('permissions', () => {
     }
   });
 
-  it('scopes cashier role to orders + POS operations (merged former employee role)', () => {
+  it('gives cashier full order CRUD (parity with admin order management) plus POS operations', () => {
     expect(roleHasPermission('cashier', 'orders.read')).toBe(true);
     expect(roleHasPermission('cashier', 'orders.write')).toBe(true);
+    expect(roleHasPermission('cashier', 'orders.delete')).toBe(true);
     expect(roleHasPermission('cashier', 'shipping.push')).toBe(true);
     expect(roleHasPermission('cashier', 'pos.sell')).toBe(true);
-    expect(roleHasPermission('cashier', 'orders.delete')).toBe(false);
     expect(roleHasPermission('cashier', 'employees.manage')).toBe(false);
     expect(roleHasPermission('cashier', 'settings.manage')).toBe(false);
     expect(roleHasPermission('cashier', 'coupons.write')).toBe(false);

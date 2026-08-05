@@ -420,12 +420,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         deliveryCompany,
         exchange,
         privateNote,
-        paymentMethod: 'cod' as const,
       };
       if (statusChanged) payload.status = status;
       payload.attempts = attempts;
       if (editReason.trim()) payload.reason = editReason.trim();
-      const url = isEdit ? `${apiBase}/orders/${orderId}` : '/api/admin/orders';
+      const url = isEdit ? `${apiBase}/orders/${orderId}` : `${apiBase}/orders`;
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Erreur');

@@ -110,7 +110,7 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
    *  and this 'cashier' role (POS access); merged into one since every
    *  account needs both. */
   cashier: [
-    'orders.read', 'orders.write', 'shipping.push',
+    'orders.read', 'orders.write', 'orders.delete', 'shipping.push',
     'pos.open_session', 'pos.close_session', 'pos.sell',
     'pos.view_boutique_stock', 'pos.view_depot_stock',
     'pos.apply_basic_discount', 'pos.reprint_ticket',

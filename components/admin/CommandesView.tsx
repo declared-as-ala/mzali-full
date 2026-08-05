@@ -74,9 +74,13 @@ type Props = {
   repeatCounts?: Record<string, number>;
   tabCounts?: { normal: number; abandoned: number; trash: number };
   statusCounts?: Record<string, number>;
+  /** Employees get this exact same view (full list + pagination, not the
+   *  separate MyCommandesView) pointed at the employee-scoped proxy routes —
+   *  full parity with admin: view, create, edit, delete, all of it. */
+  apiBase?: '/api/admin' | '/api/employee';
 };
 
-export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, tabCounts, statusCounts }: Props) {
+export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, tabCounts, statusCounts, apiBase = '/api/admin' }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -171,11 +175,11 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   // Fetch all catalogue products to ensure the filter dropdown shows all items in the store
   const [allProducts, setAllProducts] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => {
-    fetch('/api/admin/products-picker')
+    fetch(`${apiBase}/products-picker`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setAllProducts(d))
       .catch(() => {});
-  }, []);
+  }, [apiBase]);
 
   // Compute normal vs abandoned counts dynamically based on loaded orders
   const computedCounts = useMemo(() => {
@@ -356,7 +360,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     if (!confirm(msg)) return;
     const snapshot = orders;
     setOrders((prev) => prev.filter((o) => o.id !== id));
-    const res = await fetch(`/api/admin/orders/${id}`, { method: 'DELETE' });
+    const res = await fetch(`${apiBase}/orders/${id}`, { method: 'DELETE' });
     if (!res.ok) {
       setOrders(snapshot);
       toast.error('Erreur de suppression');
@@ -375,7 +379,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     setSelected(new Set());
 
     const results = await Promise.allSettled(
-      ids.map((id) => fetch(`/api/admin/orders/${id}`, { method: 'DELETE' }).then((r) => (r.ok ? id : Promise.reject(id)))),
+      ids.map((id) => fetch(`${apiBase}/orders/${id}`, { method: 'DELETE' }).then((r) => (r.ok ? id : Promise.reject(id)))),
     );
     const ok = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.length - ok;
@@ -778,6 +782,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         onClose={() => setDrawerOpen(false)}
         orderId={editingId}
         onSaved={applySavedOrder}
+        apiBase={apiBase}
       />
     </div>
   );
