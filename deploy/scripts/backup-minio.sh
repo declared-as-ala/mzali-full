@@ -25,6 +25,12 @@ else
 fi
 [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || { echo "Invalid BACKUP_RETENTION_DAYS" >&2; exit 1; }
 
+# Prune BEFORE creating the new backup, not just after — a disk that's
+# nearly full from old backups piling up would otherwise fail the mirror
+# below every single time, never reaching the prune that could have freed
+# the space it needed.
+find "$BACKUP_TARGET/minio" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} + 2>/dev/null || true
+
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 minio_dir="$BACKUP_TARGET/minio/$timestamp"
 mkdir -p -- "$minio_dir"

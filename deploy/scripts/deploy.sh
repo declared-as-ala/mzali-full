@@ -106,3 +106,13 @@ fi
 printf '%s\n' "$NEW_TAG" > "$LAST_GOOD_FILE"
 trap - ERR
 echo "Deployment $NEW_TAG is healthy; previous tag was ${previous_tag:-none}."
+
+# Every deploy pulls a fresh set of uniquely-tagged images and nothing ever
+# removed the old ones — with a deploy on every push, that's an unbounded
+# amount of dead image layers piling up on the host forever. Runs only after
+# a confirmed-healthy deploy (never mid-deploy/rollback, where an older tag
+# might still be needed) and only removes images with no running container,
+# so this is always safe: anything actually in use is never touched, and
+# anything pruned can simply be re-pulled from the registry if a rollback
+# ever needs it again later.
+docker image prune -af >&2 || echo "docker image prune failed (non-fatal, deploy already succeeded)" >&2

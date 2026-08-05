@@ -26,6 +26,10 @@ else
 fi
 [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || { echo "Invalid BACKUP_RETENTION_DAYS" >&2; exit 1; }
 
+# Prune BEFORE creating the new backup, not just after — see backup-minio.sh
+# for why (a near-full disk needs the space freed before it can succeed).
+find "$BACKUP_TARGET/mongo" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} + 2>/dev/null || true
+
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 mongo_dir="$BACKUP_TARGET/mongo/$timestamp"
 mkdir -p -- "$mongo_dir"
