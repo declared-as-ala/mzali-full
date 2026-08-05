@@ -816,7 +816,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               <table className="w-full table-fixed border-separate border-spacing-0 text-sm min-w-[860px]">
                 <colgroup>
                   <col className="w-[220px]" />
-                  <col className="w-[70px]" />
                   <col className="w-[90px]" />
                   <col />
                   <col className="w-[110px]" />
@@ -826,7 +825,6 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 <thead className="text-[10px] uppercase tracking-wider text-ink-700">
                   <tr className="bg-ink-100">
                     <th className="rounded-l-xl px-4 py-3 text-left font-bold">Produit</th>
-                    <th className="px-3 py-3 text-left font-bold">ID</th>
                     <th className="px-3 py-3 text-left font-bold">Qté</th>
                     <th className="px-3 py-3 text-left font-bold">Attributs</th>
                     <th className="px-3 py-3 text-right font-bold">Prix unitaire</th>
@@ -983,7 +981,6 @@ function renderSummaryRows(args: {
                 </div>
               )}
             </td>
-            <td className="px-3 py-3 align-middle text-xs font-bold text-ink-700">{l.productId}</td>
             <td className="px-3 py-3 align-middle">
               <NumberField
                 value={l.qty}
@@ -1043,7 +1040,6 @@ function renderSummaryRows(args: {
               <span className="line-clamp-2 break-words font-bold text-ink-900" title={l.name}>{l.name}</span>
             </div>
           </td>
-          <td className="px-3 py-3 align-middle text-xs font-bold text-ink-700">{l.productId}</td>
           <td className="px-3 py-3 align-middle">
             <NumberField
               value={l.qty}
