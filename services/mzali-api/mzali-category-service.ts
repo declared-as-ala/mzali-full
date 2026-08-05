@@ -1,7 +1,7 @@
 import type { Category, CategoryListQuery } from '@/types';
 import type { CategoryInput, CategoryService } from '../category-service';
 import { apiRequest } from './client';
-import { getValidAccessToken } from '@/lib/api-auth';
+import { withAuthRetry } from './with-auth-retry';
 
 export class MzaliApiCategoryService implements CategoryService {
   async list(query: CategoryListQuery = {}): Promise<Category[]> {
@@ -20,17 +20,18 @@ export class MzaliApiCategoryService implements CategoryService {
   }
 
   async create(input: CategoryInput): Promise<Category> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<Category>('/admin/categories', { method: 'POST', bearer: bearer ?? undefined, body: input });
+    return withAuthRetry((bearer) =>
+      apiRequest<Category>('/admin/categories', { method: 'POST', bearer, body: input }),
+    );
   }
 
   async update(id: string, input: Partial<CategoryInput>): Promise<Category> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<Category>(`/admin/categories/${id}`, { method: 'PUT', bearer: bearer ?? undefined, body: input });
+    return withAuthRetry((bearer) =>
+      apiRequest<Category>(`/admin/categories/${id}`, { method: 'PUT', bearer, body: input }),
+    );
   }
 
   async remove(id: string): Promise<void> {
-    const bearer = await getValidAccessToken();
-    await apiRequest(`/admin/categories/${id}`, { method: 'DELETE', bearer: bearer ?? undefined });
+    await withAuthRetry((bearer) => apiRequest(`/admin/categories/${id}`, { method: 'DELETE', bearer }));
   }
 }

@@ -78,6 +78,7 @@ export class AuthService implements OnModuleInit {
     const ok = await verifyPassword(employee.passwordHash, password);
     if (!ok) {
       await this.registerFailedAttempt(employee);
+      this.logger.warn({ event: 'auth.login_failed', reason: 'bad_password', userId: employee.id });
       throw reject();
     }
 
@@ -91,41 +92,73 @@ export class AuthService implements OnModuleInit {
     await employee.save();
 
     const tokens = await this.issueTokens(employee, randomUUID(), meta);
+    this.logger.log({ event: 'auth.login_success', userId: employee.id, role: employee.role });
     return { ...tokens, user: this.toAuthUser(employee) };
   }
 
+  /**
+   * Rotation is claimed atomically via a single findOneAndUpdate — a plain
+   * findOne-then-save here would leave a read-then-write window where two
+   * concurrent refresh calls presenting the *same* token (two browser tabs
+   * racing, a retried request overlapping the original) could both read
+   * "not yet revoked" and both succeed, defeating single-use rotation.
+   * Mongo guarantees only one concurrent update can flip revokedAt from
+   * null, so exactly one caller wins the race; the other correctly falls
+   * into the reuse-detection branch below.
+   */
   async refresh(refreshToken: string, meta: RequestMeta): Promise<RefreshResult> {
     const tokenHash = this.hashToken(refreshToken);
-    const session = await this.sessions.findOne({ refreshTokenHash: tokenHash });
-    if (!session) throw new UnauthorizedException('Session invalide');
+    const claimed = await this.sessions.findOneAndUpdate(
+      { refreshTokenHash: tokenHash, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
 
-    // Reuse of a rotated/revoked token ⇒ assume theft, kill the family.
-    if (session.revokedAt || session.replacedByHash) {
-      await this.sessions.updateMany(
-        { familyId: session.familyId, revokedAt: null },
-        { $set: { revokedAt: new Date() } },
-      );
-      this.logger.warn(`Refresh token reuse detected for user ${session.userId} — family revoked`);
+    if (!claimed) {
+      const existing = await this.sessions.findOne({ refreshTokenHash: tokenHash });
+      if (existing) {
+        // Reuse of an already-rotated/revoked token ⇒ assume theft, kill the family.
+        await this.sessions.updateMany(
+          { familyId: existing.familyId, revokedAt: null },
+          { $set: { revokedAt: new Date() } },
+        );
+        this.logger.warn({ event: 'auth.refresh_reuse_detected', userId: String(existing.userId), familyId: existing.familyId });
+      } else {
+        this.logger.warn({ event: 'auth.refresh_failed', reason: 'unknown_token' });
+      }
       throw new UnauthorizedException('Session invalide');
     }
-    if (session.expiresAt < new Date()) throw new UnauthorizedException('Session expirée');
 
-    const employee = await this.employees.findById(session.userId);
-    if (!employee || !employee.active) throw new UnauthorizedException('Session invalide');
+    if (claimed.expiresAt < new Date()) {
+      this.logger.warn({ event: 'auth.refresh_failed', reason: 'session_expired', userId: String(claimed.userId) });
+      throw new UnauthorizedException('Session expirée');
+    }
 
-    const tokens = await this.issueTokens(employee, session.familyId, meta);
-    session.revokedAt = new Date();
-    session.replacedByHash = this.hashToken(tokens.refreshToken);
-    await session.save();
+    const employee = await this.employees.findById(claimed.userId);
+    if (!employee || !employee.active) {
+      this.logger.warn({
+        event: 'auth.refresh_failed',
+        reason: employee ? 'account_disabled' : 'account_missing',
+        userId: String(claimed.userId),
+      });
+      throw new UnauthorizedException('Session invalide');
+    }
+
+    const tokens = await this.issueTokens(employee, claimed.familyId, meta);
+    await this.sessions.updateOne(
+      { _id: claimed._id },
+      { $set: { replacedByHash: this.hashToken(tokens.refreshToken) } },
+    );
+    this.logger.log({ event: 'auth.refresh_success', userId: employee.id, familyId: claimed.familyId });
     return tokens;
   }
 
   async logout(refreshToken: string): Promise<void> {
     const tokenHash = this.hashToken(refreshToken);
-    await this.sessions.updateOne(
+    const res = await this.sessions.updateOne(
       { refreshTokenHash: tokenHash, revokedAt: null },
       { $set: { revokedAt: new Date() } },
     );
+    this.logger.log({ event: 'auth.logout', sessionsRevoked: res.modifiedCount });
   }
 
   async logoutAll(userId: string): Promise<number> {
@@ -133,6 +166,7 @@ export class AuthService implements OnModuleInit {
       { userId, revokedAt: null },
       { $set: { revokedAt: new Date() } },
     );
+    this.logger.log({ event: 'auth.logout_all', userId, sessionsRevoked: res.modifiedCount });
     return res.modifiedCount;
   }
 

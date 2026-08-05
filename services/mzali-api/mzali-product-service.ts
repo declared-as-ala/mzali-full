@@ -1,7 +1,7 @@
 import type { Product, ProductListQuery, ProductListResult } from '@/types';
 import type { ProductInput, ProductService } from '../product-service';
 import { apiRequest } from './client';
-import { getValidAccessToken } from '@/lib/api-auth';
+import { withAuthRetry } from './with-auth-retry';
 
 export class MzaliApiProductService implements ProductService {
   async list(query: ProductListQuery = {}): Promise<ProductListResult> {
@@ -50,50 +50,52 @@ export class MzaliApiProductService implements ProductService {
   }
 
   async listAdmin(query: ProductListQuery = {}): Promise<ProductListResult> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<ProductListResult>('/admin/products', {
-      bearer: bearer ?? undefined,
-      query: {
-        page: query.page,
-        perPage: query.perPage,
-        search: query.search,
-        status: query.status,
-        categorySlug: query.categorySlug,
-        categoryId: query.categoryId,
-        orderBy: query.orderBy,
-        order: query.order,
-        onSale: query.onSale,
-        featured: query.featured,
-      },
-    });
+    return withAuthRetry((bearer) =>
+      apiRequest<ProductListResult>('/admin/products', {
+        bearer,
+        query: {
+          page: query.page,
+          perPage: query.perPage,
+          search: query.search,
+          status: query.status,
+          categorySlug: query.categorySlug,
+          categoryId: query.categoryId,
+          orderBy: query.orderBy,
+          order: query.order,
+          onSale: query.onSale,
+          featured: query.featured,
+        },
+      }),
+    );
   }
 
   async getByIdAdmin(id: string): Promise<Product | null> {
-    const bearer = await getValidAccessToken();
     try {
-      return await apiRequest<Product>(`/admin/products/${id}`, { bearer: bearer ?? undefined });
+      return await withAuthRetry((bearer) => apiRequest<Product>(`/admin/products/${id}`, { bearer }));
     } catch {
       return null;
     }
   }
 
   async create(input: ProductInput): Promise<Product> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<Product>('/admin/products', { method: 'POST', bearer: bearer ?? undefined, body: input });
+    return withAuthRetry((bearer) =>
+      apiRequest<Product>('/admin/products', { method: 'POST', bearer, body: input }),
+    );
   }
 
   async update(id: string, input: Partial<ProductInput>): Promise<Product> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<Product>(`/admin/products/${id}`, { method: 'PUT', bearer: bearer ?? undefined, body: input });
+    return withAuthRetry((bearer) =>
+      apiRequest<Product>(`/admin/products/${id}`, { method: 'PUT', bearer, body: input }),
+    );
   }
 
   async remove(id: string): Promise<void> {
-    const bearer = await getValidAccessToken();
-    await apiRequest(`/admin/products/${id}`, { method: 'DELETE', bearer: bearer ?? undefined });
+    await withAuthRetry((bearer) => apiRequest(`/admin/products/${id}`, { method: 'DELETE', bearer }));
   }
 
   async reorder(items: { id: string; menuOrder: number }[]): Promise<void> {
-    const bearer = await getValidAccessToken();
-    await apiRequest('/admin/products/reorder', { method: 'POST', bearer: bearer ?? undefined, body: { items } });
+    await withAuthRetry((bearer) =>
+      apiRequest('/admin/products/reorder', { method: 'POST', bearer, body: { items } }),
+    );
   }
 }

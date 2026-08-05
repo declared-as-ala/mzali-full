@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { CheckoutPayload, OrderResponse } from '@/types';
 import type { OrderListQuery, OrderListResult, OrderService, OrderUpdate } from '../order-service';
 import { apiRequest } from './client';
-import { getValidAccessToken } from '@/lib/api-auth';
+import { withAuthRetry } from './with-auth-retry';
 
 /**
  * Admin/employee edit flows only — checkout create/draft-upsert is handled
@@ -31,31 +31,28 @@ export class MzaliApiOrderService implements OrderService {
   }
 
   async list(query: OrderListQuery = {}): Promise<OrderListResult> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<OrderListResult>('/admin/orders', {
-      bearer: bearer ?? undefined,
-      query: {
-        page: query.page,
-        perPage: query.perPage,
-        status: query.status,
-        search: query.search,
-        after: query.after,
-        before: query.before,
-      },
-    });
+    return withAuthRetry((bearer) =>
+      apiRequest<OrderListResult>('/admin/orders', {
+        bearer,
+        query: {
+          page: query.page,
+          perPage: query.perPage,
+          status: query.status,
+          search: query.search,
+          after: query.after,
+          before: query.before,
+        },
+      }),
+    );
   }
 
   async update(id: string, patch: OrderUpdate): Promise<OrderResponse> {
-    const bearer = await getValidAccessToken();
-    return apiRequest<OrderResponse>(`/admin/orders/${id}`, {
-      method: 'PUT',
-      bearer: bearer ?? undefined,
-      body: patch,
-    });
+    return withAuthRetry((bearer) =>
+      apiRequest<OrderResponse>(`/admin/orders/${id}`, { method: 'PUT', bearer, body: patch }),
+    );
   }
 
   async remove(id: string): Promise<void> {
-    const bearer = await getValidAccessToken();
-    await apiRequest(`/admin/orders/${id}`, { method: 'DELETE', bearer: bearer ?? undefined });
+    await withAuthRetry((bearer) => apiRequest(`/admin/orders/${id}`, { method: 'DELETE', bearer }));
   }
 }

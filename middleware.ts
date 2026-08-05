@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { PERSISTENT_SESSION_SECONDS } from '@/lib/session-duration';
 
 const AT_COOKIE = 'mzali_at';
 const RT_COOKIE = 'mzali_rt';
-const PERSISTENT_SESSION_SECONDS = 60 * 60 * 24 * 3650;
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET ?? '';
 const API_BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
 const SECURE_COOKIES = process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV === 'production';

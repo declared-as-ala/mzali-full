@@ -114,6 +114,55 @@ type Props = {
   apiBase?: '/api/admin' | '/api/employee';
 };
 
+/**
+ * A confirmed-expired session (save() got a real 401 after the BFF's own
+ * retry-after-refresh already failed) must not silently drop in-progress
+ * edits — stash them client-side before redirecting to login, so returning
+ * to this same order (new or existing) offers to pick back up where the
+ * user left off instead of forcing them to redo the work.
+ */
+type OrderDraft = {
+  customer: typeof INITIAL_CUSTOMER;
+  lines: LineDraft[];
+  shipping: number;
+  deliveryCompany: string;
+  exchange: boolean;
+  privateNote: string;
+  status: OrderStatus;
+  attempts: number;
+  editReason: string;
+  savedAt: number;
+};
+
+const INITIAL_CUSTOMER = { firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' };
+const DRAFT_PREFIX = 'mzali_order_draft:';
+
+function draftKey(orderId: string | null | undefined): string {
+  return `${DRAFT_PREFIX}${orderId ?? 'new'}`;
+}
+
+function saveDraftToStorage(orderId: string | null | undefined, draft: Omit<OrderDraft, 'savedAt'>): void {
+  try {
+    window.localStorage.setItem(draftKey(orderId), JSON.stringify({ ...draft, savedAt: Date.now() }));
+  } catch {
+    // Private browsing / storage full — draft preservation is best-effort,
+    // never worth failing the redirect over.
+  }
+}
+
+function loadDraftFromStorage(orderId: string | null | undefined): OrderDraft | null {
+  try {
+    const raw = window.localStorage.getItem(draftKey(orderId));
+    return raw ? (JSON.parse(raw) as OrderDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraftFromStorage(orderId: string | null | undefined): void {
+  try { window.localStorage.removeItem(draftKey(orderId)); } catch { /* ignore */ }
+}
+
 export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase = '/api/admin' }: Props) {
   const isEdit = Boolean(orderId);
   const [loading, setLoading] = useState(false);
@@ -267,6 +316,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           // Lazy-load product info (options + bundles) for each product in the order
           const uniqueIds = Array.from(new Set(o.items.map((i) => i.productId)));
           uniqueIds.forEach((pid) => { void ensureProductInfo(pid); });
+          restoreDraftIfAny();
         })
         .catch(() => alert('Erreur de chargement de la commande'))
         .finally(() => setLoading(false));
@@ -291,6 +341,23 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setPrivateNote('');
       setCustomer({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
       setLines([]);
+      restoreDraftIfAny();
+    }
+
+    function restoreDraftIfAny() {
+      const draft = loadDraftFromStorage(orderId);
+      if (!draft) return;
+      setCustomer(draft.customer);
+      setLines(draft.lines);
+      setShipping(draft.shipping);
+      setDeliveryCompany(draft.deliveryCompany);
+      setExchange(draft.exchange);
+      setPrivateNote(draft.privateNote);
+      if (draft.status) setStatus(draft.status);
+      setAttempts(draft.attempts);
+      setEditReason(draft.editReason ?? '');
+      clearDraftFromStorage(orderId);
+      alert('Votre session avait expiré avant l\'enregistrement — vos modifications ont été restaurées, vous pouvez réessayer.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, orderId]);
@@ -436,6 +503,14 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (res.status === 401) {
+        // The BFF already tried a silent refresh-and-retry before returning
+        // this — a 401 here means the session is genuinely gone (revoked,
+        // expired past the refresh window, or the account was disabled).
+        // Don't lose the edit: stash it and offer it back after re-login.
+        saveDraftToStorage(orderId, {
+          customer, lines, shipping, deliveryCompany, exchange, privateNote, status, attempts, editReason,
+        });
+        alert('Votre session a expiré. Vos modifications ont été sauvegardées — reconnectez-vous, elles seront restaurées automatiquement.');
         window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         throw new Error('Session expirée');
       }

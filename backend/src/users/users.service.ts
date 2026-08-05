@@ -7,6 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type { EmployeeCreateInput, EmployeeRecord, EmployeeUpdateInput } from '@contracts';
+import { AuthService } from '@/auth/auth.service';
 import { hashPassword } from '@/auth/password';
 import { Employee, EmployeeDocument } from './employee.schema';
 
@@ -14,6 +15,7 @@ import { Employee, EmployeeDocument } from './employee.schema';
 export class UsersService {
   constructor(
     @InjectModel(Employee.name) private readonly model: Model<Employee>,
+    private readonly auth: AuthService,
   ) {}
 
   async list(): Promise<EmployeeRecord[]> {
@@ -61,6 +63,7 @@ export class UsersService {
     if (patch.role !== undefined) doc.role = patch.role;
     if (patch.active !== undefined) doc.active = patch.active;
     if (patch.mustChangePassword !== undefined) doc.mustChangePassword = patch.mustChangePassword;
+    const wasActive = doc.active;
     if (patch.password !== undefined) {
       if (patch.password.length < 8) {
         throw new BadRequestException('Mot de passe trop court (8 caractères minimum)');
@@ -68,12 +71,19 @@ export class UsersService {
       doc.passwordHash = await hashPassword(patch.password);
     }
     await doc.save();
+    // Disabling an account or resetting its password must not leave
+    // already-issued sessions usable — revoke them immediately rather than
+    // waiting for the (short-lived) access token to expire on its own.
+    if ((wasActive && doc.active === false) || patch.password !== undefined) {
+      await this.auth.logoutAll(doc.id);
+    }
     return this.toRecord(doc);
   }
 
   async remove(id: string): Promise<void> {
     const doc = await this.findDoc(id);
     await doc.deleteOne();
+    await this.auth.logoutAll(id);
   }
 
   private async findDoc(id: string): Promise<EmployeeDocument> {

@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Logger,
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -17,6 +18,8 @@ export const RequirePermissions = (...permissions: Permission[]) =>
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
+  private readonly logger = new Logger(PermissionsGuard.name);
+
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -32,6 +35,13 @@ export class PermissionsGuard implements CanActivate {
 
     for (const permission of required) {
       if (!roleHasPermission(user.role, permission)) {
+        this.logger.warn({
+          event: 'auth.permission_denied',
+          userId: user.userId,
+          role: user.role,
+          permission,
+          path: req.path,
+        });
         throw new ForbiddenException(`Missing permission: ${permission}`);
       }
     }

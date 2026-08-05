@@ -19,6 +19,12 @@ type RefreshResult = { accessToken: string; refreshToken: string; expiresIn: num
 // race instead of letting every panel race the backend.
 const inflightRefreshes = new Map<string, Promise<RefreshResult | null>>();
 
+/** Structured, token-free diagnostic logging for the auth-refresh flow —
+ *  never logs the token/cookie values themselves. */
+function logAuth(event: string, fields: Record<string, unknown> = {}): void {
+  console.log(JSON.stringify({ event, ...fields }));
+}
+
 function refreshWithBackend(rt: string): Promise<RefreshResult | null> {
   const existing = inflightRefreshes.get(rt);
   if (existing) return existing;
@@ -31,9 +37,14 @@ function refreshWithBackend(rt: string): Promise<RefreshResult | null> {
         body: JSON.stringify({ refreshToken: rt }),
         cache: 'no-store',
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        logAuth('session.refresh_failed', { status: res.status });
+        return null;
+      }
+      logAuth('session.refresh_success');
       return (await res.json()) as RefreshResult;
-    } catch {
+    } catch (e) {
+      logAuth('session.refresh_error', { message: e instanceof Error ? e.message : 'unknown' });
       return null;
     }
   })();
@@ -58,14 +69,23 @@ function refreshWithBackend(rt: string): Promise<RefreshResult | null> {
  * non-mutable context, Next.js throws on cookies().set() — that's caught so
  * the page still gets a usable token for this one request (the rotation
  * just won't be persisted; the next request re-triggers a refresh).
+ *
+ * `forceRefresh: true` skips the local "looks still valid" check and always
+ * exchanges the refresh token for a new pair. Used by withAuthRetry (see
+ * services/mzali-api/with-auth-retry.ts) for the rare case the backend
+ * rejects a token this process believed was still good — a clock-skew edge
+ * case, or a request that raced a refresh triggered elsewhere.
  */
-export async function getValidAccessToken(): Promise<string | null> {
+export async function getValidAccessToken(opts: { forceRefresh?: boolean } = {}): Promise<string | null> {
   const store = await cookies();
   const at = store.get(AT_COOKIE)?.value;
-  if (at && JWT_SECRET && verifyHs256Jwt(at, JWT_SECRET)) return at;
+  if (!opts.forceRefresh && at && JWT_SECRET && verifyHs256Jwt(at, JWT_SECRET)) return at;
 
   const rt = store.get(RT_COOKIE)?.value;
-  if (!rt || !API_BASE) return null;
+  if (!rt || !API_BASE) {
+    logAuth('session.cookie_missing', { hadAccessToken: Boolean(at), hasApiBase: Boolean(API_BASE) });
+    return null;
+  }
 
   try {
     const data = await refreshWithBackend(rt);

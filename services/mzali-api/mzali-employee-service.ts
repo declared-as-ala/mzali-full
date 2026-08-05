@@ -1,7 +1,7 @@
 import type { Employee } from '@/lib/employee-storage';
 import type { EmployeeInput, EmployeeService, EmployeeUpdate } from '../employee-service';
 import { apiRequest } from './client';
-import { getValidAccessToken } from '@/lib/api-auth';
+import { withAuthRetry } from './with-auth-retry';
 
 type BackendEmployeeRecord = {
   id: string;
@@ -29,15 +29,17 @@ function toEmployee(r: BackendEmployeeRecord): Employee {
 
 export class MzaliApiEmployeeService implements EmployeeService {
   async list(): Promise<Employee[]> {
-    const bearer = await getValidAccessToken();
-    const records = await apiRequest<BackendEmployeeRecord[]>('/admin/employees', { bearer: bearer ?? undefined });
+    const records = await withAuthRetry((bearer) =>
+      apiRequest<BackendEmployeeRecord[]>('/admin/employees', { bearer }),
+    );
     return records.map(toEmployee);
   }
 
   async get(id: string): Promise<Employee | null> {
-    const bearer = await getValidAccessToken();
     try {
-      const r = await apiRequest<BackendEmployeeRecord>(`/admin/employees/${id}`, { bearer: bearer ?? undefined });
+      const r = await withAuthRetry((bearer) =>
+        apiRequest<BackendEmployeeRecord>(`/admin/employees/${id}`, { bearer }),
+      );
       return toEmployee(r);
     } catch {
       return null;
@@ -66,27 +68,24 @@ export class MzaliApiEmployeeService implements EmployeeService {
   }
 
   async create(input: EmployeeInput): Promise<Employee> {
-    const bearer = await getValidAccessToken();
-    const r = await apiRequest<BackendEmployeeRecord>('/admin/employees', {
-      method: 'POST',
-      bearer: bearer ?? undefined,
-      body: { name: input.name, email: input.email, password: input.password, active: input.active, role: input.role },
-    });
+    const r = await withAuthRetry((bearer) =>
+      apiRequest<BackendEmployeeRecord>('/admin/employees', {
+        method: 'POST',
+        bearer,
+        body: { name: input.name, email: input.email, password: input.password, active: input.active, role: input.role },
+      }),
+    );
     return toEmployee(r);
   }
 
   async update(id: string, patch: EmployeeUpdate): Promise<Employee> {
-    const bearer = await getValidAccessToken();
-    const r = await apiRequest<BackendEmployeeRecord>(`/admin/employees/${id}`, {
-      method: 'PATCH',
-      bearer: bearer ?? undefined,
-      body: patch,
-    });
+    const r = await withAuthRetry((bearer) =>
+      apiRequest<BackendEmployeeRecord>(`/admin/employees/${id}`, { method: 'PATCH', bearer, body: patch }),
+    );
     return toEmployee(r);
   }
 
   async remove(id: string): Promise<void> {
-    const bearer = await getValidAccessToken();
-    await apiRequest(`/admin/employees/${id}`, { method: 'DELETE', bearer: bearer ?? undefined });
+    await withAuthRetry((bearer) => apiRequest(`/admin/employees/${id}`, { method: 'DELETE', bearer }));
   }
 }
