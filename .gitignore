@@ -9,7 +9,6 @@ out/
 *.log
 *.tsbuildinfo
 dist/
-reports/
 
 # Phase 1 local admin credential store (hashed admin password)
 data/
