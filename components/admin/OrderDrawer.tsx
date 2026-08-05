@@ -22,6 +22,7 @@ type LineDraft = {
 type ProductInfo = {
   options: { name: string; values: string[] }[];   // {name:'size', values:['s','m','l',...]}
   bundles: { id: string; name: string; quantity: number; price: number }[];
+  image?: string;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -159,7 +160,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             normalizedVariation[k] = v;
           }
         }
-        return { ...l, variation: normalizedVariation };
+        return { ...l, image: info.image ?? l.image, variation: normalizedVariation };
       }));
       return info;
     }
@@ -176,6 +177,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         bundles: (p.bundles ?? []).map((b: { id: string; name: string; quantity: number; price: number }) => ({
           id: b.id, name: b.name, quantity: b.quantity, price: b.price,
         })),
+        // Historical order lines can retain an obsolete image host. Product
+        // detail URLs are normalized by the API to the current public media
+        // origin, so use the catalog image whenever the product still exists.
+        image: p.images?.[0]?.url,
       };
       setProductInfo((prev) => ({ ...prev, [pid]: info }));
 
@@ -190,7 +195,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             normalizedVariation[k] = v;
           }
         }
-        return { ...l, variation: normalizedVariation };
+        return { ...l, image: info.image ?? l.image, variation: normalizedVariation };
       }));
 
       return info;
