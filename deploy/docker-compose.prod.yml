@@ -92,7 +92,14 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    networks: [mzali-internal]
+    # mzali-internal has no route out (see the base compose file) — a
+    # deliberate boundary so a compromised/tricked API container can't be
+    # used to reach arbitrary external hosts (SSRF blast-radius limit).
+    # egress is the one narrow, intentional exception: outbound calls this
+    # container legitimately needs to make itself — Navex/First Delivery/
+    # Axess carrier pushes today. Nothing else (mongo/redis/minio/
+    # storefront/pos) is on it.
+    networks: [mzali-internal, egress]
     logging: *default-logging
 
   worker:
@@ -107,7 +114,11 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    networks: [mzali-internal]
+    # Same egress exception as api, and for the same reason this container
+    # specifically needs it: the carrier-push queue processor (async/retry
+    # Navex/First Delivery/Axess pushes) and the migrate:* CLI commands
+    # (WooCommerce REST API) both make outbound calls from here too.
+    networks: [mzali-internal, egress]
     logging: *default-logging
 
   mongo:
@@ -215,4 +226,9 @@ volumes:
 
 networks:
   caddy-edge:
+    internal: false
+  # Real egress, for api/worker only — see the comments on those services.
+  # Nothing routes into this network from outside; it exists purely so
+  # those two containers can reach external hosts (courier APIs today).
+  egress:
     internal: false
