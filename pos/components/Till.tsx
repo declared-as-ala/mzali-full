@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
-import { canOpenDrawer, completeSaleHardware, openManualDrawer, scheduleCustomerDisplayPayment } from '@/lib/hardware';
+import { canOpenDrawer, completeSaleHardware, openManualDrawer } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
 import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
@@ -12,7 +12,6 @@ import ProductGrid from './ProductGrid';
 import ProductOfferModal from './ProductOfferModal';
 import QuickPickRail from './QuickPickRail';
 import Cart from './Cart';
-import PaymentModal from './PaymentModal';
 import TicketPreview from './TicketPreview';
 import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 
@@ -510,11 +509,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     }
   }
 
-  const [paymentOpen, setPaymentOpen] = useState(false);
-
   // Keyboard shortcuts: "/" jumps to search from anywhere (unless already
-  // typing somewhere), Escape backs out of whatever's open — payment modal
-  // first, then an active search query.
+  // typing somewhere), Escape clears an active search query.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement;
@@ -523,13 +519,12 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         e.preventDefault();
         searchInputRef.current?.focus();
       } else if (e.key === 'Escape') {
-        if (paymentOpen) { setPaymentOpen(false); return; }
         if (query) setQuery('');
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [paymentOpen, query]);
+  }, [query]);
 
   async function logout() {
     await fetch('/api/auth', { method: 'DELETE' });
@@ -607,6 +602,15 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         </div>
       )}
 
+      {/* Checkout failed — no payment modal to surface this in anymore
+          (cash is one-click), so it needs its own banner. */}
+      {saveError && (
+        <div role="alert" className="flex flex-none items-center justify-between border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs font-bold text-rose-800">
+          <span>{saveError}</span>
+          <button className="grid h-8 w-8 place-items-center rounded-lg hover:bg-black/5" onClick={() => setSaveError(null)} aria-label="Fermer le message"><X size={14} /></button>
+        </div>
+      )}
+
       {/* Editing Sale Mode Banner */}
       {editingSale && (
         <div className="flex flex-none items-center justify-between border-b border-amber-300 bg-amber-50 px-6 py-2 text-xs font-black text-amber-900 shadow-xs">
@@ -673,7 +677,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           onQtyChange={changeQty}
           onRemove={removeLine}
           onEditLine={openLineEditor}
-          onPay={() => setPaymentOpen(true)}
+          onPay={() => confirmPayment('CASH', totalMinor)}
+          paying={paying}
           customerPanelProps={{
             phone: customerPhone,
             onPhoneChange: setCustomerPhone,
@@ -713,17 +718,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         />
       )}
 
-      {paymentOpen && !completedSale && (
-        <PaymentModal
-          totalMinor={totalMinor}
-          busy={paying}
-          error={saveError}
-          onClose={() => setPaymentOpen(false)}
-          onConfirm={confirmPayment}
-          onDisplayChange={scheduleCustomerDisplayPayment}
-        />
-      )}
-
       {completedSale && (
         <TicketPreview
           sale={completedSale}
@@ -732,8 +726,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           canOpenDrawer={canOpenDrawer(role)}
           onOpenDrawer={handleManualDrawer}
           drawerBusy={manualDrawerBusy}
-          onClose={() => { setCompletedSale(null); setPaymentOpen(false); }}
-          onNewSale={() => { setCompletedSale(null); setPaymentOpen(false); }}
+          onClose={() => setCompletedSale(null)}
+          onNewSale={() => setCompletedSale(null)}
         />
       )}
     </div>

@@ -5,7 +5,7 @@ import type { CartLine, LoyaltyAccount, PosSaleQuote, RedeemPreviewResult } from
 import CustomerPanel from './CustomerPanel';
 
 export default function Cart({
-  lines, quote, quoting, onQtyChange, onRemove, onEditLine, onPay, customerPanelProps,
+  lines, quote, quoting, onQtyChange, onRemove, onEditLine, onPay, paying, customerPanelProps,
 }: {
   lines: CartLine[];
   /** Authoritative offer-adjusted pricing for the current cart — see
@@ -20,7 +20,11 @@ export default function Cart({
    *  popup appears once added, since a plain click on a product just adds
    *  or bumps qty directly (supermarket-style scanning, no popup). */
   onEditLine: (variantId: string) => void;
+  /** One click, exact cash tender, no confirmation step — the sale is
+   *  created, stock/loyalty/hardware/print all happen immediately. See
+   *  Till.tsx's confirmPayment('CASH', totalMinor). */
   onPay: () => void;
+  paying: boolean;
   customerPanelProps: {
     phone: string;
     onPhoneChange: (v: string) => void;
@@ -175,11 +179,20 @@ export default function Cart({
         <button
           type="button"
           onClick={onPay}
-          disabled={lines.length === 0}
+          disabled={lines.length === 0 || paying}
           className="group relative flex h-14 w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl bg-emerald-600 font-black text-white shadow-xl shadow-emerald-600/20 transition hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-30 disabled:pointer-events-none"
         >
-          <Banknote size={20} />
-          <span className="text-base uppercase tracking-wider">ENCAISSER ESPÈCES ({formatMinor(totalMinor)})</span>
+          {paying ? (
+            <>
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <span className="text-base uppercase tracking-wider">Encaissement…</span>
+            </>
+          ) : (
+            <>
+              <Banknote size={20} />
+              <span className="text-base uppercase tracking-wider">ENCAISSER ESPÈCES ({formatMinor(totalMinor)})</span>
+            </>
+          )}
         </button>
       </div>
     </aside>
