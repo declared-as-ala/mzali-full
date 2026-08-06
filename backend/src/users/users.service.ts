@@ -53,6 +53,7 @@ export class UsersService {
 
   async update(id: string, patch: EmployeeUpdateInput): Promise<EmployeeRecord> {
     const doc = await this.findDoc(id);
+    const wasActive = doc.active;
     if (patch.email !== undefined) {
       const email = patch.email.trim().toLowerCase();
       const clash = await this.model.findOne({ email, _id: { $ne: doc._id } });
@@ -63,7 +64,6 @@ export class UsersService {
     if (patch.role !== undefined) doc.role = patch.role;
     if (patch.active !== undefined) doc.active = patch.active;
     if (patch.mustChangePassword !== undefined) doc.mustChangePassword = patch.mustChangePassword;
-    const wasActive = doc.active;
     if (patch.password !== undefined) {
       if (patch.password.length < 8) {
         throw new BadRequestException('Mot de passe trop court (8 caractères minimum)');
@@ -75,7 +75,7 @@ export class UsersService {
     // already-issued sessions usable — revoke them immediately rather than
     // waiting for the (short-lived) access token to expire on its own.
     if ((wasActive && doc.active === false) || patch.password !== undefined) {
-      await this.auth.logoutAll(doc.id);
+      await this.auth.logoutAll(doc.id, wasActive && doc.active === false ? 'account_disabled' : 'password_reset');
     }
     return this.toRecord(doc);
   }

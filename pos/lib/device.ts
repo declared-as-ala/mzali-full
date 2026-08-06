@@ -1,5 +1,7 @@
 'use client';
 
+import { sessionFetch } from './session-client';
+
 const FINGERPRINT_KEY = 'pos_device_fingerprint';
 const TERMINAL_KEY = 'pos_terminal_code';
 
@@ -41,5 +43,5 @@ export async function posFetch(input: string, init: RequestInit = {}): Promise<R
   headers.set('x-device-fingerprint', getDeviceFingerprint());
   const terminalCode = getTerminalCode();
   if (terminalCode) headers.set('x-terminal-code', terminalCode);
-  return fetch(input, { ...init, headers });
+  return sessionFetch(input, { ...init, headers });
 }

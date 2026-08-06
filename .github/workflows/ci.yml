@@ -28,6 +28,7 @@ jobs:
       - run: npm ci
       - run: npx next lint
       - run: npx tsc --noEmit
+      - run: npm run test:session
       - run: npm run build
 
   pos:
@@ -45,6 +46,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npx tsc --noEmit
+      - run: npm run test:session
       - run: npm run build
 
   backend:

@@ -6,6 +6,8 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { adminHrefForHost } from '@/lib/admin-nav';
 import { AdminHostProvider } from '@/lib/admin-nav-context';
+import SessionBoundary from '@/components/auth/SessionBoundary';
+import { PROACTIVE_REFRESH_SECONDS } from '@/lib/session-duration';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +23,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <AdminHostProvider isAdminHost={isAdminHost}>
+      <SessionBoundary loginPath={isAdminHost ? '/login' : '/admin-login'} proactiveSeconds={PROACTIVE_REFRESH_SECONDS} />
       <ToastProvider>
         <ConfirmModalProvider>
           <div className="flex h-screen w-screen overflow-hidden bg-[#0A0D14] text-slate-900 font-sans antialiased">

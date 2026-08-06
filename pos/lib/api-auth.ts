@@ -1,6 +1,6 @@
 import 'server-only';
 import { cookies } from 'next/headers';
-import { AT_COOKIE, RT_COOKIE } from './auth-cookies';
+import { AT_COOKIE, LEGACY_AT_COOKIE, LEGACY_RT_COOKIE, RT_COOKIE } from './auth-cookies';
 import { verifyHs256Jwt } from './jwt';
 import { PERSISTENT_SESSION_SECONDS } from './session-duration';
 
@@ -40,12 +40,20 @@ function refreshWithBackend(rt: string): Promise<RefreshResult | null> {
  * lib/api-auth.ts — see that file's comments for the mutable-cookies
  * nuance in Server Component render paths.
  */
-export async function getValidAccessToken(): Promise<string | null> {
-  const store = await cookies();
-  const at = store.get(AT_COOKIE)?.value;
-  if (at && JWT_SECRET && verifyHs256Jwt(at, JWT_SECRET)) return at;
+type TokenClaims = { exp?: number };
 
-  const rt = store.get(RT_COOKIE)?.value;
+export function accessTokenRemainingSeconds(token: string | null | undefined): number {
+  if (!token || !JWT_SECRET) return 0;
+  const claims = verifyHs256Jwt<TokenClaims>(token, JWT_SECRET);
+  return claims?.exp ? Math.max(0, Math.floor(claims.exp - Date.now() / 1000)) : 0;
+}
+
+export async function getValidAccessToken(opts: { forceRefresh?: boolean; minValiditySeconds?: number } = {}): Promise<string | null> {
+  const store = await cookies();
+  const at = store.get(AT_COOKIE)?.value ?? store.get(LEGACY_AT_COOKIE)?.value;
+  if (!opts.forceRefresh && at && accessTokenRemainingSeconds(at) > (opts.minValiditySeconds ?? 0)) return at;
+
+  const rt = store.get(RT_COOKIE)?.value ?? store.get(LEGACY_RT_COOKIE)?.value;
   if (!rt || !API_BASE) return null;
 
   try {
@@ -61,6 +69,8 @@ export async function getValidAccessToken(): Promise<string | null> {
         httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES,
         path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
       });
+      store.delete(LEGACY_AT_COOKIE);
+      store.delete(LEGACY_RT_COOKIE);
     } catch {
       // Called from a non-mutable context (Server Component render).
     }

@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const bearer = await getValidAccessToken();
   if (!bearer) return new Response('unauthorized', { status: 401 });
   const { deviceFingerprint, terminalCode } = readPosHeaders(req);
-  if (!deviceFingerprint || !terminalCode) return new Response('terminal non appairé', { status: 400 });
+  if (!deviceFingerprint || !terminalCode) return new Response('terminal non appairé', { status: 401 });
 
   const base = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
   const upstream = await fetch(`${base}/api/v1/pos/events`, {

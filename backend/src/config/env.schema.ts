@@ -30,13 +30,14 @@ export const envSchema = z.object({
 
   // Auth
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
-  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   /** Rolling window: every successful refresh re-issues a session with a
    *  fresh expiresAt this many days out, so an actively-used session never
    *  hits this ceiling — it only matters after real inactivity. Kept
    *  well short of "permanent" by default; override for a longer/shorter
    *  idle-logout policy. */
-  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
+  SESSION_ROLLING_ENABLED: bool.default('true'),
   /** Shared secret for server-to-server calls from the Next BFF. */
   SERVICE_TOKEN: z.string().min(32, 'SERVICE_TOKEN must be at least 32 characters'),
 

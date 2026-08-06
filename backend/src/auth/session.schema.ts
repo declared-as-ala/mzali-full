@@ -31,6 +31,9 @@ export class Session {
   @Prop({ type: Date, default: null })
   revokedAt!: Date | null;
 
+  @Prop({ type: String, enum: ['rotated', 'logout', 'logout_all', 'password_reset', 'account_disabled'], default: null })
+  revokedReason!: 'rotated' | 'logout' | 'logout_all' | 'password_reset' | 'account_disabled' | null;
+
   @Prop({ type: String, default: null })
   replacedByHash!: string | null;
 

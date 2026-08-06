@@ -74,3 +74,21 @@ the SHA tag only. The VPS records the successful SHA in `deploy/.last-good`.
 starts the stack, waits for API and storefront health, and smoke-tests the home
 and configured product pages. On failure it exits non-zero and prints the
 exact previous-tag rollback command.
+# Authentication session lifetime
+
+Production uses a short access token and a rotating refresh token. Configure
+the following in the Compose environment (or deployment `.env`):
+
+```dotenv
+ACCESS_TOKEN_TTL_MINUTES=15
+REFRESH_TOKEN_TTL_DAYS=90
+SESSION_ROLLING_ENABLED=true
+AUTH_PROACTIVE_REFRESH_SECONDS=60
+COOKIE_SECURE=true
+```
+
+The API owns refresh-token lifetime and rotation. The Admin and POS services
+receive the refresh lifetime for cookie `Max-Age` and the proactive refresh
+window. Do not add a conflicting hard-coded value to Compose. `COOKIE_SECURE`
+must remain true for HTTPS production; set it false only for plain-HTTP local
+development.

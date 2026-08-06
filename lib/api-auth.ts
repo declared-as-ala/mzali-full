@@ -1,6 +1,6 @@
 import 'server-only';
 import { cookies } from 'next/headers';
-import { AT_COOKIE, RT_COOKIE } from './auth';
+import { AT_COOKIE, LEGACY_AT_COOKIE, LEGACY_RT_COOKIE, RT_COOKIE } from './auth';
 import { verifyHs256Jwt } from './jwt';
 import { PERSISTENT_SESSION_SECONDS } from './session-duration';
 
@@ -76,12 +76,21 @@ function refreshWithBackend(rt: string): Promise<RefreshResult | null> {
  * rejects a token this process believed was still good — a clock-skew edge
  * case, or a request that raced a refresh triggered elsewhere.
  */
-export async function getValidAccessToken(opts: { forceRefresh?: boolean } = {}): Promise<string | null> {
-  const store = await cookies();
-  const at = store.get(AT_COOKIE)?.value;
-  if (!opts.forceRefresh && at && JWT_SECRET && verifyHs256Jwt(at, JWT_SECRET)) return at;
+type TokenClaims = { exp?: number };
 
-  const rt = store.get(RT_COOKIE)?.value;
+export function accessTokenRemainingSeconds(token: string | null | undefined): number {
+  if (!token || !JWT_SECRET) return 0;
+  const claims = verifyHs256Jwt<TokenClaims>(token, JWT_SECRET);
+  return claims?.exp ? Math.max(0, Math.floor(claims.exp - Date.now() / 1000)) : 0;
+}
+
+export async function getValidAccessToken(opts: { forceRefresh?: boolean; minValiditySeconds?: number } = {}): Promise<string | null> {
+  const store = await cookies();
+  const at = store.get(AT_COOKIE)?.value ?? store.get(LEGACY_AT_COOKIE)?.value;
+  const remaining = accessTokenRemainingSeconds(at);
+  if (!opts.forceRefresh && at && remaining > (opts.minValiditySeconds ?? 0)) return at;
+
+  const rt = store.get(RT_COOKIE)?.value ?? store.get(LEGACY_RT_COOKIE)?.value;
   if (!rt || !API_BASE) {
     logAuth('session.cookie_missing', { hadAccessToken: Boolean(at), hasApiBase: Boolean(API_BASE) });
     return null;
@@ -105,6 +114,8 @@ export async function getValidAccessToken(opts: { forceRefresh?: boolean } = {})
         httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES,
         path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
       });
+      store.delete(LEGACY_AT_COOKIE);
+      store.delete(LEGACY_RT_COOKIE);
     } catch {
       // Called from a non-mutable context (Server Component render) — the
       // rotated pair can't be persisted here. Still return the fresh access

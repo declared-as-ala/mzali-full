@@ -3,7 +3,7 @@ import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import type { Server } from 'node:http';
-import type { Connection, Model } from 'mongoose';
+import { Types, type Connection, type Model } from 'mongoose';
 import request from 'supertest';
 import { AppModule } from '@/app.module';
 import { hashPassword } from '@/auth/password';
@@ -96,6 +96,9 @@ describe('Auth and employee administration (integration)', () => {
       expiresIn: expect.any(Number),
       user: { email: ADMIN_EMAIL, role: 'super_admin', name: 'Integration Admin' },
     });
+    const claims = jwt.decode(response.body.accessToken) as { sid?: string };
+    expect(claims.sid).toEqual(expect.any(String));
+    await expect(sessions.findById(claims.sid)).resolves.not.toBeNull();
   });
 
   test('login rejects a wrong password', async () => {
@@ -137,6 +140,11 @@ describe('Auth and employee administration (integration)', () => {
       .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })
       .expect(200);
+
+    const claims = jwt.decode(login.body.accessToken) as { sub: string; sid: string };
+    const backingSession = await sessions.findById(claims.sid);
+    expect(backingSession).not.toBeNull();
+    expect(String(backingSession!.userId)).toBe(claims.sub);
 
     await request(server)
       .get('/api/v1/auth/me')
@@ -277,6 +285,51 @@ describe('Auth and employee administration (integration)', () => {
       .expect(200);
   });
 
+  test('logout of one session does not revoke a second Admin/POS session for the same user', async () => {
+    if (!infraAvailable) return;
+    const adminSession = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+      .expect(200);
+    const posSession = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+      .expect(200);
+
+    await request(server)
+      .post('/api/v1/auth/logout')
+      .send({ refreshToken: adminSession.body.refreshToken })
+      .expect(200);
+    await request(server)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: adminSession.body.refreshToken })
+      .expect(401);
+    await request(server)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: posSession.body.refreshToken })
+      .expect(200);
+  });
+
+  test('successful refresh extends the rolling refresh-token expiry', async () => {
+    if (!infraAvailable) return;
+    const login = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+      .expect(200);
+    const userId = login.body.user.id as string;
+    const before = await sessions.findOne({ userId: new Types.ObjectId(userId) }).sort({ createdAt: -1 });
+    expect(before).not.toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await request(server)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: login.body.refreshToken })
+      .expect(200);
+    const after = await sessions.findOne({ userId: new Types.ObjectId(userId), revokedAt: null }).sort({ createdAt: -1 });
+    expect(after).not.toBeNull();
+    expect(after!.expiresAt.getTime()).toBeGreaterThan(before!.expiresAt.getTime());
+  });
+
   test('employee logout does not revoke the admin session', async () => {
     if (!infraAvailable) return;
     const adminLogin = await request(server)
@@ -296,6 +349,10 @@ describe('Auth and employee administration (integration)', () => {
     await request(server)
       .post('/api/v1/auth/refresh')
       .send({ refreshToken: employeeLogin.body.refreshToken })
+      .expect(401);
+    await request(server)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${String(employeeLogin.body.accessToken)}`)
       .expect(401);
     await request(server)
       .post('/api/v1/auth/refresh')

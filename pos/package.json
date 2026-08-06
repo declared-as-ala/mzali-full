@@ -9,7 +9,8 @@
     "lint": "next lint",
     "bridge:start": "node bridge/server.mjs",
     "bridge:install": "powershell -NoProfile -ExecutionPolicy Bypass -File bridge/install-windows.ps1",
-    "bridge:test": "node --test bridge/*.test.mjs"
+    "bridge:test": "node --test bridge/*.test.mjs",
+    "test:session": "tsx --test tests/*.test.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -29,6 +30,7 @@
     "eslint-config-next": "^14.2.34",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.9",
     "typescript": "^5.6.3"
   },
   "engines": {

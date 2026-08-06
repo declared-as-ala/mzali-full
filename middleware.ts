@@ -2,11 +2,14 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { PERSISTENT_SESSION_SECONDS } from '@/lib/session-duration';
 
-const AT_COOKIE = 'mzali_at';
-const RT_COOKIE = 'mzali_rt';
+const AT_COOKIE = 'mzali_admin_at';
+const RT_COOKIE = 'mzali_admin_rt';
+const LEGACY_AT_COOKIE = 'mzali_at';
+const LEGACY_RT_COOKIE = 'mzali_rt';
 const JWT_SECRET = process.env.JWT_ACCESS_SECRET ?? '';
 const API_BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
 const SECURE_COOKIES = process.env.COOKIE_SECURE !== 'false' && process.env.NODE_ENV === 'production';
+const PROACTIVE_REFRESH_SECONDS = Number(process.env.AUTH_PROACTIVE_REFRESH_SECONDS) || 60;
 
 /**
  * Refreshes the access token BEFORE any page renders, so a rotated refresh
@@ -83,7 +86,7 @@ async function isValidAccessToken(token: string): Promise<boolean> {
 
   const payload = base64UrlDecodeJson(payloadB64);
   if (!payload) return false;
-  if (typeof payload.exp === 'number' && Date.now() >= payload.exp * 1000) return false;
+  if (typeof payload.exp === 'number' && Date.now() + PROACTIVE_REFRESH_SECONDS * 1000 >= payload.exp * 1000) return false;
   return true;
 }
 
@@ -104,10 +107,10 @@ function setRequestCookie(headers: Headers, name: string, value: string): void {
 async function refreshSessionCookies(req: NextRequest): Promise<{ requestHeaders: Headers; applyCookies: (res: NextResponse) => NextResponse }> {
   const noop = { requestHeaders: req.headers, applyCookies: (res: NextResponse) => res };
 
-  const at = req.cookies.get(AT_COOKIE)?.value;
+  const at = req.cookies.get(AT_COOKIE)?.value ?? req.cookies.get(LEGACY_AT_COOKIE)?.value;
   if (at && (await isValidAccessToken(at))) return noop;
 
-  const rt = req.cookies.get(RT_COOKIE)?.value;
+  const rt = req.cookies.get(RT_COOKIE)?.value ?? req.cookies.get(LEGACY_RT_COOKIE)?.value;
   if (!rt || !API_BASE) return noop;
 
   try {
@@ -133,6 +136,8 @@ async function refreshSessionCookies(req: NextRequest): Promise<{ requestHeaders
         response.cookies.set(RT_COOKIE, data.refreshToken, {
           httpOnly: true, sameSite: 'lax', secure: SECURE_COOKIES, path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
         });
+        response.cookies.set(LEGACY_AT_COOKIE, '', { maxAge: 0, path: '/' });
+        response.cookies.set(LEGACY_RT_COOKIE, '', { maxAge: 0, path: '/' });
         return response;
       },
     };

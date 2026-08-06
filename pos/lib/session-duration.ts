@@ -6,5 +6,6 @@
  * account never actually hits the ceiling — it only matters after real
  * inactivity. Access tokens remain short-lived and rotate independently.
  */
-const DAYS = Number(process.env.REFRESH_TOKEN_TTL_DAYS) || 30;
+const DAYS = Number(process.env.REFRESH_TOKEN_TTL_DAYS) || 90;
 export const PERSISTENT_SESSION_SECONDS = 60 * 60 * 24 * DAYS;
+export const PROACTIVE_REFRESH_SECONDS = Number(process.env.AUTH_PROACTIVE_REFRESH_SECONDS) || 60;

@@ -53,7 +53,9 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data?.error ?? 'Erreur de connexion');
-      router.replace('/dashboard');
+      const from = new URLSearchParams(window.location.search).get('from');
+      const target = from && from.startsWith('/') && !from.startsWith('//') ? from : '/dashboard';
+      router.replace(target);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue. Réessayez.');

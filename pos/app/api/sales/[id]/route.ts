@@ -8,7 +8,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { deviceFingerprint, terminalCode } = readPosHeaders(req);
   if (!deviceFingerprint || !terminalCode) {
-    return NextResponse.json({ error: 'terminal non appairé' }, { status: 400 });
+    return NextResponse.json({ error: 'terminal non appairé' }, { status: 401 });
   }
   const { id } = await params;
   try {
@@ -27,7 +27,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { deviceFingerprint, terminalCode } = readPosHeaders(req);
   if (!deviceFingerprint || !terminalCode) {
-    return NextResponse.json({ error: 'terminal non appairé' }, { status: 400 });
+    return NextResponse.json({ error: 'terminal non appairé' }, { status: 401 });
   }
   const { id } = await params;
   try {

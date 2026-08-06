@@ -9,7 +9,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { deviceFingerprint, terminalCode } = readPosHeaders(req);
   if (!deviceFingerprint || !terminalCode) {
-    return NextResponse.json({ error: 'terminal non appairé' }, { status: 400 });
+    return NextResponse.json({ error: 'terminal non appairé' }, { status: 401 });
   }
   try {
     const body = await req.json();

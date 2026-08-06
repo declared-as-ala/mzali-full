@@ -43,6 +43,12 @@ const EMPTY: FormState = {
   options: [], bundles: [], upsellIds: [], posOnly: false,
 };
 
+const PRODUCT_DRAFT_PREFIX = 'mzali_product_draft:';
+function productDraftKey(productId?: string | null) { return `${PRODUCT_DRAFT_PREFIX}${productId ?? 'new'}`; }
+function loadProductDraft(productId?: string | null): FormState | null {
+  try { return JSON.parse(sessionStorage.getItem(productDraftKey(productId)) ?? 'null') as FormState | null; } catch { return null; }
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -86,7 +92,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
           const options = (p.meta?._mzem_options as FormState['options']) ?? [];
           const variant = variants[0] ?? null;
           setVariantId(variant?.id ?? null);
-          setForm({
+          const serverForm: FormState = {
             name: p.name,
             sku: (p.meta?._sku as string) ?? '',
             categoryIds: p.categoryIds,
@@ -112,16 +118,25 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
             bundles: p.bundles,
             upsellIds: p.upsellIds,
             posOnly: p.posOnly ?? false,
-          });
+          };
+          setForm(loadProductDraft(productId) ?? serverForm);
         })
         .catch(() => alert('Erreur de chargement du produit'))
         .finally(() => setLoading(false));
     } else {
-      setForm(EMPTY);
+      setForm(loadProductDraft(null) ?? EMPTY);
       setVariantId(null);
     }
     setTab('description');
   }, [open, productId, categories.length, suppliers.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = window.setTimeout(() => {
+      try { sessionStorage.setItem(productDraftKey(productId), JSON.stringify(form)); } catch { /* best effort */ }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [form, open, productId]);
 
   function up<K extends keyof FormState>(k: K, v: FormState[K]) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -172,6 +187,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
       }
 
       onSaved?.(product);
+      try { sessionStorage.removeItem(productDraftKey(productId)); } catch { /* ignore */ }
       onClose();
     } catch (e) {
       alert(`Échec: ${e instanceof Error ? e.message : 'inconnu'}`);

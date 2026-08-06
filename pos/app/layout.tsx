@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import PwaInstallPrompt from '@/components/PwaInstallPrompt';
+import SessionBoundary from '@/components/SessionBoundary';
+import { PROACTIVE_REFRESH_SECONDS } from '@/lib/session-duration';
 
 export const metadata: Metadata = {
   title: 'Mzali POS',
@@ -29,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr">
       <body className="min-h-dvh select-none overscroll-none">
+        <SessionBoundary proactiveSeconds={PROACTIVE_REFRESH_SECONDS} />
         {children}
         <PwaInstallPrompt />
       </body>

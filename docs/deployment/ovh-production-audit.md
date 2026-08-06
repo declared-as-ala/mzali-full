@@ -12,7 +12,7 @@ backend — not a monorepo, no Turborepo/Nx, no shared `node_modules`:
 | App | Location | package.json name | Port | Notes |
 |---|---|---|---|---|
 | Storefront **+ Admin** | `/` (repo root) | `mzali-next` | 3000 | Admin (`app/admin/**`) is **not a separate app** — it's routes inside the same Next.js build as the storefront. |
-| POS | `pos/` | `mzali-pos` | 3001 | Genuinely separate Next.js app, own build, own auth cookies (`pos_at`/`pos_rt`). |
+| POS | `pos/` | `mzali-pos` | 3001 | Genuinely separate Next.js app, own build, own auth cookies (`mzali_pos_at`/`mzali_pos_rt`). |
 | API | `backend/` (main entry) | `mzali-backend` | 4000 | NestJS, own `package.json`/lockfile. |
 | Worker | `backend/` (worker entry) | same package, `dist/worker-main.js` | — | Same image build, different `CMD`. |
 
@@ -161,8 +161,9 @@ see the note at the end):
 `COMMERCE_PROVIDER`, `SESSION_SECRET`, `JWT_ACCESS_SECRET`, `SERVICE_TOKEN`,
 `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`,
 `MONGO_REPLICA_KEY`, `MONGODB_URI`, `REDIS_PASSWORD`, `REDIS_URL`,
-`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `ACCESS_TOKEN_TTL_SECONDS`,
-`REFRESH_TOKEN_TTL_DAYS`, `STRICT_STOCK`, `CORS_ORIGINS` (new, optional —
+`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `ACCESS_TOKEN_TTL_MINUTES`,
+`REFRESH_TOKEN_TTL_DAYS`, `SESSION_ROLLING_ENABLED`,
+`AUTH_PROACTIVE_REFRESH_SECONDS`, `STRICT_STOCK`, `CORS_ORIGINS` (new, optional —
 see §7), carrier tokens (`NAVEX_*`/`FIRST_DELIVERY_*`/`AXESS_*`),
 `BACKUP_TARGET`, `BACKUP_RETENTION_DAYS`, `SMOKE_PRODUCT_PATH`.
 

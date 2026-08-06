@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { AT_COOKIE, COOKIE, LEGACY_COOKIE, RT_COOKIE, Role, signSession } from '@/lib/auth';
+import { AT_COOKIE, COOKIE, LEGACY_AT_COOKIE, LEGACY_COOKIE, LEGACY_RT_COOKIE, RT_COOKIE, Role, signSession } from '@/lib/auth';
 import { verifyPassword as verifyAdminPassword } from '@/lib/admin-storage';
 import { employeeService } from '@/services';
 import { adminHrefForHost } from '@/lib/admin-nav';
 import { PERSISTENT_SESSION_SECONDS } from '@/lib/session-duration';
+import { accessTokenRemainingSeconds, getValidAccessToken } from '@/lib/api-auth';
 
 const PROVIDER = process.env.COMMERCE_PROVIDER ?? 'woocommerce';
 const API_BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
@@ -41,6 +42,18 @@ function setSessionCookies(res: NextResponse, tokens: BackendLoginResult) {
     path: '/', maxAge: PERSISTENT_SESSION_SECONDS,
   });
   res.cookies.set(LEGACY_COOKIE, '', { maxAge: 0, path: '/' });
+  res.cookies.set(LEGACY_AT_COOKIE, '', { maxAge: 0, path: '/' });
+  res.cookies.set(LEGACY_RT_COOKIE, '', { maxAge: 0, path: '/' });
+}
+
+/** Silent/proactive renewal endpoint used by the shared browser client.
+ * A fresh token is left untouched; one within the configured safety window
+ * is rotated and persisted in this mutable cookie context. */
+export async function PUT() {
+  const proactive = Number(process.env.AUTH_PROACTIVE_REFRESH_SECONDS) || 60;
+  const token = await getValidAccessToken({ minValiditySeconds: proactive });
+  if (!token) return NextResponse.json({ ok: false }, { status: 401 });
+  return NextResponse.json({ ok: true, expiresIn: accessTokenRemainingSeconds(token) });
 }
 
 async function mzaliApiLogin(username: string, password: string, host: string | null): Promise<NextResponse> {
@@ -90,6 +103,8 @@ export async function POST(req: Request) {
     });
     // Keep legacy cookie around for back-compat with old tabs (will be ignored once expired).
     res.cookies.set(LEGACY_COOKIE, '', { maxAge: 0, path: '/' });
+    res.cookies.set(LEGACY_AT_COOKIE, '', { maxAge: 0, path: '/' });
+    res.cookies.set(LEGACY_RT_COOKIE, '', { maxAge: 0, path: '/' });
     return res;
   }
 

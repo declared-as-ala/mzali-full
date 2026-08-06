@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { deviceFingerprint, terminalCode } = readPosHeaders(req);
   if (!deviceFingerprint || !terminalCode) {
-    return NextResponse.json({ error: 'terminal non appairé' }, { status: 400 });
+    return NextResponse.json({ error: 'terminal non appairé' }, { status: 401 });
   }
   const { searchParams } = new URL(req.url);
   try {

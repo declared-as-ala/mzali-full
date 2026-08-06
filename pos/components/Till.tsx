@@ -15,6 +15,8 @@ import Cart from './Cart';
 import TicketPreview from './TicketPreview';
 import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 
+const ACTIVE_SALE_DRAFT_KEY = 'mzali_pos_active_sale_draft';
+
 export default function Till({ cashierName, role }: { cashierName: string; role: string }) {
   const router = useRouter();
   const [catalog, setCatalog] = useState<PosCatalogResponse | null>(null);
@@ -50,6 +52,39 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
   const paymentRequestInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [draftReady, setDraftReady] = useState(false);
+
+  // Authentication and the business cashier session are separate. Keep the
+  // current sale durable across a genuine auth failure/login round-trip.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ACTIVE_SALE_DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (Array.isArray(draft.cart)) setCart(draft.cart);
+        if (typeof draft.customerPhone === 'string') setCustomerPhone(draft.customerPhone);
+        if (typeof draft.customerId === 'string' || draft.customerId === null) setCustomerId(draft.customerId);
+        if (typeof draft.customerName === 'string' || draft.customerName === null) setCustomerName(draft.customerName);
+        if (draft.loyaltyAccount) setLoyaltyAccount(draft.loyaltyAccount);
+        if (typeof draft.redeemInput === 'string') setRedeemInput(draft.redeemInput);
+        if (draft.redeemPreview) setRedeemPreview(draft.redeemPreview);
+        if (draft.editingSale) setEditingSale(draft.editingSale);
+        if (typeof draft.idempotencyKey === 'string') idempotencyKeyRef.current = draft.idempotencyKey;
+      }
+    } catch { /* malformed or unavailable storage */ }
+    setDraftReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      localStorage.setItem(ACTIVE_SALE_DRAFT_KEY, JSON.stringify({
+        cart, customerPhone, customerId, customerName, loyaltyAccount,
+        redeemInput, redeemPreview, editingSale,
+        idempotencyKey: idempotencyKeyRef.current,
+      }));
+    } catch { /* storage is best effort */ }
+  }, [cart, customerPhone, customerId, customerName, loyaltyAccount, redeemInput, redeemPreview, editingSale, draftReady]);
 
   useEffect(() => {
     posFetch('/api/sessions', { cache: 'no-store' })
@@ -61,7 +96,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   async function loadCatalog() {
     try {
       const res = await posFetch('/api/catalog', { cache: 'no-store' });
-      if (res.status === 400) { router.replace('/pairing'); return; }
+      if (res.status === 400 || res.status === 401) { router.replace('/pairing'); return; }
       if (!res.ok) throw new Error();
       const data: PosCatalogResponse = await res.json();
       setCatalog(data);

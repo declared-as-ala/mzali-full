@@ -19,7 +19,9 @@ services:
       # Must match the api/worker value below — this is only the *cookie's*
       # maxAge hint to the browser; the backend's Session documents are the
       # actual source of truth for when a refresh token stops working.
-      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-90}
+      AUTH_PROACTIVE_REFRESH_SECONDS: ${AUTH_PROACTIVE_REFRESH_SECONDS:-60}
+      COOKIE_SECURE: "true"
       # Read by middleware.ts to decide when to rewrite requests to /admin/*.
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:?Set ADMIN_DOMAIN}
       NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-Boutique Ahmed Mzali}
@@ -41,7 +43,8 @@ services:
       MZALI_API_URL: http://api:4000
       MZALI_SERVICE_TOKEN: ${SERVICE_TOKEN:?Set SERVICE_TOKEN}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
-      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-90}
+      AUTH_PROACTIVE_REFRESH_SECONDS: ${AUTH_PROACTIVE_REFRESH_SECONDS:-60}
       COOKIE_SECURE: "true"
     depends_on:
       api:
@@ -64,8 +67,9 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD}
       MINIO_PUBLIC_URL: ${MINIO_PUBLIC_URL:?Set MINIO_PUBLIC_URL}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET}
-      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
-      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-30}
+      ACCESS_TOKEN_TTL_MINUTES: ${ACCESS_TOKEN_TTL_MINUTES:-15}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-90}
+      SESSION_ROLLING_ENABLED: ${SESSION_ROLLING_ENABLED:-true}
       SERVICE_TOKEN: ${SERVICE_TOKEN:?Set SERVICE_TOKEN}
       STRICT_STOCK: ${STRICT_STOCK:-false}
       SWAGGER_ENABLED: "false"

@@ -21,8 +21,10 @@ const JWT_SECRET = process.env.JWT_ACCESS_SECRET ?? '';
 
 export const COOKIE = 'mzali_session';
 export const LEGACY_COOKIE = 'mzali_admin';
-export const AT_COOKIE = 'mzali_at';
-export const RT_COOKIE = 'mzali_rt';
+export const AT_COOKIE = 'mzali_admin_at';
+export const RT_COOKIE = 'mzali_admin_rt';
+export const LEGACY_AT_COOKIE = 'mzali_at';
+export const LEGACY_RT_COOKIE = 'mzali_rt';
 
 export type Role = 'admin' | 'employee';
 export type Session = { role: Role; userId: string; name: string };
@@ -66,7 +68,7 @@ export async function getSession(): Promise<Session | null> {
   const store = await cookies();
 
   // 1. mzali-api JWT access token (with silent auto-refresh via refresh token if expired)
-  const token = (await getValidAccessToken()) ?? store.get(AT_COOKIE)?.value;
+  const token = (await getValidAccessToken()) ?? store.get(AT_COOKIE)?.value ?? store.get(LEGACY_AT_COOKIE)?.value;
   if (token && JWT_SECRET) {
     const claims = verifyHs256Jwt<AccessTokenClaims>(token, JWT_SECRET);
     if (claims?.sub && claims.role && claims.name) {

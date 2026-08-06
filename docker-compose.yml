@@ -116,7 +116,9 @@ services:
       MINIO_USE_SSL: "false"
       MINIO_PUBLIC_URL: http://localhost:9000
       SWAGGER_ENABLED: "true"
-      REFRESH_TOKEN_TTL_DAYS: 3650
+      ACCESS_TOKEN_TTL_MINUTES: ${ACCESS_TOKEN_TTL_MINUTES:-15}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-90}
+      SESSION_ROLLING_ENABLED: ${SESSION_ROLLING_ENABLED:-true}
     depends_on:
       mongo:
         condition: service_healthy
@@ -173,7 +175,9 @@ services:
       COMMERCE_PROVIDER: mzali-api
       NEXT_PUBLIC_COMMERCE_PROVIDER: mzali-api
       MZALI_API_URL: http://api:4000
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-90}
+      AUTH_PROACTIVE_REFRESH_SECONDS: ${AUTH_PROACTIVE_REFRESH_SECONDS:-60}
     depends_on:
       api:
         condition: service_healthy
@@ -195,7 +199,9 @@ services:
       PORT: 3001
       HOSTNAME: 0.0.0.0
       MZALI_API_URL: http://api:4000
-      COOKIE_SECURE: "false"
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-90}
+      AUTH_PROACTIVE_REFRESH_SECONDS: ${AUTH_PROACTIVE_REFRESH_SECONDS:-60}
     depends_on:
       api:
         condition: service_healthy

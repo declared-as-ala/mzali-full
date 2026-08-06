@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import EmployeeSidebar from '@/components/employee/Sidebar';
 import { ToastProvider } from '@/components/admin/Toast';
 import { getSession } from '@/lib/auth';
+import SessionBoundary from '@/components/auth/SessionBoundary';
+import { PROACTIVE_REFRESH_SECONDS } from '@/lib/session-duration';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +15,7 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
   }
   return (
     <ToastProvider>
+      <SessionBoundary loginPath="/admin-login" proactiveSeconds={PROACTIVE_REFRESH_SECONDS} />
       <div className="flex min-h-screen bg-slate-50">
         <EmployeeSidebar name={session.name || 'Employé'} />
         <main className="flex-1 overflow-x-hidden">{children}</main>

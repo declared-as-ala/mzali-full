@@ -40,6 +40,8 @@ export type RefreshResult = {
 /** Payload embedded in the HS256 access token (verified locally by the Next BFF). */
 export type AccessTokenClaims = {
   sub: string;
+  /** Refresh-session record backing this access token. */
+  sid: string;
   role: EmployeeRole;
   name: string;
 };

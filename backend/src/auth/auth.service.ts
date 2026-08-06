@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import type { AccessTokenClaims, AuthUser, LoginResult, RefreshResult } from '@contracts';
 import { Employee, EmployeeDocument } from '@/users/employee.schema';
 import { Session } from './session.schema';
@@ -110,18 +110,22 @@ export class AuthService implements OnModuleInit {
     const tokenHash = this.hashToken(refreshToken);
     const claimed = await this.sessions.findOneAndUpdate(
       { refreshTokenHash: tokenHash, revokedAt: null },
-      { $set: { revokedAt: new Date() } },
+      { $set: { revokedAt: new Date(), revokedReason: 'rotated' } },
     );
 
     if (!claimed) {
       const existing = await this.sessions.findOne({ refreshTokenHash: tokenHash });
       if (existing) {
         // Reuse of an already-rotated/revoked token ⇒ assume theft, kill the family.
-        await this.sessions.updateMany(
-          { familyId: existing.familyId, revokedAt: null },
-          { $set: { revokedAt: new Date() } },
-        );
-        this.logger.warn({ event: 'auth.refresh_reuse_detected', userId: String(existing.userId), familyId: existing.familyId });
+        if (existing.revokedReason === 'rotated' || existing.replacedByHash) {
+          await this.sessions.updateMany(
+            { familyId: existing.familyId, revokedAt: null },
+            { $set: { revokedAt: new Date() } },
+          );
+          this.logger.warn({ event: 'auth.refresh_reuse_detected', userId: String(existing.userId), familyId: existing.familyId });
+        } else {
+          this.logger.warn({ event: 'auth.refresh_token_revoked', userId: String(existing.userId), familyId: existing.familyId });
+        }
       } else {
         this.logger.warn({ event: 'auth.refresh_failed', reason: 'unknown_token' });
       }
@@ -143,7 +147,13 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('Session invalide');
     }
 
-    const tokens = await this.issueTokens(employee, claimed.familyId, meta);
+    const rolling = this.config.getOrThrow<boolean>('SESSION_ROLLING_ENABLED');
+    const tokens = await this.issueTokens(
+      employee,
+      claimed.familyId,
+      meta,
+      rolling ? undefined : claimed.expiresAt,
+    );
     await this.sessions.updateOne(
       { _id: claimed._id },
       { $set: { replacedByHash: this.hashToken(tokens.refreshToken) } },
@@ -156,15 +166,18 @@ export class AuthService implements OnModuleInit {
     const tokenHash = this.hashToken(refreshToken);
     const res = await this.sessions.updateOne(
       { refreshTokenHash: tokenHash, revokedAt: null },
-      { $set: { revokedAt: new Date() } },
+      { $set: { revokedAt: new Date(), revokedReason: 'logout' } },
     );
     this.logger.log({ event: 'auth.logout', sessionsRevoked: res.modifiedCount });
   }
 
-  async logoutAll(userId: string): Promise<number> {
+  async logoutAll(
+    userId: string,
+    reason: 'logout_all' | 'password_reset' | 'account_disabled' = 'logout_all',
+  ): Promise<number> {
     const res = await this.sessions.updateMany(
-      { userId, revokedAt: null },
-      { $set: { revokedAt: new Date() } },
+      { userId: new Types.ObjectId(userId), revokedAt: null },
+      { $set: { revokedAt: new Date(), revokedReason: reason } },
     );
     this.logger.log({ event: 'auth.logout_all', userId, sessionsRevoked: res.modifiedCount });
     return res.modifiedCount;
@@ -179,7 +192,7 @@ export class AuthService implements OnModuleInit {
     employee.mustChangePassword = false;
     await employee.save();
     // A password change invalidates every other session.
-    await this.logoutAll(userId);
+    await this.logoutAll(userId, 'password_reset');
   }
 
   async getAuthUser(userId: string): Promise<AuthUser | null> {
@@ -195,25 +208,26 @@ export class AuthService implements OnModuleInit {
     employee: EmployeeDocument,
     familyId: string,
     meta: RequestMeta,
+    fixedRefreshExpiry?: Date,
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
-    const expiresIn = this.config.getOrThrow<number>('ACCESS_TOKEN_TTL_SECONDS');
+    const expiresIn = this.config.getOrThrow<number>('ACCESS_TOKEN_TTL_MINUTES') * 60;
+    const refreshToken = randomBytes(48).toString('hex');
+    const ttlDays = this.config.getOrThrow<number>('REFRESH_TOKEN_TTL_DAYS');
+    const session = await this.sessions.create({
+      userId: employee._id,
+      refreshTokenHash: this.hashToken(refreshToken),
+      familyId,
+      expiresAt: fixedRefreshExpiry ?? new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
+      ip: meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+    });
     const claims: AccessTokenClaims = {
       sub: employee.id,
+      sid: session.id,
       role: employee.role,
       name: employee.name,
     };
     const accessToken = await this.jwt.signAsync(claims, { expiresIn });
-
-    const refreshToken = randomBytes(48).toString('hex');
-    const ttlDays = this.config.getOrThrow<number>('REFRESH_TOKEN_TTL_DAYS');
-    await this.sessions.create({
-      userId: employee._id,
-      refreshTokenHash: this.hashToken(refreshToken),
-      familyId,
-      expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
-      ip: meta.ip ?? null,
-      userAgent: meta.userAgent ?? null,
-    });
 
     return { accessToken, refreshToken, expiresIn };
   }

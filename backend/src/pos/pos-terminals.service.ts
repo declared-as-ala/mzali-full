@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
@@ -14,6 +14,8 @@ function randomCode(length: number, chars: string): string {
 
 @Injectable()
 export class PosTerminalsService {
+  private readonly logger = new Logger(PosTerminalsService.name);
+
   constructor(@InjectModel(PosTerminal.name) private readonly model: Model<PosTerminal>) {}
 
   /** Device generates a fingerprint client-side once and persists it locally
@@ -102,34 +104,28 @@ export class PosTerminalsService {
     return doc;
   }
 
-  /** Used by PosTerminalGuard on every POS request. Auto-provisions and activates terminal if not yet paired. */
+  /** Used by PosTerminalGuard on every POS request. Revoked or mismatched
+   * terminals are never silently reactivated; only the explicit pairing /
+   * admin approval flow can activate a terminal. */
   async validate(
     terminalCode: string,
     deviceFingerprint: string,
     ip: string | null = null,
     appVersion: string | null = null,
   ): Promise<PosTerminalDocument> {
-    let doc = await this.model.findOne({ terminalCode });
-    if (!doc) {
-      doc = await this.model.create({
-        terminalCode: terminalCode || 'TERM-POS-MAIN',
-        name: 'Caisse POS',
-        locationId: BOUTIQUE_CODE,
-        active: true,
-        deviceFingerprint,
-        approvedAt: new Date(),
-        approvedBy: 'system',
+    const doc = await this.model.findOne({ terminalCode });
+    if (!doc || !doc.active || doc.deviceFingerprint !== deviceFingerprint) {
+      this.logger.warn({
+        event: 'auth.terminal_revoked',
+        terminalCode,
+        reason: !doc ? 'unknown' : !doc.active ? 'revoked' : 'fingerprint_mismatch',
       });
-    } else {
-      if (!doc.active || doc.deviceFingerprint !== deviceFingerprint) {
-        doc.active = true;
-        doc.deviceFingerprint = deviceFingerprint;
-      }
-      doc.lastSeenAt = new Date();
-      if (ip) doc.lastIp = ip;
-      if (appVersion) doc.appVersion = appVersion;
-      await doc.save();
+      throw new UnauthorizedException('Terminal révoqué ou non appairé');
     }
+    doc.lastSeenAt = new Date();
+    if (ip) doc.lastIp = ip;
+    if (appVersion) doc.appVersion = appVersion;
+    await doc.save();
     return doc;
   }
 }
