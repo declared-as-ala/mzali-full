@@ -40,14 +40,39 @@ export default function TicketPreview({ sale, onClose, onNewSale, duplicate, aut
     return () => document.body.classList.remove('receipt-printing');
   }, []);
 
+  // A completed sale prints itself and opens the drawer with no manual step
+  // — this screen shouldn't need one either. Once the browser's print flow
+  // resolves (ticket printed, or the dialog dismissed), go straight back to
+  // a fresh sale automatically instead of waiting on a "Nouvelle vente"
+  // click. `afterprint` is the standard cross-browser signal that the print
+  // dialog closed; a fallback timer guards against it never firing on some
+  // platform/printer setup so the cashier is never stuck on this screen.
   useEffect(() => {
     if (!autoPrint) return;
     const printKey = `pos_auto_printed_${sale.id}`;
-    if (sessionStorage.getItem(printKey)) return;
+    let dismissed = false;
+    const dismiss = () => {
+      if (dismissed) return;
+      dismissed = true;
+      (onNewSale ?? onClose)();
+    };
+
+    if (sessionStorage.getItem(printKey)) {
+      dismiss();
+      return;
+    }
     sessionStorage.setItem(printKey, '1');
-    const id = setTimeout(() => window.print(), 150);
-    return () => clearTimeout(id);
-  }, [autoPrint, sale.id]);
+
+    window.addEventListener('afterprint', dismiss);
+    const printId = setTimeout(() => window.print(), 150);
+    const fallbackId = setTimeout(dismiss, 6000);
+
+    return () => {
+      clearTimeout(printId);
+      clearTimeout(fallbackId);
+      window.removeEventListener('afterprint', dismiss);
+    };
+  }, [autoPrint, sale.id, onNewSale, onClose]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
