@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getValidAccessToken } from '@/lib/api-auth';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, ApiError } from '@/lib/api-client';
 import { readPosHeaders } from '@/lib/pos-headers';
 
 export async function GET(req: Request) {
@@ -17,6 +17,7 @@ export async function GET(req: Request) {
     });
     return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 });
+    const status = e instanceof ApiError ? e.status : 500;
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status });
   }
 }
