@@ -96,7 +96,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   async function loadCatalog() {
     try {
       const res = await posFetch('/api/catalog', { cache: 'no-store' });
-      if (res.status === 400 || res.status === 401) { router.replace('/pairing'); return; }
+      if (res.status === 401) { router.replace('/login'); return; }
       if (!res.ok) throw new Error();
       const data: PosCatalogResponse = await res.json();
       setCatalog(data);

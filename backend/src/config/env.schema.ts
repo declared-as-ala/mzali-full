@@ -33,10 +33,11 @@ export const envSchema = z.object({
   ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
   /** Rolling window: every successful refresh re-issues a session with a
    *  fresh expiresAt this many days out, so an actively-used session never
-   *  hits this ceiling — it only matters after real inactivity. Kept
-   *  well short of "permanent" by default; override for a longer/shorter
-   *  idle-logout policy. */
-  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(90),
+   *  hits this ceiling — it only matters after real inactivity. Admin/POS
+   *  are internal operator tools (not personal public-web sessions), and
+   *  repeated forced re-logins were disruptive enough that a long default
+   *  is preferred here over a short one; override for a stricter policy. */
+  REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(3650),
   SESSION_ROLLING_ENABLED: bool.default('true'),
   /** Shared secret for server-to-server calls from the Next BFF. */
   SERVICE_TOKEN: z.string().min(32, 'SERVICE_TOKEN must be at least 32 characters'),

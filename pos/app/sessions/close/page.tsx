@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Wallet } from 'lucide-react';
-import { getTerminalCode, posFetch } from '@/lib/device';
+import { posFetch } from '@/lib/device';
 import { formatMinor } from '@/lib/money';
 import SessionReport from '@/components/SessionReport';
 import type { PosCashierSession, PosSessionReport } from '@/types/pos';
@@ -17,7 +17,6 @@ export default function CloseSessionPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getTerminalCode()) { router.replace('/pairing'); return; }
     posFetch('/api/sessions', { cache: 'no-store' })
       .then((res) => res.json())
       .then((body: { session: PosCashierSession | null }) => {

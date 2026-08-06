@@ -18,10 +18,16 @@ export function getDeviceFingerprint(): string {
   return value;
 }
 
+/** Persistent, random per-device terminal id — no pairing code, no admin
+ *  approval step. The backend (PosTerminalsService.validate) silently
+ *  provisions a terminal record for whatever code it first sees, so this
+ *  only needs to be stable per browser/device, not coordinated with
+ *  anyone. Randomly generated so two devices never collide the way a
+ *  shared hardcoded default would. */
 export function getTerminalCode(): string {
   let value = localStorage.getItem(TERMINAL_KEY);
   if (!value) {
-    value = 'TERM-POS-MAIN';
+    value = `TERM-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
     localStorage.setItem(TERMINAL_KEY, value);
   }
   return value;

@@ -19,8 +19,6 @@ import {
   Lock,
   X
 } from 'lucide-react';
-import { getTerminalCode } from '@/lib/device';
-
 export default function LoginPage() {
   const router = useRouter();
   const emailId = useId();
@@ -31,10 +29,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!getTerminalCode()) router.replace('/pairing');
-  }, [router]);
 
   useEffect(() => {
     if (error) errorRef.current?.focus();

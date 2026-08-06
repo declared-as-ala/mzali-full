@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
@@ -14,8 +14,6 @@ function randomCode(length: number, chars: string): string {
 
 @Injectable()
 export class PosTerminalsService {
-  private readonly logger = new Logger(PosTerminalsService.name);
-
   constructor(@InjectModel(PosTerminal.name) private readonly model: Model<PosTerminal>) {}
 
   /** Device generates a fingerprint client-side once and persists it locally
@@ -104,23 +102,33 @@ export class PosTerminalsService {
     return doc;
   }
 
-  /** Used by PosTerminalGuard on every POS request. Revoked or mismatched
-   * terminals are never silently reactivated; only the explicit pairing /
-   * admin approval flow can activate a terminal. */
+  /** Used by PosTerminalGuard on every POS request. No pairing code, no
+   * admin approval step: the first request seen for a given terminal code
+   * silently provisions and activates a record for it, and a later
+   * mismatch (e.g. localStorage cleared, browser reinstalled) just
+   * re-binds the fingerprint instead of locking the till out. Login itself
+   * (JwtAuthGuard, still required) is the actual access control here —
+   * this only tracks which physical till a sale/session belongs to. */
   async validate(
     terminalCode: string,
     deviceFingerprint: string,
     ip: string | null = null,
     appVersion: string | null = null,
   ): Promise<PosTerminalDocument> {
-    const doc = await this.model.findOne({ terminalCode });
-    if (!doc || !doc.active || doc.deviceFingerprint !== deviceFingerprint) {
-      this.logger.warn({
-        event: 'auth.terminal_revoked',
+    let doc = await this.model.findOne({ terminalCode });
+    if (!doc) {
+      doc = await this.model.create({
         terminalCode,
-        reason: !doc ? 'unknown' : !doc.active ? 'revoked' : 'fingerprint_mismatch',
+        name: 'Terminal POS',
+        locationId: BOUTIQUE_CODE,
+        active: true,
+        deviceFingerprint,
+        approvedAt: new Date(),
+        approvedBy: null,
       });
-      throw new UnauthorizedException('Terminal révoqué ou non appairé');
+    } else if (!doc.active || doc.deviceFingerprint !== deviceFingerprint) {
+      doc.active = true;
+      doc.deviceFingerprint = deviceFingerprint;
     }
     doc.lastSeenAt = new Date();
     if (ip) doc.lastIp = ip;
