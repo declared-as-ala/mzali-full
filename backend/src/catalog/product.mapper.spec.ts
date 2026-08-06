@@ -104,7 +104,17 @@ describe('toProductContract', () => {
 
   it('carries cost/delivery figures in meta as dinars', () => {
     const p = toProductContract(baseDoc());
-    expect(p.meta).toEqual({ cost: 50, deliveryPrice: 8, deliveryCost: 3 });
+    expect(p.meta).toEqual({
+      cost: 50,
+      deliveryPrice: 8,
+      deliveryCost: 3,
+      _mzem_options: [{ label: 'Taille', type: 'select', values: ['S', 'M'] }],
+    });
+  });
+
+  it('carries full-fidelity options (label+type+values) in meta._mzem_options for the admin editor — attributes above loses type entirely', () => {
+    const p = toProductContract(baseDoc());
+    expect(p.meta._mzem_options).toEqual([{ label: 'Taille', type: 'select', values: ['S', 'M'] }]);
   });
 });
 

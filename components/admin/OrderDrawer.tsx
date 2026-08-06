@@ -475,30 +475,56 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     setSaving(true);
     try {
       const statusChanged = isEdit ? (status && status !== originalStatus) : Boolean(status);
-      const payload: Record<string, unknown> = {
-        customer,
-        // Shape must exactly match backend UpdateOrderDto's OrderUpdateItemDto
-        // — the global ValidationPipe rejects unknown fields (forbidNonWhitelisted).
-        items: lines.map((l) => ({
-          productId: l.productId,
-          qty: l.qty,
-          unitPrice: l.unitPrice,
-          variation: l.variation,
-          bundleName: l.bundleName,
-          bundleSlot: l.slotIndex,
-        })),
-        shipping,
-        // subtotal/total are deliberately NOT sent — the backend always
-        // recomputes real totals from `items`+`shipping` server-side now;
-        // sending a client total here would only set the separate manual-
-        // override fields, which this form doesn't intend to do.
-        deliveryCompany,
-        exchange,
-        privateNote,
-      };
+      // Edit and create hit entirely different backend endpoints with
+      // entirely different DTOs — an edit goes to admin/employee
+      // UpdateOrderDto (whitelists unitPrice/bundleSlot/privateNote/
+      // exchange/reason...), a create goes to the public checkout endpoint's
+      // CheckoutDto (whitelists lineId/name/price/image instead, and has no
+      // privateNote/exchange/reason fields at all). Sending the wrong shape
+      // to either always 400s under forbidNonWhitelisted, so the payload
+      // must be built differently per case rather than shared.
+      const payload: Record<string, unknown> = isEdit
+        ? {
+            customer,
+            items: lines.map((l) => ({
+              productId: l.productId,
+              qty: l.qty,
+              unitPrice: l.unitPrice,
+              variation: l.variation,
+              bundleName: l.bundleName,
+              bundleSlot: l.slotIndex,
+            })),
+            shipping,
+            deliveryCompany,
+            exchange,
+            privateNote,
+          }
+        : {
+            customer,
+            items: lines.map((l, i) => ({
+              lineId: `${l.productId}-${i}`,
+              productId: l.productId,
+              name: l.name,
+              price: l.unitPrice,
+              qty: l.qty,
+              image: l.image ?? '',
+              variation: l.variation,
+              // The checkout endpoint recomputes price server-side from
+              // this bundle (falling back to the product's normal price
+              // when absent) — without it, a manually-created order with a
+              // bundle selected would silently price each line at the
+              // product's standalone price instead of the bundle rate.
+              bundleId: productInfo[l.productId]?.bundles.find((b) => b.name === l.bundleName)?.id,
+              bundleName: l.bundleName,
+              bundleSlot: l.slotIndex,
+            })),
+            shipping,
+          };
+      // subtotal/total are deliberately NOT sent either way — the backend
+      // always recomputes real totals from items+shipping server-side.
       if (statusChanged) payload.status = status;
       payload.attempts = attempts;
-      if (editReason.trim()) payload.reason = editReason.trim();
+      if (isEdit && editReason.trim()) payload.reason = editReason.trim();
       const url = isEdit ? `${apiBase}/orders/${orderId}` : `${apiBase}/orders`;
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });

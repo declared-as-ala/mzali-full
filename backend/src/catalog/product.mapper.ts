@@ -64,6 +64,12 @@ export function toProductContract(doc: ProductSchema & { id?: string; _id?: unkn
       cost: toDinars(doc.costMinor ?? 0),
       deliveryPrice: toDinars(doc.deliveryPriceMinor ?? 0),
       deliveryCost: toDinars(doc.deliveryCostMinor ?? 0),
+      // Full-fidelity options (label + type + values) for the admin editor
+      // to read back — `attributes` above is the lossy WooCommerce-shaped
+      // view for the storefront (renames label->name, drops type entirely),
+      // which is why options saved correctly and showed on the public
+      // product page but came back empty when reopening the admin editor.
+      _mzem_options: (doc.options ?? []).map((o) => ({ label: o.label, type: o.type, values: o.values ?? [] })),
     },
   };
 }
