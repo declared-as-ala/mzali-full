@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { open } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { normalizeComPort } from './drawer.mjs';
-
+//sss
 const execFileAsync = promisify(execFile);
 const DISPLAY_WIDTH = 20;
 const configuredPorts = new Set();
