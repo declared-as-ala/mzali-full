@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  AlertTriangle,
   Boxes,
   CircleDollarSign,
   Edit,
@@ -25,10 +24,6 @@ type Props = {
   initialProducts: Product[];
   totals: {
     products: number;
-    stock: number;
-    untrackedStock: number;
-    outOfStock: number;
-    inventoryValue: number;
   };
   initialEditingId?: string | null;
 };
@@ -176,7 +171,7 @@ export default function ProduitsView({ initialProducts, totals, initialEditingId
         </button>
       </header>
 
-      <section className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Indicateurs du catalogue">
+      <section className="mb-7 grid gap-4 sm:grid-cols-2" aria-label="Indicateurs du catalogue">
         <div className="card flex min-h-32 items-center gap-4 p-5">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-600 ring-1 ring-brand-100">
             <Boxes size={22} aria-hidden="true" />
@@ -184,32 +179,6 @@ export default function ProduitsView({ initialProducts, totals, initialEditingId
           <div>
             <p className="text-3xl font-black tabular-nums text-ink-950">{totals.products}</p>
             <p className="mt-1 text-sm font-semibold text-ink-700">Produits au catalogue</p>
-          </div>
-        </div>
-        <div className="card flex min-h-32 items-center gap-4 p-5">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-sky-50 text-sky-700 ring-1 ring-sky-100">
-            <Package size={22} aria-hidden="true" />
-          </div>
-          <div>
-            <p className="text-3xl font-black tabular-nums text-ink-950">{totals.stock}</p>
-            <p className="mt-1 text-sm font-semibold text-ink-700">Unités suivies en stock</p>
-            {totals.untrackedStock > 0 && (
-              <p className="mt-1 text-xs text-ink-500">{totals.untrackedStock} sans suivi quantitatif</p>
-            )}
-          </div>
-        </div>
-        <div className="card flex min-h-32 items-center gap-4 p-5">
-          <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ring-1 ${
-            totals.outOfStock > 0
-              ? 'bg-red-50 text-red-600 ring-red-100'
-              : 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-          }`}>
-            <AlertTriangle size={22} aria-hidden="true" />
-          </div>
-          <div>
-            <p className="text-3xl font-black tabular-nums text-ink-950">{totals.outOfStock}</p>
-            <p className="mt-1 text-sm font-semibold text-ink-700">Produits en rupture</p>
-            <p className="mt-1 text-xs text-ink-500">Valeur suivie : {formatPrice(totals.inventoryValue)}</p>
           </div>
         </div>
         <div className="relative min-h-32 overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 via-brand-800 to-slate-950 p-5 text-white shadow-[0_20px_45px_-24px_rgba(16,29,160,0.7)]">
@@ -322,8 +291,6 @@ export default function ProduitsView({ initialProducts, totals, initialEditingId
               </th>
               <th className="px-4 py-3 text-left">Produit</th>
               <th className="px-4 py-3 text-left">Prix actuel</th>
-              <th className="px-4 py-3 text-left">Stock</th>
-              <th className="px-4 py-3 text-left">Valeur stock</th>
               <th className="px-4 py-3 text-left">Statut</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
@@ -423,24 +390,6 @@ export default function ProduitsView({ initialProducts, totals, initialEditingId
                     {p.onSale && p.regularPrice > p.price && (
                       <p className="mt-1 text-xs tabular-nums text-ink-500 line-through">{formatPrice(p.regularPrice)}</p>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.stockQuantity === null ? (
-                      <span className="text-xs font-semibold text-ink-500">Non suivi</span>
-                    ) : (
-                      <span className={`inline-flex min-w-12 justify-center rounded-full px-2.5 py-1 text-xs font-black tabular-nums ${
-                        p.stockQuantity <= 0
-                          ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
-                          : p.stockQuantity <= 5
-                            ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
-                            : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                      }`}>
-                        {p.stockQuantity}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-bold tabular-nums text-ink-900">
-                    {p.stockQuantity === null ? '—' : formatPrice(Math.max(p.stockQuantity, 0) * p.price)}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}>
