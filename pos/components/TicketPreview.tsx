@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { AlertTriangle, Banknote, Printer, X } from 'lucide-react';
 import { formatMinor } from '@/lib/money';
 import type { PosSale, PosSalePaymentInput } from '@/types/pos';
@@ -40,6 +40,18 @@ export default function TicketPreview({ sale, onClose, onNewSale, duplicate, aut
     return () => document.body.classList.remove('receipt-printing');
   }, []);
 
+  // onNewSale/onClose are inline closures from Till.tsx and get a new
+  // identity on every one of its re-renders (e.g. a live pos-events update
+  // arriving mid-print). Reading them via a ref instead of a dependency
+  // keeps this effect's own deps stable across those re-renders — putting
+  // them in the dependency array previously meant any re-render during the
+  // 150ms print delay tore the effect down (cancelling the still-pending
+  // window.print() via cleanup) and immediately restarted it, which then
+  // saw the sessionStorage flag already set from the aborted first pass
+  // and dismissed the screen without ever printing anything.
+  const dismissRef = useRef<() => void>(() => {});
+  dismissRef.current = onNewSale ?? onClose;
+
   // A completed sale prints itself and opens the drawer with no manual step
   // — this screen shouldn't need one either. Once the browser's print flow
   // resolves (ticket printed, or the dialog dismissed), go straight back to
@@ -54,7 +66,7 @@ export default function TicketPreview({ sale, onClose, onNewSale, duplicate, aut
     const dismiss = () => {
       if (dismissed) return;
       dismissed = true;
-      (onNewSale ?? onClose)();
+      dismissRef.current();
     };
 
     if (sessionStorage.getItem(printKey)) {
@@ -72,7 +84,7 @@ export default function TicketPreview({ sale, onClose, onNewSale, duplicate, aut
       clearTimeout(fallbackId);
       window.removeEventListener('afterprint', dismiss);
     };
-  }, [autoPrint, sale.id, onNewSale, onClose]);
+  }, [autoPrint, sale.id]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
