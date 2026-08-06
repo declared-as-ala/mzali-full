@@ -643,7 +643,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span>{o.customer?.firstName} {o.customer?.lastName ?? ''}</span>
-                      {isRegular && <CustomerBadge phone={o.customer?.phone ?? ''} />}
+                      {isRegular && <CustomerBadge phone={o.customer?.phone ?? ''} apiBase={apiBase} />}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-ink-700">{new Date(o.createdAt).toLocaleDateString('fr-FR')}</td>

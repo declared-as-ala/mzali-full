@@ -35,7 +35,14 @@ const STATUS_TONE: Record<string, string> = {
   failed: 'bg-red-50 text-red-700',
 };
 
-export default function CustomerBadge({ phone, label = 'Client régulier' }: { phone: string; label?: string }) {
+type Props = {
+  phone: string;
+  label?: string;
+  /** API base — pass '/api/employee' to scope to the current employee. Default: '/api/admin'. */
+  apiBase?: '/api/admin' | '/api/employee';
+};
+
+export default function CustomerBadge({ phone, label = 'Client régulier', apiBase = '/api/admin' }: Props) {
   const adminHref = useAdminHref();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,9 +55,9 @@ export default function CustomerBadge({ phone, label = 'Client régulier' }: { p
     setOpen(true);
     if (data || loading) return;
     setLoading(true);
-    fetch(`/api/admin/customer-orders?phone=${encodeURIComponent(phone)}`)
-      .then((r) => r.json())
-      .then((d) => setData(d))
+    fetch(`${apiBase}/customer-orders?phone=${encodeURIComponent(phone)}`)
+      .then((r) => (r.ok ? r.json() : { total: 0, orders: [] }))
+      .then((d) => setData({ total: d?.total ?? 0, orders: Array.isArray(d?.orders) ? d.orders : [] }))
       .catch(() => setData({ total: 0, orders: [] }))
       .finally(() => setLoading(false));
   }

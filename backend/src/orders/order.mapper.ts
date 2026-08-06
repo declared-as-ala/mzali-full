@@ -1,5 +1,6 @@
 import type { OrderLineItem, OrderResponse } from '@contracts';
 import { toDinars } from '@/common/money';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { Order } from './order.schema';
 
 /**
@@ -23,7 +24,10 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
       quantity: i.qty,
       price: toDinars(i.unitPriceMinor),
       total: toDinars(i.totalMinor),
-      imageUrl: i.imageUrl ?? undefined,
+      // Items snapshot the product's image URL at order time — a bad host
+      // baked in back then (e.g. a dev MinIO address) would otherwise stay
+      // wrong forever. Re-normalize on every read instead of migrating data.
+      imageUrl: normalizePublicMediaUrl(i.imageUrl ?? null) ?? undefined,
       attributes: attributes.length > 0 ? attributes : undefined,
     };
   });
