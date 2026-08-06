@@ -9,6 +9,7 @@ import { AuditService } from '@/audit/audit.service';
 import { Product } from '@/catalog/product.schema';
 import { toMinor } from '@/common/money';
 import { clampPagination, paginate } from '@/common/pagination';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { CountersService } from '@/database/counters.service';
 import { CouponsService } from '@/coupons/coupons.service';
 import { CustomersService } from '@/customers/customers.service';
@@ -435,7 +436,7 @@ export class OrdersService {
         productId: product.id,
         name: product.name,
         slug: product.slug,
-        imageUrl: product.images[0]?.url ?? null,
+        imageUrl: normalizePublicMediaUrl(product.images[0]?.url ?? null),
         qty: item.qty,
         unitPriceMinor,
         totalMinor: unitPriceMinor * item.qty,
@@ -514,7 +515,7 @@ export class OrdersService {
         productId: product.id,
         name: product.name,
         slug: product.slug,
-        imageUrl: product.images[0]?.url ?? null,
+        imageUrl: normalizePublicMediaUrl(product.images[0]?.url ?? null),
         qty: item.qty,
         unitPriceMinor,
         totalMinor: unitPriceMinor * item.qty,

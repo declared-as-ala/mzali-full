@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Edit, Trash2, Search, X, Check, AlertCircle } from 'lucide-react';
 import { useToast } from './Toast';
+import { formatDate } from '@/lib/site-config';
 import type { Employee } from '@/services';
 
 type EmployeeRow = Employee;
@@ -143,7 +144,7 @@ export default function EmployeesView() {
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700"><AlertCircle size={12} /> Inactif</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-ink-700">{new Date(e.createdAt).toLocaleDateString('fr-FR')}</td>
+                  <td className="px-4 py-3 text-ink-700">{formatDate(e.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
                       <button onClick={() => toggleActive(e)} className="rounded-lg p-2 text-ink-700 hover:bg-ink-100" title={e.active ? 'Désactiver' : 'Activer'}>

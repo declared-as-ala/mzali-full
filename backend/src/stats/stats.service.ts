@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import type {
   CarrierPerformance,
   CouponPerformance,
@@ -545,7 +546,7 @@ export class StatsService {
           productName: p.name,
           sku: prod?.sku || `PRD-${p.productId.slice(-5).toUpperCase()}`,
           category: categoryName,
-          imageUrl: prod?.images?.[0]?.url ?? null,
+          imageUrl: normalizePublicMediaUrl(prod?.images?.[0]?.url ?? null),
           quantitySold: p.quantity,
           sellingPrice: unitSellingPrice,
           purchasePrice: purchasePriceMinor != null ? toDinars(purchasePriceMinor) : null,

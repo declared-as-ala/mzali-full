@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, RefreshCw, ShieldCheck, Wallet, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { formatDateTime } from '@/lib/site-config';
 
 type PosCashierSession = {
   id: string;
@@ -161,8 +162,8 @@ export default function PosSessionsView() {
                       {s.status === 'OPEN' ? 'Ouverte' : 'Fermée'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-ink-700">{new Date(s.openedAt).toLocaleString('fr-FR')}</td>
-                  <td className="px-4 py-3 text-ink-700">{s.closedAt ? new Date(s.closedAt).toLocaleString('fr-FR') : '—'}</td>
+                  <td className="px-4 py-3 text-ink-700">{formatDateTime(s.openedAt)}</td>
+                  <td className="px-4 py-3 text-ink-700">{s.closedAt ? formatDateTime(s.closedAt) : '—'}</td>
                   <td className="px-4 py-3 font-bold">{formatMinor(s.grossSalesMinor)}</td>
                   <td className="px-4 py-3 text-ink-700">{s.transactionCount}</td>
                   <td className="px-4 py-3">

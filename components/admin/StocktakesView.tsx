@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, ClipboardList, EyeOff, Plus, RefreshCw, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { formatDateTime } from '@/lib/site-config';
 
 type StocktakeLine = {
   variantId: string;
@@ -103,7 +104,7 @@ export default function StocktakesView() {
                     {STATUS_LABEL[s.status] ?? s.status}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-ink-700">{new Date(s.createdAt).toLocaleString('fr-FR')}</td>
+                <td className="px-4 py-3 text-ink-700">{formatDateTime(s.createdAt)}</td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => setDetailId(s.id)} className="btn-ghost px-3 py-1.5 text-xs">Ouvrir</button>
                 </td>

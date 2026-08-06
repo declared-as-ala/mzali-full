@@ -3,6 +3,7 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model } from 'mongoose';
 import type { AuditActor, InventoryItem as InventoryItemContract, StockMovement as StockMovementContract } from '@contracts';
 import { clampPagination, paginate } from '@/common/pagination';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { LocationsService } from '@/catalog/locations.service';
 import { Product } from '@/catalog/product.schema';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
@@ -233,7 +234,7 @@ export class InventoryService {
       productId,
       productName: product.name,
       productSlug: product.slug,
-      imageUrl: product.images?.[0]?.url ?? null,
+      imageUrl: normalizePublicMediaUrl(product.images?.[0]?.url ?? null),
       warehouseId: item.locationId,
       onHand: item.quantityOnHand,
       reserved: item.quantityReserved,

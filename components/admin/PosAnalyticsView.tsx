@@ -8,7 +8,7 @@ import {
   Bar, CartesianGrid, Cell, ComposedChart, Legend, Line,
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { formatPrice } from '@/lib/site-config';
+import { formatPrice, formatDateTime } from '@/lib/site-config';
 import { useAdminHref } from '@/lib/admin-nav-context';
 import { useToast } from './Toast';
 
@@ -581,7 +581,7 @@ function CashierDrawer({ cashier, query, onClose }: { cashier: CashierPerformanc
                 {detail.data.sessions.map((s) => (
                   <li key={s.id} className="flex items-center justify-between rounded-xl bg-ink-100 px-3 py-2 text-sm">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-black ${s.status === 'OPEN' ? 'bg-emerald-100 text-emerald-700' : 'bg-ink-200 text-ink-700'}`}>{s.status === 'OPEN' ? 'Ouverte' : 'Fermée'}</span>
-                    <span className="text-ink-700">{new Date(s.openedAt).toLocaleString('fr-FR')}</span>
+                    <span className="text-ink-700">{formatDateTime(s.openedAt)}</span>
                     <span className="font-bold">{formatMinor(s.grossSalesMinor)}</span>
                   </li>
                 ))}
@@ -594,7 +594,7 @@ function CashierDrawer({ cashier, query, onClose }: { cashier: CashierPerformanc
                 {detail.data.sales.slice(0, 100).map((s) => (
                   <li key={s.id} className="flex items-center justify-between rounded-xl bg-ink-100 px-3 py-2 text-sm">
                     <span className="font-bold text-brand-700">#{s.saleNumber}</span>
-                    <span className="text-ink-700">{new Date(s.createdAt).toLocaleString('fr-FR')}</span>
+                    <span className="text-ink-700">{formatDateTime(s.createdAt)}</span>
                     <span className="font-bold">{formatMinor(s.totalMinor)}</span>
                   </li>
                 ))}
@@ -927,7 +927,7 @@ function AlertsPanel() {
             <li key={i} className={`rounded-xl border px-3 py-2.5 text-sm ${SEVERITY_STYLE[a.severity]}`}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-black">{a.title}</span>
-                <span className="text-[11px] font-bold opacity-70">{new Date(a.detectedAt).toLocaleString('fr-FR')}</span>
+                <span className="text-[11px] font-bold opacity-70">{formatDateTime(a.detectedAt)}</span>
               </div>
               <p className="mt-1 text-xs leading-5">{a.summary}</p>
               {(a.evidence.sessionId || a.evidence.saleId) && (
@@ -980,7 +980,7 @@ function LostSalesPanel({ query }: { query: string }) {
                     <td className="px-3 py-3 text-right"><StockPill value={r.boutiqueStock} /></td>
                     <td className="px-3 py-3 text-right"><StockPill value={r.depotStock} /></td>
                     <td className="px-3 py-3 text-right font-bold tabular-nums text-ink-900">≈ {formatPrice(r.estimatedMissedRevenue)}</td>
-                    <td className="px-3 py-3 text-xs text-ink-500">{new Date(r.lastAttemptAt).toLocaleString('fr-FR')} · {r.lastCashierName}</td>
+                    <td className="px-3 py-3 text-xs text-ink-500">{formatDateTime(r.lastAttemptAt)} · {r.lastCashierName}</td>
                   </tr>
                 ))}
               </tbody>

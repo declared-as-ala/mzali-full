@@ -5,7 +5,7 @@ import { Eye, Edit, Trash2, Plus, Search, X, ShoppingBag } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
 import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
-import { formatPrice } from '@/lib/site-config';
+import { formatPrice, formatDate } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
 import type { OrderResponse } from '@/types';
 
@@ -646,7 +646,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                       {isRegular && <CustomerBadge phone={o.customer?.phone ?? ''} apiBase={apiBase} />}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-700">{new Date(o.createdAt).toLocaleDateString('fr-FR')}</td>
+                  <td className="px-4 py-3 text-ink-700">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3">{o.customer?.phone}</td>
                   <td className="px-4 py-3">{o.customer?.city}</td>
                   <td className="px-4 py-3">

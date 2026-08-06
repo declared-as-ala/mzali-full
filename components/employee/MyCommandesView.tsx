@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Eye, Edit, Trash2, Search, X } from 'lucide-react';
 import OrderDrawer from '@/components/admin/OrderDrawer';
 import { useToast } from '@/components/admin/Toast';
-import { formatPrice } from '@/lib/site-config';
+import { formatPrice, formatDate } from '@/lib/site-config';
 import type { OrderResponse } from '@/types';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -457,7 +457,7 @@ export default function MyCommandesView() {
                   </td>
                   <td className="px-4 py-3">{o.customer.phone}</td>
                   <td className="px-4 py-3">{o.customer.city}</td>
-                  <td className="px-4 py-3 text-ink-700">{new Date(o.createdAt).toLocaleDateString('fr-FR')}</td>
+                  <td className="px-4 py-3 text-ink-700">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}>
                       {STATUS_LABEL[o.status] ?? o.status}

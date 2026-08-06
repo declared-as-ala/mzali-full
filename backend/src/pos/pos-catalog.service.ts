@@ -5,6 +5,7 @@ import { LocationsService } from '@/catalog/locations.service';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
 import { ProductsService } from '@/catalog/products.service';
 import { toMinor } from '@/common/money';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { StockLedgerService } from '@/inventory/stock-ledger.service';
 import { SettingsService } from '@/settings/settings.service';
 
@@ -64,7 +65,7 @@ export class PosCatalogService {
         sku: variant.sku,
         barcode: variant.barcode,
         priceMinor: toMinor(p.price),
-        imageUrl: p.images[0]?.url ?? null,
+        imageUrl: normalizePublicMediaUrl(p.images[0]?.url ?? null),
         categoryIds: p.categoryIds,
         boutiqueAvailable: b ? b.quantityOnHand - b.quantityReserved : 0,
         depotAvailable: d ? d.quantityOnHand - d.quantityReserved : 0,

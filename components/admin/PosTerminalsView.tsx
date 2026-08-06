@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Check, MonitorSmartphone, RefreshCw, ShieldOff } from 'lucide-react';
 import { useToast } from './Toast';
+import { formatDateTime } from '@/lib/site-config';
 
 type PosTerminal = {
   id: string;
@@ -119,7 +120,7 @@ export default function PosTerminalsView() {
                     <td className="px-4 py-3 text-ink-700">{t.terminalCode}</td>
                     <td className="px-4 py-3 text-ink-700">{t.locationId}</td>
                     <td className="px-4 py-3 text-ink-700">
-                      {t.lastSeenAt ? new Date(t.lastSeenAt).toLocaleString('fr-FR') : '—'}
+                      {t.lastSeenAt ? formatDateTime(t.lastSeenAt) : '—'}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => revoke(t)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50">

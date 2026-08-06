@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmModal';
+import { formatDate } from '@/lib/site-config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type QuoteLine = {
@@ -940,7 +941,7 @@ function QuoteDetailDrawer({
               {history.map((h) => (
                 <li key={h.id} className="flex justify-between">
                   <span>v{h.version} — {STATUS_LABEL[h.status] ?? h.status}</span>
-                  <span className="text-ink-500">{new Date(h.createdAt).toLocaleDateString('fr-FR')}</span>
+                  <span className="text-ink-500">{formatDate(h.createdAt)}</span>
                 </li>
               ))}
             </ul>

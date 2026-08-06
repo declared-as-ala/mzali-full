@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { ScrollText, Filter } from 'lucide-react';
+import { formatDateTime } from '@/lib/site-config';
 import type { AuditLogEntry } from '@/types/audit';
 
 export default function JournalView({ initial }: { initial: AuditLogEntry[] }) {
@@ -52,7 +53,7 @@ export default function JournalView({ initial }: { initial: AuditLogEntry[] }) {
                 <p className="font-bold">{entry.summary}</p>
                 <p className="mt-0.5 text-xs text-ink-700">
                   {entry.actor.name} · {entry.action} · {entry.entityType}
-                  {entry.entityId ? ` #${entry.entityId.slice(-6)}` : ''} · {new Date(entry.createdAt).toLocaleString('fr-FR')}
+                  {entry.entityId ? ` #${entry.entityId.slice(-6)}` : ''} · {formatDateTime(entry.createdAt)}
                 </p>
               </div>
             </div>

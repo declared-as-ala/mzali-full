@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model } from 'mongoose';
 import type { Product as ProductContract, ProductListQuery, ProductListResult } from '@contracts';
 import { clampPagination, paginate } from '@/common/pagination';
+import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { slugify } from '@/common/slug';
 import { toMinor } from '@/common/money';
 import { OnlineAvailabilityService } from '@/inventory/online-availability.service';
@@ -217,7 +218,7 @@ export class ProductsService {
         id: d.id,
         name: d.name,
         price: price / 1000,
-        image: d.images[0]?.url ?? null,
+        image: normalizePublicMediaUrl(d.images[0]?.url ?? null),
       };
     });
   }

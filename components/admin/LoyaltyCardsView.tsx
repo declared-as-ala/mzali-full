@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, RefreshCw, Search, ShieldAlert, ShieldOff, UserPlus, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { formatDateTime } from '@/lib/site-config';
 
 type CardHistoryEvent = { event: string; at: string; byName: string | null; note: string | null };
 type LoyaltyCard = {
@@ -209,7 +210,7 @@ function CardDetailDrawer({ card, onClose, onChanged, toast }: { card: LoyaltyCa
             <li key={i} className="rounded-xl bg-ink-100 p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-ink-900">{h.event}</span>
-                <span className="text-xs text-ink-500">{new Date(h.at).toLocaleString('fr-FR')}</span>
+                <span className="text-xs text-ink-500">{formatDateTime(h.at)}</span>
               </div>
               <p className="text-xs text-ink-700">{h.byName ?? 'Système'}{h.note ? ` · ${h.note}` : ''}</p>
             </li>

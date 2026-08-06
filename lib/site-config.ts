@@ -42,3 +42,22 @@ export const SITE = {
 export function formatPrice(v: number): string {
   return `${Math.round(v)} ${SITE.currency.symbol}`;
 }
+
+// Every admin/employee list is a 'use client' component, so Next.js renders
+// it once on the server (initial HTML) and again on the client (hydration).
+// A bare toLocaleDateString('fr-FR')/toLocaleString('fr-FR') formats in
+// whatever timezone the *running* environment happens to be in — the server
+// container is typically UTC, the browser is the visitor's local time — so
+// the two renders can produce different text for the same Date and React
+// reports it as a hydration mismatch (errors #418/#423/#425). Pinning an
+// explicit timeZone makes both renders byte-identical regardless of where
+// either one runs.
+const TZ = 'Africa/Tunis';
+
+export function formatDate(value: string | number | Date): string {
+  return new Date(value).toLocaleDateString('fr-FR', { timeZone: TZ });
+}
+
+export function formatDateTime(value: string | number | Date): string {
+  return new Date(value).toLocaleString('fr-FR', { timeZone: TZ });
+}

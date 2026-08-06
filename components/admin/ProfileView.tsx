@@ -8,6 +8,7 @@ import {
   KeyRound, ImageIcon, Phone, Plus, Trash2, Instagram, Facebook, Music2, Globe,
   LogOut, Sparkles, Building2, ShieldAlert, BadgeCheck, Save
 } from 'lucide-react';
+import { formatDate } from '@/lib/site-config';
 import ImageUploader from '@/components/admin/ImageUploader';
 import { useConfirm } from '@/components/admin/ConfirmModal';
 import { adminLoginHref } from '@/lib/admin-nav';
@@ -427,7 +428,7 @@ export default function ProfileView({
               {passwordUpdatedAt && (
                 <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-3.5 text-xs font-semibold text-slate-600">
                   <span>Dernière modification</span>
-                  <span className="font-bold text-slate-900">{new Date(passwordUpdatedAt).toLocaleDateString('fr-FR')}</span>
+                  <span className="font-bold text-slate-900">{formatDate(passwordUpdatedAt)}</span>
                 </div>
               )}
 

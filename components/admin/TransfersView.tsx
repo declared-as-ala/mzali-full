@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Package, Plus, RefreshCw, Truck, X } from 'lucide-react';
 import { useToast } from './Toast';
+import { formatDateTime } from '@/lib/site-config';
 
 type TransferLine = {
   variantId: string;
@@ -107,7 +108,7 @@ export default function TransfersView() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-ink-700">{t.lines.length}</td>
-                <td className="px-4 py-3 text-ink-700">{new Date(t.createdAt).toLocaleString('fr-FR')}</td>
+                <td className="px-4 py-3 text-ink-700">{formatDateTime(t.createdAt)}</td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => setDetail(t)} className="btn-ghost px-3 py-1.5 text-xs">Ouvrir</button>
                 </td>

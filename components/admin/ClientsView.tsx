@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, Users, Phone, MapPin, ShoppingBag, AlertCircle, Loader2, Trash2 } from 'lucide-react';
-import { formatPrice } from '@/lib/site-config';
+import { formatPrice, formatDate } from '@/lib/site-config';
 import { useConfirm } from './ConfirmModal';
 import { useToast } from './Toast';
 
@@ -274,10 +274,10 @@ export default function ClientsView() {
                   {formatPrice(c.totalSpentMinor / 1000)}
                 </td>
                 <td className="px-4 py-3 text-ink-500">
-                  {c.firstOrderAt ? new Date(c.firstOrderAt).toLocaleDateString('fr-FR') : '—'}
+                  {c.firstOrderAt ? formatDate(c.firstOrderAt) : '—'}
                 </td>
                 <td className="px-4 py-3 text-ink-500">
-                  {c.lastOrderAt ? new Date(c.lastOrderAt).toLocaleDateString('fr-FR') : '—'}
+                  {c.lastOrderAt ? formatDate(c.lastOrderAt) : '—'}
                 </td>
               </tr>
               );
