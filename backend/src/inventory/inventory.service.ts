@@ -155,11 +155,12 @@ export class InventoryService {
     const { page: p, perPage: pp, skip } = clampPagination(page, perPage, 100);
     const productFilter: Record<string, unknown> = { deletedAt: null };
     if (search) productFilter.name = { $regex: search, $options: 'i' };
-    const productDocs = await this.products.find(productFilter).select({ name: 1, slug: 1, images: 1 });
+    const productDocs = await this.products.find(productFilter).select({ name: 1, slug: 1, images: 1 }).sort({ name: 1 });
     const byId = new Map(productDocs.map((p) => [p.id, p]));
 
     const variantByProduct = await this.variants.findManyByProductIds(Array.from(byId.keys()));
-    const productIdByVariantId = new Map(Array.from(variantByProduct.entries()).map(([pid, v]) => [v.id, pid]));
+    const variantIdByProductId = new Map(Array.from(variantByProduct.entries()).map(([pid, v]) => [pid, v.id]));
+    const productIdByVariantId = new Map(Array.from(variantIdByProductId.entries()).map(([pid, vid]) => [vid, pid]));
 
     const variantIds = Array.from(productIdByVariantId.keys());
     const depotCode = await this.locations.getDefaultOnlineLocationCode();
@@ -168,6 +169,7 @@ export class InventoryService {
       this.ledger.stockForVariants(variantIds, depotCode),
       this.ledger.stockForVariants(variantIds, boutiqueCode),
     ]);
+    const depotByVariant = new Map(depotItems.map((i) => [i.variantId, i]));
     const boutiqueByVariant = new Map(boutiqueItems.map((i) => [i.variantId, i]));
 
     const incomingAgg = await this.purchaseOrders.aggregate<{ _id: string; incoming: number }>([
@@ -179,15 +181,27 @@ export class InventoryService {
     ]);
     const incomingByVariant = new Map(incomingAgg.map((row) => [row._id, row.incoming]));
 
-    let contracts: InventoryItemContract[] = depotItems
-      .map((i) => {
-        const pid = productIdByVariantId.get(i.variantId);
-        const product = pid ? byId.get(pid) : undefined;
-        return product
-          ? this.toContract(i, boutiqueByVariant.get(i.variantId) ?? null, pid!, product, incomingByVariant.get(i.variantId) ?? 0)
-          : null;
-      })
-      .filter((c): c is InventoryItemContract => c !== null);
+    // Every product appears here, not just ones that already have a stock
+    // item — a product created through the admin form (as opposed to the
+    // original migration import) never gets one provisioned automatically,
+    // so it would otherwise silently vanish from this list even though it
+    // exists and shows up fine on /produits. Missing stock is shown as 0
+    // rather than hiding the row; adjusting it for the first time creates
+    // the real stock item lazily (see resolveVariantId/adjust()).
+    const now = new Date();
+    let contracts: InventoryItemContract[] = productDocs.map((product) => {
+      const variantId = variantIdByProductId.get(product.id);
+      const depotItem = variantId ? depotByVariant.get(variantId) ?? null : null;
+      const boutiqueItem = variantId ? boutiqueByVariant.get(variantId) ?? null : null;
+      const incoming = variantId ? incomingByVariant.get(variantId) ?? 0 : 0;
+      return this.toContract(
+        depotItem ?? { locationId: depotCode, quantityOnHand: 0, quantityReserved: 0, lowStockThreshold: null, updatedAt: now },
+        boutiqueItem,
+        product.id,
+        product,
+        incoming,
+      );
+    });
     if (lowStockOnly) {
       contracts = contracts.filter((c) => {
         const thresh = c.lowStockThreshold ?? 5;
@@ -224,7 +238,7 @@ export class InventoryService {
   }
 
   private toContract(
-    item: StockItemDocument,
+    item: Pick<StockItemDocument, 'locationId' | 'quantityOnHand' | 'quantityReserved' | 'lowStockThreshold' | 'updatedAt'>,
     boutiqueItem: StockItemDocument | null,
     productId: string,
     product: { name: string; slug: string; images?: { url: string }[] },
