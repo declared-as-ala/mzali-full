@@ -133,8 +133,12 @@ test('buildReceipt() respects paperWidthMm — 58mm lines never exceed 32 column
 test('buildReceipt() only emits the QR command sequence when printQr is enabled', () => {
   const withQr = buildReceipt(SALE, { ...SETTINGS_80, printQr: true });
   const withoutQr = buildReceipt(SALE, { ...SETTINGS_80, printQr: false });
-  // GS ( k 0x04 0x00 0x31 0x41 — the QR "set model" sub-command, unambiguous marker
-  const marker = Buffer.from([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41]);
+  // GS ( k pL=04 pH=00 cn=31 fn=41 (select model) n1=32 (model 2) n2=00 — full
+  // 9-byte command, not just the prefix: a printer that received a payload
+  // one byte short of what pL declares desyncs its own command parser for
+  // everything sent after it, which is exactly what shipped once already
+  // (n1 was missing and n2 was reused as a stray 0x00 "n1").
+  const marker = Buffer.from([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
   assert.ok(withQr.includes(marker));
   assert.ok(!withoutQr.includes(marker));
 });
