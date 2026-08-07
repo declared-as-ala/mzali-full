@@ -37,7 +37,6 @@ export class RepairProductImagesCommand extends CommandRunner {
     for (const doc of docs) {
       scanned += 1;
       const mediaIds = doc.images.map((img) => img.mediaId ?? (isValidObjectId(img.url) ? img.url : null)).filter((id): id is string => Boolean(id));
-      const brokenIds = doc.images.filter((img) => isValidObjectId(img.url)).map((img) => img.mediaId ?? img.url);
       const urlById = await this.media.getUrlsByIds(mediaIds);
       const resolvedImages = doc.images
         .map((img) => {
