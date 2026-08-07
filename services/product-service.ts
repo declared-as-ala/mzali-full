@@ -13,6 +13,7 @@ export type ProductInput = {
   status?: 'published' | 'draft' | 'private';
   categoryIds?: string[];
   imageIds?: string[];     // attachment ids (WP). Custom backend may use URLs/UUIDs.
+  media?: { mediaId: string; position: number; isPrimary: boolean }[];
   upsellIds?: string[];
   bundles?: ProductBundle[];
   options?: { label: string; type: 'text' | 'select' | 'radio'; values: string }[];

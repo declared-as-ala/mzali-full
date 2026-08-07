@@ -32,11 +32,15 @@ export function toProductContract(doc: ProductSchema & { id?: string; _id?: unkn
     currency: doc.currency ?? 'TND',
     inStock: doc.manageStock ? (doc.stockQuantity ?? 0) > 0 : true,
     stockQuantity: doc.stockQuantity ?? null,
-    images: (doc.images ?? []).map((img) => ({
-      id: img.mediaId ?? img.url,
-      url: normalizePublicMediaUrl(img.url),
-      alt: img.alt || undefined,
-    })),
+    images: [...(doc.images ?? [])]
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+      .map((img, position, ordered) => ({
+        id: img.mediaId ?? img.url,
+        url: normalizePublicMediaUrl(img.url),
+        alt: img.alt || undefined,
+        position,
+        isPrimary: ordered.some((candidate) => candidate.isPrimary) ? Boolean(img.isPrimary) : position === 0,
+      })),
     categoryIds: doc.categoryIds ?? [],
     categorySlugs: doc.categorySlugs ?? [],
     attributes: (doc.options ?? []).map((o) => ({

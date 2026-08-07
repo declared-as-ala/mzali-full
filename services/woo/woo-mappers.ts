@@ -78,7 +78,7 @@ export function mapProduct(p: WooProductRaw): Product {
     currency: CURRENCY,
     inStock: p.stock_status === 'instock',
     stockQuantity: p.stock_quantity,
-    images: (p.images ?? []).map((img) => ({ id: String(img.id), url: img.src, alt: img.alt })),
+    images: (p.images ?? []).map((img, position) => ({ id: String(img.id), url: img.src, alt: img.alt, position, isPrimary: position === 0 })),
     categoryIds: (p.categories ?? []).map((c) => String(c.id)),
     categorySlugs: (p.categories ?? []).map((c) => c.slug),
     attributes,

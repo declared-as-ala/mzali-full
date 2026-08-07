@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { productService } from '@/services';
+import { getPrimaryProductImage } from '@/types';
 
 export async function GET(req: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -8,6 +9,6 @@ export async function GET(req: Request) {
   const res = await productService.listAdmin({ perPage: 100, status: 'any', orderBy: 'title', order: 'asc' });
   const items = excludePosOnly ? res.items.filter((p) => !p.posOnly) : res.items;
   return NextResponse.json(
-    items.map((p) => ({ id: p.id, name: p.name, price: p.price, image: p.images[0]?.url ?? '' })),
+    items.map((p) => ({ id: p.id, name: p.name, price: p.price, image: getPrimaryProductImage(p.images)?.url ?? '' })),
   );
 }

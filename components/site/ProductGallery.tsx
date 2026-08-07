@@ -7,6 +7,7 @@ interface ImageItem {
   id: string | number;
   url: string;
   alt?: string;
+  isPrimary?: boolean;
 }
 
 interface ProductGalleryProps {
@@ -16,7 +17,7 @@ interface ProductGalleryProps {
 }
 
 export default function ProductGallery({ images, productName, discount }: ProductGalleryProps) {
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [activeIdx, setActiveIdx] = useState(() => Math.max(0, images.findIndex((image) => image.isPrimary)));
   const [isOpen, setIsOpen] = useState(false);
 
   if (!images || images.length === 0) return null;

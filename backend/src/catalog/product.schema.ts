@@ -14,6 +14,9 @@ class ProductImage {
 
   @Prop({ type: Number, default: 0 })
   position!: number;
+
+  @Prop({ type: Boolean, default: false })
+  isPrimary!: boolean;
 }
 const ProductImageSchema = SchemaFactory.createForClass(ProductImage);
 

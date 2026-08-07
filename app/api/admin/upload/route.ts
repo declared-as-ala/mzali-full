@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
-import { getValidAccessToken } from '@/lib/api-auth';
 import { apiUpload } from '@/services/mzali-api/client';
+import { withAuthRetry } from '@/services/mzali-api/with-auth-retry';
 
 const PROVIDER = process.env.COMMERCE_PROVIDER ?? 'woocommerce';
 
@@ -25,12 +25,16 @@ export async function POST(req: Request) {
   }
   if (!file) return NextResponse.json({ error: 'Fichier manquant' }, { status: 400 });
   if (file.size > 8 * 1024 * 1024) return NextResponse.json({ error: 'Fichier > 8 MB' }, { status: 400 });
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    return NextResponse.json({ error: 'Format accepté : JPEG, PNG ou WEBP' }, { status: 400 });
+  }
 
   if (PROVIDER === 'mzali-api') {
-    const bearer = await getValidAccessToken();
-    if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
     try {
-      const result = await apiUpload<{ id: string; url: string }>('/admin/media', form, bearer);
+      const result = await withAuthRetry((bearer) => {
+        if (!bearer) throw new Error('unauthorized');
+        return apiUpload<{ id: string; url: string }>('/admin/media', form, bearer);
+      });
       return NextResponse.json({ id: result.id, url: result.url });
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : 'upload failed' }, { status: 500 });

@@ -1,6 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model } from 'mongoose';
+import { FilterQuery, isValidObjectId, Model } from 'mongoose';
 import type { Product as ProductContract, ProductListQuery, ProductListResult } from '@contracts';
 import { clampPagination, paginate } from '@/common/pagination';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
@@ -9,14 +9,16 @@ import { toMinor } from '@/common/money';
 import { OnlineAvailabilityService } from '@/inventory/online-availability.service';
 import { MediaService } from '@/media/media.service';
 import { Category } from './category.schema';
-import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+import { CreateProductDto, ProductMediaDto, UpdateProductDto } from './dto/product.dto';
 import { parseOptionValues, toProductContract } from './product.mapper';
 import { buildProductFilter, buildProductSort } from './product-query';
 import { ProductVariantsService } from './product-variants.service';
 import { Product, ProductDocument } from './product.schema';
+import { normalizeProductMedia, primaryProductImage } from './product-media';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
   constructor(
     @InjectModel(Product.name) private readonly model: Model<Product>,
     @InjectModel(Category.name) private readonly categoryModel: Model<Category>,
@@ -29,11 +31,52 @@ export class ProductsService {
    *  fetchable URLs — never store the bare id as url (see MediaService.
    *  getUrlsByIds). An id with no matching media doc is dropped rather
    *  than saved with a broken url. */
-  private async resolveImages(imageIds: string[]): Promise<{ mediaId: string; url: string; alt: string; position: number }[]> {
-    const urlById = await this.media.getUrlsByIds(imageIds);
-    return imageIds
-      .map((id, i) => ({ mediaId: id, url: urlById.get(id), alt: '', position: i }))
-      .filter((img): img is { mediaId: string; url: string; alt: string; position: number } => Boolean(img.url));
+  private async resolveImages(
+    mediaItems: ProductMediaDto[],
+    allowedLegacy: { mediaId: string | null; url: string; alt: string }[] = [],
+  ): Promise<{ mediaId: string | null; url: string; alt: string; position: number; isPrimary: boolean }[]> {
+    let ordered: ProductMediaDto[];
+    try { ordered = normalizeProductMedia(mediaItems); }
+    catch (error) { throw new BadRequestException(error instanceof Error ? error.message : 'Médias invalides'); }
+    const ids = ordered.map((item) => item.mediaId);
+    const persistentIds = ids.filter((id) => isValidObjectId(id));
+    const urlById = await this.media.assertAndGetUrls(persistentIds);
+    return ordered.map((item) => {
+      const url = urlById.get(item.mediaId);
+      if (url) return { mediaId: item.mediaId, url, alt: '', position: item.position, isPrimary: item.isPrimary };
+      const legacy = allowedLegacy.find((image) => !image.mediaId && image.url === item.mediaId);
+      if (!legacy) throw new BadRequestException(`Média introuvable ou non autorisé : ${item.mediaId}`);
+      return { mediaId: null, url: legacy.url, alt: legacy.alt, position: item.position, isPrimary: item.isPrimary };
+    });
+  }
+
+  private mediaInput(input: CreateProductDto | UpdateProductDto): ProductMediaDto[] | undefined {
+    if (input.media !== undefined) return input.media;
+    if (input.imageIds === undefined) return undefined;
+    const ids = [...new Set(input.imageIds)];
+    return ids.map((mediaId, position) => ({ mediaId, position, isPrimary: position === 0 }));
+  }
+
+  private async finalizeMedia(previousIds: string[], nextIds: string[]): Promise<void> {
+    const detached = previousIds.filter((id) => !nextIds.includes(id));
+    try {
+      await this.media.markAttached(nextIds);
+      if (detached.length) {
+        await this.media.markDetached(detached);
+        for (const mediaId of detached) {
+          const [productReferences, categoryReferences] = await Promise.all([
+            this.model.countDocuments({ 'images.mediaId': mediaId, deletedAt: null }),
+            this.categoryModel.countDocuments({ mediaId }),
+          ]);
+          if (productReferences === 0 && categoryReferences === 0) await this.media.deleteOrphaned(mediaId);
+        }
+      }
+      this.logger.log({ event: 'product.media.updated', attached: nextIds, detached });
+    } catch (error) {
+      // The product write has already succeeded. Cleanup bookkeeping is
+      // recoverable and must not make the client retry the product mutation.
+      this.logger.error({ event: 'product.media.finalize_failed', attached: nextIds, detached, error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   async list(query: ProductListQuery, forcePublished: boolean, excludePosOnly = false): Promise<ProductListResult> {
@@ -89,7 +132,8 @@ export class ProductsService {
   async create(input: CreateProductDto): Promise<ProductContract> {
     const slug = input.slug ? slugify(input.slug) : slugify(input.name);
     await this.assertSlugFree(slug);
-    const images = await this.resolveImages(input.imageIds ?? []);
+    const mediaInput = this.mediaInput(input) ?? [];
+    const images = await this.resolveImages(mediaInput);
     const doc = await this.model.create({
       name: input.name,
       slug,
@@ -128,6 +172,7 @@ export class ProductsService {
       supplierId: input.supplierId ?? null,
       posOnly: input.posOnly ?? false,
     });
+    await this.finalizeMedia([], images.map((image) => image.mediaId).filter((id): id is string => Boolean(id)));
     return toProductContract(doc);
   }
 
@@ -153,8 +198,10 @@ export class ProductsService {
       doc.categoryIds = input.categoryIds;
       doc.categorySlugs = await this.resolveCategorySlugs(input.categoryIds);
     }
-    if (input.imageIds !== undefined) {
-      doc.images = await this.resolveImages(input.imageIds);
+    const previousMediaIds = doc.images.map((image) => image.mediaId).filter((mediaId): mediaId is string => Boolean(mediaId));
+    const nextMediaInput = this.mediaInput(input);
+    if (nextMediaInput !== undefined) {
+      doc.images = await this.resolveImages(nextMediaInput, doc.images);
     }
     if (input.upsellIds !== undefined) doc.upsellIds = input.upsellIds;
     if (input.bundles !== undefined) {
@@ -184,6 +231,9 @@ export class ProductsService {
     if (input.supplierId !== undefined) doc.supplierId = input.supplierId;
     if (input.posOnly !== undefined) doc.posOnly = input.posOnly;
     await doc.save();
+    if (nextMediaInput !== undefined) {
+      await this.finalizeMedia(previousMediaIds, doc.images.map((image) => image.mediaId).filter((mediaId): mediaId is string => Boolean(mediaId)));
+    }
     return toProductContract(doc);
   }
 
@@ -218,7 +268,7 @@ export class ProductsService {
         id: d.id,
         name: d.name,
         price: price / 1000,
-        image: normalizePublicMediaUrl(d.images[0]?.url ?? null),
+        image: normalizePublicMediaUrl(primaryProductImage(d.images)?.url ?? null),
       };
     });
   }

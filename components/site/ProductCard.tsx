@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import type { Product } from '@/types';
+import { getPrimaryProductImage, type Product } from '@/types';
 import { formatPrice } from '@/lib/site-config';
 import { getDictionary, type Lang } from '@/lib/i18n';
 
 export default function ProductCard({ product, lang = 'fr' }: { product: Product; lang?: Lang }) {
   const t = getDictionary(lang);
-  const img = product.images[0]?.url;
+  const primaryImage = getPrimaryProductImage(product.images);
+  const img = primaryImage?.url;
   const discount = product.onSale && product.regularPrice > product.price
     ? Math.round(((product.regularPrice - product.price) / product.regularPrice) * 100)
     : 0;
@@ -21,7 +22,7 @@ export default function ProductCard({ product, lang = 'fr' }: { product: Product
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={img}
-            alt={product.images[0]?.alt || product.name}
+            alt={primaryImage?.alt || product.name}
             className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105"
             loading="lazy"
           />

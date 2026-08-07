@@ -14,7 +14,7 @@ type Options = { dryRun?: boolean };
  * every product whose image url is actually a media id and re-resolves it
  * to the real url; safe to re-run (a no-op once every product is fixed).
  */
-@Command({ name: 'repair:product-images', description: 'Fix product image urls that were stored as bare media ids' })
+@Command({ name: 'repair:product-images', description: 'Normalize legacy product media ids, urls, order, duplicates and primary image' })
 export class RepairProductImagesCommand extends CommandRunner {
   constructor(
     @InjectModel(Product.name) private readonly products: Model<Product>,
@@ -36,23 +36,46 @@ export class RepairProductImagesCommand extends CommandRunner {
 
     for (const doc of docs) {
       scanned += 1;
+      const mediaIds = doc.images.map((img) => img.mediaId ?? (isValidObjectId(img.url) ? img.url : null)).filter((id): id is string => Boolean(id));
       const brokenIds = doc.images.filter((img) => isValidObjectId(img.url)).map((img) => img.mediaId ?? img.url);
-      if (brokenIds.length === 0) continue;
-
-      const urlById = await this.media.getUrlsByIds(brokenIds);
-      const nextImages = doc.images
+      const urlById = await this.media.getUrlsByIds(mediaIds);
+      const resolvedImages = doc.images
         .map((img) => {
-          if (!isValidObjectId(img.url)) return img;
+          if (!img.mediaId && !isValidObjectId(img.url)) return img;
           const resolved = urlById.get(img.mediaId ?? img.url);
-          return resolved ? { mediaId: img.mediaId, url: resolved, alt: img.alt, position: img.position } : null;
+          return resolved ? { mediaId: img.mediaId, url: resolved, alt: img.alt, position: img.position, isPrimary: img.isPrimary } : null;
         })
         .filter((img): img is NonNullable<typeof img> => img !== null);
 
+      const seen = new Set<string>();
+      const sorted = resolvedImages
+        .map((image, originalIndex) => ({ image, originalIndex }))
+        .sort((a, b) => (a.image.position ?? a.originalIndex) - (b.image.position ?? b.originalIndex));
+      const deduplicated = sorted
+        .map(({ image }) => image)
+        .filter((image) => {
+          const identity = image.mediaId ?? image.url;
+          if (seen.has(identity)) return false;
+          seen.add(identity);
+          return true;
+        });
+      const requestedPrimary = deduplicated.findIndex((image) => Boolean(image.isPrimary));
+      const primaryIndex = requestedPrimary >= 0 ? requestedPrimary : 0;
+      const nextImages = deduplicated.map((image, position) => ({
+        mediaId: image.mediaId,
+        url: image.url,
+        alt: image.alt,
+        position,
+        isPrimary: position === primaryIndex,
+      }));
+
       const dropped = doc.images.length - nextImages.length;
       droppedImages += dropped;
+      const changed = JSON.stringify(doc.images) !== JSON.stringify(nextImages);
+      if (!changed) continue;
       fixed += 1;
       console.log(
-        `${options.dryRun ? '[dry-run] ' : ''}product ${doc.id} (${doc.slug}): ${brokenIds.length} broken image(s)${dropped ? `, ${dropped} unresolvable (dropped)` : ''}`,
+        `${options.dryRun ? '[dry-run] ' : ''}product ${doc.id} (${doc.slug}): normalized ${nextImages.length} image(s)${dropped ? `, ${dropped} duplicate/unresolvable removed` : ''}`,
       );
       if (!options.dryRun) {
         doc.images = nextImages;

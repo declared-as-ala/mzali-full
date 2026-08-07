@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Minus, Plus, ShoppingBag, Zap, Check } from 'lucide-react';
 import { useCart } from '@/lib/cart';
-import type { Product } from '@/types';
+import { getPrimaryProductImage, type Product } from '@/types';
 import { SITE } from '@/lib/site-config';
 import { useLanguage } from '@/components/site/LanguageProvider';
 
@@ -60,7 +60,7 @@ export default function AddToCart({ product }: { product: Product }) {
             name: selectedBundle ? `${product.name} — ${selectedBundle.name}` : product.name,
             price: cartUnitPrice,
             qty: 1,
-            image: product.images[0]?.url ?? '',
+            image: getPrimaryProductImage(product.images)?.url ?? '',
             variation: bundleItems[slot] && Object.keys(bundleItems[slot]).length ? bundleItems[slot] : undefined,
             bundleId,
             bundleName: selectedBundle?.name,
@@ -74,7 +74,7 @@ export default function AddToCart({ product }: { product: Product }) {
         name: product.name,
         price: cartUnitPrice,
         qty: cartQty,
-        image: product.images[0]?.url ?? '',
+        image: getPrimaryProductImage(product.images)?.url ?? '',
         variation: variantAttrs.length ? picked : undefined,
       });
     }

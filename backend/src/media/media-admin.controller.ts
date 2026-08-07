@@ -10,6 +10,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
@@ -23,6 +24,7 @@ import { MediaService } from './media.service';
 @Controller('admin/media')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MediaAdminController {
+  private readonly logger = new Logger(MediaAdminController.name);
   constructor(private readonly media: MediaService) {}
 
   @Post()
@@ -31,7 +33,12 @@ export class MediaAdminController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 8 * 1024 * 1024 } }))
   async upload(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: RequestUser) {
     if (!file) throw new BadRequestException('Aucun fichier reçu');
-    return this.media.upload(file.buffer, { createdBy: user.userId });
+    try {
+      return await this.media.upload(file.buffer, { createdBy: user.userId });
+    } catch (error) {
+      this.logger.error({ event: 'media.upload.failed', size: file.size, mime: file.mimetype, error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
   }
 
   @Get(':id/download')

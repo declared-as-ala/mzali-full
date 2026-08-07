@@ -16,6 +16,7 @@ import type {
 } from '@contracts';
 import { Category } from '@/catalog/category.schema';
 import { Product } from '@/catalog/product.schema';
+import { primaryProductImage } from '@/catalog/product-media';
 import { Variant } from '@/catalog/variant.schema';
 import { toDinars } from '@/common/money';
 import { Coupon, CouponRedemption } from '@/coupons/coupon.schema';
@@ -546,7 +547,7 @@ export class StatsService {
           productName: p.name,
           sku: prod?.sku || `PRD-${p.productId.slice(-5).toUpperCase()}`,
           category: categoryName,
-          imageUrl: normalizePublicMediaUrl(prod?.images?.[0]?.url ?? null),
+          imageUrl: normalizePublicMediaUrl(primaryProductImage(prod?.images)?.url ?? null),
           quantitySold: p.quantity,
           sellingPrice: unitSellingPrice,
           purchasePrice: purchasePriceMinor != null ? toDinars(purchasePriceMinor) : null,

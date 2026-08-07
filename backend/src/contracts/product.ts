@@ -5,6 +5,8 @@ export type ProductImage = {
   id: string;          // string so future custom backend can use UUIDs
   url: string;
   alt?: string;
+  position?: number;
+  isPrimary?: boolean;
 };
 
 export type ProductAttribute = {

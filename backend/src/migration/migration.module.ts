@@ -35,6 +35,7 @@ import { MigrateSettingsCommand } from './commands/migrate-settings.command';
 import { MigrateVerifyCommand } from './commands/migrate-verify.command';
 import { RepairEmployeeRolesCommand } from './commands/repair-employee-roles.command';
 import { RepairProductImagesCommand } from './commands/repair-product-images.command';
+import { CleanupOrphanMediaCommand } from './commands/cleanup-orphan-media.command';
 import { VerifyInventoryFoundationCommand } from './commands/verify-inventory-foundation.command';
 
 /**
@@ -85,6 +86,7 @@ import { VerifyInventoryFoundationCommand } from './commands/verify-inventory-fo
     MigrateInventoryFoundationCommand,
     VerifyInventoryFoundationCommand,
     RepairProductImagesCommand,
+    CleanupOrphanMediaCommand,
     RepairEmployeeRolesCommand,
   ],
 })

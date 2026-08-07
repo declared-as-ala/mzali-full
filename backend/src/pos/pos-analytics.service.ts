@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Category } from '@/catalog/category.schema';
 import { Product } from '@/catalog/product.schema';
+import { primaryProductImage } from '@/catalog/product-media';
 import { Variant } from '@/catalog/variant.schema';
 import { toDinars } from '@/common/money';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
@@ -554,7 +555,7 @@ export class PosAnalyticsService {
         productId: row.productId,
         productName: product?.name ?? row.name,
         sku: variant?.sku ?? row.sku,
-        imageUrl: normalizePublicMediaUrl(product?.images?.[0]?.url ?? null),
+        imageUrl: normalizePublicMediaUrl(primaryProductImage(product?.images)?.url ?? null),
         categoryIds: product?.categoryIds ?? [],
         quantitySold: row.qty,
         transactionCount: row.txnIds.size,

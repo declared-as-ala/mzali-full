@@ -7,6 +7,7 @@ import { ClientSession, Connection, Model, Types } from 'mongoose';
 import type { AuditActor, CheckoutPayload, OrderResponse } from '@contracts';
 import { AuditService } from '@/audit/audit.service';
 import { Product } from '@/catalog/product.schema';
+import { primaryProductImage } from '@/catalog/product-media';
 import { toMinor } from '@/common/money';
 import { clampPagination, paginate } from '@/common/pagination';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
@@ -436,7 +437,7 @@ export class OrdersService {
         productId: product.id,
         name: product.name,
         slug: product.slug,
-        imageUrl: normalizePublicMediaUrl(product.images[0]?.url ?? null),
+        imageUrl: normalizePublicMediaUrl(primaryProductImage(product.images)?.url ?? null),
         qty: item.qty,
         unitPriceMinor,
         totalMinor: unitPriceMinor * item.qty,
@@ -515,7 +516,7 @@ export class OrdersService {
         productId: product.id,
         name: product.name,
         slug: product.slug,
-        imageUrl: normalizePublicMediaUrl(product.images[0]?.url ?? null),
+        imageUrl: normalizePublicMediaUrl(primaryProductImage(product.images)?.url ?? null),
         qty: item.qty,
         unitPriceMinor,
         totalMinor: unitPriceMinor * item.qty,

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayMaxSize,
   IsBoolean,
   IsIn,
   IsInt,
@@ -31,6 +32,12 @@ class OptionDto {
   @IsString() values!: string;
 }
 
+export class ProductMediaDto {
+  @IsString() mediaId!: string;
+  @IsInt() @Min(0) position!: number;
+  @IsBoolean() isPrimary!: boolean;
+}
+
 export class CreateProductDto {
   @IsString() name!: string;
   @IsOptional() @IsString() slug?: string;
@@ -44,6 +51,7 @@ export class CreateProductDto {
   @IsOptional() @IsIn(['published', 'draft', 'private']) status?: 'published' | 'draft' | 'private';
   @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
   @IsOptional() @IsArray() @IsString({ each: true }) imageIds?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => ProductMediaDto) media?: ProductMediaDto[];
   @IsOptional() @IsArray() @IsString({ each: true }) upsellIds?: string[];
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => BundleDto) bundles?: BundleDto[];
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OptionDto) options?: OptionDto[];
@@ -68,6 +76,7 @@ export class UpdateProductDto {
   @IsOptional() @IsIn(['published', 'draft', 'private']) status?: 'published' | 'draft' | 'private';
   @IsOptional() @IsArray() @IsString({ each: true }) categoryIds?: string[];
   @IsOptional() @IsArray() @IsString({ each: true }) imageIds?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => ProductMediaDto) media?: ProductMediaDto[];
   @IsOptional() @IsArray() @IsString({ each: true }) upsellIds?: string[];
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => BundleDto) bundles?: BundleDto[];
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OptionDto) options?: OptionDto[];

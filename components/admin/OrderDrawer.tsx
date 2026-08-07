@@ -5,7 +5,7 @@ import NumberField from './NumberField';
 import { Save, Trash2, Plus, Check, AlertTriangle } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
-import type { OrderResponse, OrderStatus } from '@/types';
+import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/types';
 
 type ProductPickerItem = { id: string; name: string; price: number; image?: string };
 type LineDraft = {
@@ -229,7 +229,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         // Historical order lines can retain an obsolete image host. Product
         // detail URLs are normalized by the API to the current public media
         // origin, so use the catalog image whenever the product still exists.
-        image: p.images?.[0]?.url,
+        image: getPrimaryProductImage<{ url: string; isPrimary?: boolean }>(p.images ?? [])?.url,
       };
       setProductInfo((prev) => ({ ...prev, [pid]: info }));
 

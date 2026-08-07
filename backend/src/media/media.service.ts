@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomUUID } from 'node:crypto';
@@ -22,6 +22,7 @@ export type UploadResult = {
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
   constructor(
     @InjectModel(Media.name) private readonly model: Model<Media>,
     @Inject(MINIO_CLIENT) private readonly minio: Client,
@@ -38,8 +39,10 @@ export class MediaService {
     const detected = detectImageType(buffer);
     if (!detected) throw new BadRequestException('Type de fichier non pris en charge');
 
+    const bucket = opts.bucket ?? DEFAULT_BUCKET;
     const checksum = createHash('sha256').update(buffer).digest('hex');
-    const existing = await this.model.findOne({ checksum });
+    this.logger.log({ event: 'media.upload.started', size: buffer.length, checksum: checksum.slice(0, 12) });
+    const existing = await this.model.findOne({ checksum, bucket });
     if (existing) {
       // Same bytes uploaded again from a different legacy URL — record the
       // additional origin so migrate:products can still resolve by URL.
@@ -47,10 +50,10 @@ export class MediaService {
         existing.originalUrl = opts.originalUrl;
         await existing.save();
       }
+      this.logger.log({ event: 'media.upload.deduplicated', mediaId: existing.id });
       return this.toUploadResult(existing);
     }
 
-    const bucket = opts.bucket ?? DEFAULT_BUCKET;
     const meta = await sharp(buffer).metadata();
     const width = meta.width ?? 0;
     const height = meta.height ?? 0;
@@ -58,21 +61,44 @@ export class MediaService {
     const objectKey = `${randomUUID()}.${detected.ext}`;
     await this.minio.putObject(bucket, objectKey, buffer, buffer.length, { 'Content-Type': detected.mime });
 
-    const variants = await this.buildVariants(buffer, bucket);
+    let variants: Awaited<ReturnType<MediaService['buildVariants']>>;
+    try {
+      variants = await this.buildVariants(buffer, bucket);
+    } catch (error) {
+      await this.minio.removeObject(bucket, objectKey).catch(() => undefined);
+      throw error;
+    }
 
-    const doc = await this.model.create({
-      bucket,
-      objectKey,
-      mime: detected.mime,
-      size: buffer.length,
-      checksum,
-      width,
-      height,
-      alt: opts.alt ?? '',
-      variants,
-      createdBy: opts.createdBy ?? null,
-      originalUrl: opts.originalUrl ?? null,
-    });
+    let doc: MediaDocument;
+    try {
+      doc = await this.model.create({
+        bucket,
+        objectKey,
+        mime: detected.mime,
+        size: buffer.length,
+        checksum,
+        width,
+        height,
+        alt: opts.alt ?? '',
+        variants,
+        createdBy: opts.createdBy ?? null,
+        originalUrl: opts.originalUrl ?? null,
+        orphanedAt: new Date(),
+      });
+    } catch (error) {
+      // Two identical uploads can pass the initial lookup concurrently. The
+      // compound unique index chooses one canonical media record; discard
+      // this request's redundant objects and return the winner.
+      if ((error as { code?: number }).code !== 11000) throw error;
+      for (const key of [objectKey, ...variants.map((variant) => variant.objectKey)]) {
+        await this.minio.removeObject(bucket, key).catch(() => undefined);
+      }
+      const winner = await this.model.findOne({ bucket, checksum });
+      if (!winner) throw error;
+      this.logger.log({ event: 'media.upload.race_deduplicated', mediaId: winner.id });
+      return this.toUploadResult(winner);
+    }
+    this.logger.log({ event: 'media.upload.completed', mediaId: doc.id, objectKey });
     return this.toUploadResult(doc);
   }
 
@@ -129,9 +155,56 @@ export class MediaService {
   async getUrlsByIds(ids: string[]): Promise<Map<string, string>> {
     const uniqueIds = [...new Set(ids)].filter((id) => isValidObjectId(id));
     if (!uniqueIds.length) return new Map();
-    const docs = await this.model.find({ _id: { $in: uniqueIds } }).select({ bucket: 1, objectKey: 1 });
+    const docs = await this.model.find({ _id: { $in: uniqueIds } }).select({ bucket: 1, objectKey: 1, variants: 1 });
     const base = this.config.getOrThrow<string>('MINIO_PUBLIC_URL').replace(/\/$/, '');
-    return new Map(docs.map((doc) => [doc.id, `${base}/${doc.bucket}/${doc.objectKey}`]));
+    return new Map(docs.map((doc) => {
+      const objectKey = doc.variants.find((variant) => variant.name === 'md')?.objectKey ?? doc.objectKey;
+      return [doc.id, `${base}/${doc.bucket}/${objectKey}`];
+    }));
+  }
+
+  async assertAndGetUrls(ids: string[]): Promise<Map<string, string>> {
+    const urls = await this.getUrlsByIds(ids);
+    const missing = [...new Set(ids)].filter((id) => !urls.has(id));
+    if (missing.length) throw new BadRequestException(`Média introuvable ou non autorisé : ${missing.join(', ')}`);
+    return urls;
+  }
+
+  async markAttached(ids: string[]): Promise<void> {
+    const unique = [...new Set(ids)].filter((id) => isValidObjectId(id));
+    if (!unique.length) return;
+    await this.model.updateMany({ _id: { $in: unique } }, { $set: { orphanedAt: null } });
+    unique.forEach((mediaId) => this.logger.log({ event: 'media.attached', mediaId }));
+  }
+
+  async markDetached(ids: string[]): Promise<void> {
+    const unique = [...new Set(ids)].filter((id) => isValidObjectId(id));
+    if (!unique.length) return;
+    await this.model.updateMany({ _id: { $in: unique } }, { $set: { orphanedAt: new Date() } });
+    unique.forEach((mediaId) => this.logger.log({ event: 'media.detached', mediaId }));
+  }
+
+  /** Delete only media already marked orphaned. Reference checks remain the
+   * caller's responsibility because entity ownership lives outside Media. */
+  async deleteOrphaned(id: string): Promise<boolean> {
+    if (!isValidObjectId(id)) return false;
+    const doc = await this.model.findOne({ _id: id, orphanedAt: { $ne: null } });
+    if (!doc) return false;
+    const keys = [doc.objectKey, ...doc.variants.map((variant) => variant.objectKey)];
+    try {
+      for (const objectKey of keys) await this.minio.removeObject(doc.bucket, objectKey);
+      await this.model.deleteOne({ _id: doc._id, orphanedAt: { $ne: null } });
+      this.logger.log({ event: 'media.object.deleted', mediaId: doc.id, objectCount: keys.length });
+      return true;
+    } catch (error) {
+      this.logger.error({ event: 'media.object.deletion_failed', mediaId: doc.id, error: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
+  }
+
+  async findOrphanIdsBefore(cutoff: Date, limit = 500): Promise<string[]> {
+    const docs = await this.model.find({ orphanedAt: { $ne: null, $lte: cutoff } }).select({ _id: 1 }).limit(limit);
+    return docs.map((doc) => doc.id);
   }
 
   async list(page?: number, perPage?: number, search?: string) {
@@ -153,31 +226,37 @@ export class MediaService {
       { name: 'md', maxSize: 1200 },
     ];
     const results: { name: 'thumb' | 'md'; objectKey: string; width: number; height: number; size: number }[] = [];
-    for (const spec of specs) {
-      const resized = await sharp(buffer)
-        .resize({ width: spec.maxSize, height: spec.maxSize, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 82 })
-        .toBuffer({ resolveWithObject: true });
-      const objectKey = `${randomUUID()}-${spec.name}.webp`;
-      await this.minio.putObject(bucket, objectKey, resized.data, resized.data.length, {
-        'Content-Type': 'image/webp',
-      });
-      results.push({
-        name: spec.name,
-        objectKey,
-        width: resized.info.width,
-        height: resized.info.height,
-        size: resized.data.length,
-      });
+    try {
+      for (const spec of specs) {
+        const resized = await sharp(buffer)
+          .resize({ width: spec.maxSize, height: spec.maxSize, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 82 })
+          .toBuffer({ resolveWithObject: true });
+        const objectKey = `${randomUUID()}-${spec.name}.webp`;
+        await this.minio.putObject(bucket, objectKey, resized.data, resized.data.length, {
+          'Content-Type': 'image/webp',
+        });
+        results.push({
+          name: spec.name,
+          objectKey,
+          width: resized.info.width,
+          height: resized.info.height,
+          size: resized.data.length,
+        });
+      }
+    } catch (error) {
+      for (const variant of results) await this.minio.removeObject(bucket, variant.objectKey).catch(() => undefined);
+      throw error;
     }
     return results;
   }
 
   private toUploadResult(doc: MediaDocument): UploadResult {
     const base = this.config.getOrThrow<string>('MINIO_PUBLIC_URL').replace(/\/$/, '');
+    const preferredObjectKey = doc.variants.find((variant) => variant.name === 'md')?.objectKey ?? doc.objectKey;
     return {
       id: doc.id,
-      url: `${base}/${doc.bucket}/${doc.objectKey}`,
+      url: `${base}/${doc.bucket}/${preferredObjectKey}`,
       variants: doc.variants.map((v) => ({
         name: v.name,
         url: `${base}/${doc.bucket}/${v.objectKey}`,

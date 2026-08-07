@@ -17,7 +17,7 @@ import {
 import ProductDrawer from './ProductDrawer';
 import { useToast } from './Toast';
 import { formatPrice } from '@/lib/site-config';
-import type { Product } from '@/types';
+import { getPrimaryProductImage, type Product } from '@/types';
 import type { DashboardStats } from '@/types/dashboard';
 
 type Props = {
@@ -370,9 +370,9 @@ export default function ProduitsView({ initialProducts, totals, initialEditingId
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {p.images[0]?.url ? (
+                      {getPrimaryProductImage(p.images)?.url ? (
                         // eslint-disable-next-line @next/next/no-img-element -- MinIO/WP URLs; avoids next/image optimizer cache on stale broken URLs
-                        <img src={p.images[0].url} alt={p.name} width={52} height={64} loading="lazy" className="h-16 w-[52px] rounded-xl border border-ink-200 bg-white object-cover" />
+                        <img src={getPrimaryProductImage(p.images)?.url} alt={p.name} width={52} height={64} loading="lazy" className="h-16 w-[52px] rounded-xl border border-ink-200 bg-white object-cover" />
                       ) : (
                         <div className="grid h-16 w-[52px] place-items-center rounded-xl border border-dashed border-ink-300 bg-ink-100 text-ink-500">
                           <Package size={19} aria-hidden="true" />

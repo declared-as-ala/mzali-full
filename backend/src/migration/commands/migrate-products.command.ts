@@ -97,15 +97,15 @@ export class MigrateProductsCommand extends CommandRunner {
           }
 
           const minioPublicBase = this.config.getOrThrow<string>('MINIO_PUBLIC_URL').replace(/\/$/, '');
-          const images: { mediaId: string | null; url: string; alt: string; position: number }[] = [];
+          const images: { mediaId: string | null; url: string; alt: string; position: number; isPrimary: boolean }[] = [];
           for (let i = 0; i < mapped.imageUrls.length; i++) {
             const url = mapped.imageUrls[i];
             const mediaDoc = await this.media.findOne({ originalUrl: url });
             if (mediaDoc) {
               // Object keys are bucket-relative, so public URLs include the bucket explicitly.
-              images.push({ mediaId: mediaDoc.id, url: `${minioPublicBase}/${mediaDoc.bucket}/${mediaDoc.objectKey}`, alt: '', position: i });
+              images.push({ mediaId: mediaDoc.id, url: `${minioPublicBase}/${mediaDoc.bucket}/${mediaDoc.objectKey}`, alt: '', position: i, isPrimary: i === 0 });
             } else {
-              images.push({ mediaId: null, url, alt: '', position: i });
+              images.push({ mediaId: null, url, alt: '', position: i, isPrimary: i === 0 });
               report.unresolvedMedia.push({ productId: mapped.legacyId, url });
             }
           }

@@ -1,10 +1,12 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import MultiCheckSelect from './MultiCheckSelect';
 import ImageUploader from './ImageUploader';
+import ProductImageManager from './ProductImageManager';
+import { useProductMedia } from './useProductMedia';
 import NumberField from './NumberField';
-import { Save, Copy, Trash2, Plus, X, GripVertical, Upload, Check, AlertCircle, Barcode, Boxes } from 'lucide-react';
+import { Save, Copy, Trash2, Plus, X, Upload, Check, AlertCircle, Barcode, Boxes } from 'lucide-react';
 import type { Product, ProductBundle } from '@/types';
 import type { Variant } from '@/types/variant';
 import { adminLoginHref } from '@/lib/admin-nav';
@@ -27,7 +29,6 @@ type FormState = {
   supplierId: string;
   description: string;
   status: 'published' | 'draft' | 'private';
-  images: { id: string; url: string }[];
   options: { label: string; type: 'text' | 'select' | 'radio'; values: string[] }[];
   bundles: ProductBundle[];
   upsellIds: string[];
@@ -39,7 +40,7 @@ const EMPTY: FormState = {
   name: '', sku: '', categoryIds: [], manageStock: false, stockQuantity: 0,
   regularPrice: 0, salePrice: 0, cost: 0, deliveryPrice: 0, deliveryCost: 0,
   purchasePrice: 0, supplierId: '',
-  description: '', status: 'published', images: [],
+  description: '', status: 'published',
   options: [], bundles: [], upsellIds: [], posOnly: false,
 };
 
@@ -66,6 +67,8 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; companyName: string }[]>([]);
   const [variantId, setVariantId] = useState<string | null>(null);
+  const media = useProductMedia();
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -107,7 +110,6 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
             supplierId: p.supplierId ?? '',
             description: p.description,
             status: p.status,
-            images: p.images.map((i) => ({ id: i.id, url: i.url })),
             options: Array.isArray(options) ? options.map((o) => ({
               label: o.label,
               type: o.type,
@@ -120,15 +122,27 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
             posOnly: p.posOnly ?? false,
           };
           setForm(loadProductDraft(productId) ?? serverForm);
+          media.reset(p.images);
         })
         .catch(() => alert('Erreur de chargement du produit'))
         .finally(() => setLoading(false));
     } else {
       setForm(loadProductDraft(null) ?? EMPTY);
+      media.reset([]);
       setVariantId(null);
     }
     setTab('description');
-  }, [open, productId, categories.length, suppliers.length]);
+  // media.reset is stable; including the whole media object would restart this
+  // loading effect on every upload transition.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, productId, media.reset]);
+
+  useEffect(() => {
+    if (!open || !media.isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [open, media.isDirty]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,6 +158,9 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
 
   async function save() {
     if (!form.name.trim()) { alert('Nom obligatoire'); return; }
+    if (media.saveBlockReason) { alert(media.saveBlockReason); return; }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSaving(true);
     try {
       const payload = {
@@ -160,7 +177,8 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
         manageStock: form.manageStock,
         stockQuantity: form.manageStock ? form.stockQuantity : null,
         categoryIds: form.categoryIds,
-        imageIds: form.images.map((i) => i.id),
+        media: media.payload,
+        imageIds: media.payload.map((item) => item.mediaId),
         upsellIds: form.upsellIds,
         bundles: form.bundles,
         options: form.options.map((o) => ({ label: o.label, type: o.type, values: o.values.join(',') })),
@@ -192,9 +210,16 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
     } catch (e) {
       alert(`Échec: ${e instanceof Error ? e.message : 'inconnu'}`);
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
   }
+
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (media.isDirty && !window.confirm('Des modifications d’images ne sont pas enregistrées. Fermer quand même ?')) return;
+    onClose();
+  }, [media.isDirty, onClose, saving]);
 
   async function duplicate() {
     if (!productId) return;
@@ -209,6 +234,11 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
       salePrice: original.salePrice ?? null,
       categoryIds: original.categoryIds,
       imageIds: original.images.map((i) => i.id),
+      media: original.images.map((image, position) => ({
+        mediaId: image.id,
+        position: image.position ?? position,
+        isPrimary: image.isPrimary ?? position === 0,
+      })),
       bundles: original.bundles,
       posOnly: original.posOnly,
     };
@@ -222,7 +252,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
   return (
     <Drawer
       open={open}
-      onClose={onClose}
+      onClose={requestClose}
       title={isEdit ? `Modifier ${form.name}`.trim() : 'Ajouter un produit'}
       actions={
         <>
@@ -240,7 +270,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
               <Copy size={14} /> Dupliquer
             </button>
           )}
-          <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white shadow-soft hover:bg-brand-600 disabled:opacity-50">
+          <button onClick={save} disabled={saving || Boolean(media.saveBlockReason)} title={media.saveBlockReason ?? undefined} className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white shadow-soft hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50">
             <Save size={14} /> {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </>
@@ -265,15 +295,14 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
               <h3 className="text-sm font-black uppercase tracking-wide text-ink-900">Détails</h3>
             </header>
             <div className="p-5">
-              <ImageGallery
-                images={form.images}
-                onReorder={(next) => up('images', next)}
-                onRemove={(id) => up('images', form.images.filter((i) => i.id !== id))}
-                onAdd={(img) => up('images', [...form.images, img])}
+              <ProductImageManager
+                items={media.items}
+                onAddFiles={media.addFiles}
+                onRemove={media.remove}
+                onRetry={media.retry}
+                onReorder={media.reorder}
+                onSetPrimary={media.setPrimary}
               />
-              <p className="mb-5 mt-2 text-xs text-ink-700">
-                Glissez-déposez pour réordonner. La première image est l&apos;image principale du produit.
-              </p>
 
               <div className="grid gap-4 md:grid-cols-3">
                 <Field label="Nom du produit" className="md:col-span-1"><input className="input" value={form.name} onChange={(e) => up('name', e.target.value)} /></Field>
@@ -659,92 +688,6 @@ function VariantsTab({ productId }: { productId: string }) {
       <button type="button" onClick={save} disabled={saving} className="btn-primary inline-flex items-center gap-2 disabled:opacity-50">
         <Save size={14} /> {saving ? 'Enregistrement…' : 'Enregistrer la variante'}
       </button>
-    </div>
-  );
-}
-
-/**
- * Drag-and-drop reorderable image gallery (HTML5 DnD, no extra deps).
- * Each tile is draggable. Drop the dragged tile onto another to swap places.
- * The "+ upload" tile is appended at the end and not reorderable.
- */
-function ImageGallery({
-  images, onReorder, onRemove, onAdd,
-}: {
-  images: { id: string; url: string }[];
-  onReorder: (next: { id: string; url: string }[]) => void;
-  onRemove: (id: string) => void;
-  onAdd: (img: { id: string; url: string }) => void;
-}) {
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
-  const [dragOver, setDragOver] = useState<number | null>(null);
-
-  function move(from: number, to: number) {
-    if (from === to || from < 0 || to < 0) return;
-    const next = images.slice();
-    const [it] = next.splice(from, 1);
-    next.splice(to, 0, it);
-    onReorder(next);
-  }
-
-  return (
-    <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
-      {images.map((img, i) => {
-        const isDragged = dragFrom === i;
-        const isTarget = dragOver === i && dragFrom !== null && dragFrom !== i;
-        const isMain = i === 0;
-        return (
-          <div
-            key={img.id}
-            draggable
-            onDragStart={(e) => {
-              setDragFrom(i);
-              e.dataTransfer.effectAllowed = 'move';
-              e.dataTransfer.setData('text/plain', String(i));
-            }}
-            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOver(i); }}
-            onDragLeave={() => setDragOver((cur) => (cur === i ? null : cur))}
-            onDrop={(e) => {
-              e.preventDefault();
-              const from = dragFrom ?? Number(e.dataTransfer.getData('text/plain'));
-              if (Number.isFinite(from)) move(from as number, i);
-              setDragFrom(null); setDragOver(null);
-            }}
-            onDragEnd={() => { setDragFrom(null); setDragOver(null); }}
-            className={`group relative aspect-square cursor-grab overflow-hidden rounded-xl border bg-ink-100 transition active:cursor-grabbing ${
-              isDragged ? 'border-brand-500 opacity-40' :
-              isTarget ? 'border-brand-500 ring-2 ring-brand-300 scale-[1.04]' :
-              'border-ink-200'
-            }`}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.url} alt="" draggable={false} className="pointer-events-none h-full w-full object-cover" />
-            <button
-              type="button"
-              onClick={() => onRemove(img.id)}
-              className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-md bg-white/90 text-red-500 opacity-0 transition group-hover:opacity-100"
-              aria-label="Supprimer"
-            >
-              <X size={12} />
-            </button>
-            <span
-              className="absolute left-1 top-1 grid h-5 w-5 place-items-center rounded-md bg-white/95 text-ink-700"
-              aria-hidden
-            >
-              <GripVertical size={12} />
-            </span>
-            {isMain && (
-              <span className="absolute bottom-1 left-1 rounded bg-brand-500 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
-                Principale
-              </span>
-            )}
-          </div>
-        );
-      })}
-      <ImageUploader
-        multiple
-        onUploaded={(img) => onAdd(img)}
-      />
     </div>
   );
 }

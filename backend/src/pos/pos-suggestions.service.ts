@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Product } from '@/catalog/product.schema';
 import { ProductsService } from '@/catalog/products.service';
+import { primaryProductImage } from '@/catalog/product-media';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { resolveDateRange } from './dto/pos-analytics.dto';
@@ -109,7 +110,7 @@ export class PosSuggestionsService {
         productId: v.productId,
         variantId: v.id,
         name: product.name,
-        imageUrl: normalizePublicMediaUrl(product.images?.[0]?.url ?? null),
+        imageUrl: normalizePublicMediaUrl(primaryProductImage(product.images)?.url ?? null),
         priceMinor: v.sellingPriceMinor ?? product.salePriceMinor ?? product.regularPriceMinor,
         reason,
       };

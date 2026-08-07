@@ -35,7 +35,7 @@ export class Media {
   size!: number;
 
   /** sha256 of the original file — used for upload dedupe. */
-  @Prop({ type: String, required: true, index: true })
+  @Prop({ type: String, required: true })
   checksum!: string;
 
   @Prop({ type: Number, default: 0 })
@@ -57,9 +57,15 @@ export class Media {
   @Prop({ type: String, default: null })
   createdBy!: string | null;
 
+  /** Set after a successful detach. A later garbage-collection pass may
+   * delete it after all entity reference checks have passed. */
+  @Prop({ type: Date, default: Date.now, index: true })
+  orphanedAt!: Date | null;
+
   createdAt!: Date;
   updatedAt!: Date;
 }
 
 export type MediaDocument = HydratedDocument<Media>;
 export const MediaSchema = SchemaFactory.createForClass(Media);
+MediaSchema.index({ bucket: 1, checksum: 1 }, { unique: true });

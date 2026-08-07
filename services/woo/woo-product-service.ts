@@ -28,7 +28,8 @@ function toWoo(input: Partial<ProductInput>): Record<string, unknown> {
     out.status = input.status === 'published' ? 'publish' : input.status;
   }
   if (input.categoryIds) out.categories = input.categoryIds.map((id) => ({ id: Number(id) }));
-  if (input.imageIds) out.images = input.imageIds.map((id) => ({ id: Number(id) }));
+  const imageIds = input.media?.slice().sort((a, b) => a.position - b.position).map((item) => item.mediaId) ?? input.imageIds;
+  if (imageIds) out.images = imageIds.map((id) => ({ id: Number(id) }));
   if (input.upsellIds) out.upsell_ids = input.upsellIds.map(Number);
 
   const meta: { key: string; value: unknown }[] = [];
