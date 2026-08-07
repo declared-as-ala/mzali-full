@@ -9,6 +9,10 @@ export type ProductImage = {
   isPrimary?: boolean;
 };
 
+export function getPrimaryProductImage<T extends object>(images: T[]): T | undefined {
+  return images.find((image) => Boolean((image as { isPrimary?: boolean }).isPrimary)) ?? images[0];
+}
+
 export type ProductAttribute = {
   name: string;        // e.g. "Couleur"
   options: string[];   // e.g. ["Rouge", "Bleu"]
