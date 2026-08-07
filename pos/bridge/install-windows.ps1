@@ -33,6 +33,16 @@ $shortcutPath = Join-Path $startupFolder 'MZALI POS Bridge.lnk'
 $env:POS_VFD_COM_PORT = 'COM3'
 $env:POS_VFD_PROTOCOL = 'logic-controls'
 
+# This boutique's till has TWO Prolific PL2303GL USB-serial devices — the
+# drawer dongle AND (separately) the customer display's own internal
+# adapter — both register under a "ProlificSerial*" registry name, so the
+# drawer's own auto-detection can no longer tell them apart by name alone.
+# Pin it explicitly, exactly like the VFD port above, instead of leaving it
+# to a "first match wins" registry scan that silently picked the VFD's port
+# instead of the drawer's and reported the trigger as a false success.
+[Environment]::SetEnvironmentVariable('POS_DRAWER_COM_PORT', 'COM4', 'User')
+$env:POS_DRAWER_COM_PORT = 'COM4'
+
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $nodePath
