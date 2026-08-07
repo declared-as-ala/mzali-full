@@ -4,12 +4,15 @@ import { promisify } from 'node:util';
 import { normalizeComPort, openCashDrawer, shouldOpenDrawer } from './drawer.mjs';
 import { writeVfdLines, writeVfdPayment } from './display.mjs';
 import { createRequestDeduplicator } from './dedupe.mjs';
+import { getPrinterStatus, listPrinters, printRaw } from './printer.mjs';
+import { buildReceipt } from './receipt.mjs';
 
 const execFileAsync = promisify(execFile);
 const host = '127.0.0.1';
 const port = Number(process.env.POS_BRIDGE_PORT || 17890);
 const saleOnce = createRequestDeduplicator(undefined, { retainFailures: true });
 const manualOnce = createRequestDeduplicator();
+const printOnce = createRequestDeduplicator(undefined, { retainFailures: true });
 
 function json(response, status, body) {
   response.writeHead(status, {
@@ -21,11 +24,17 @@ function json(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-async function body(request) {
+// This process only ever binds to 127.0.0.1 (see server.listen below) — the
+// real security boundary is that no one off this physical PC can reach it
+// at all, which is also why CORS stays wide open (an allowlist keyed on the
+// Origin header would be trivial for anything already running on this same
+// machine to spoof, and would do nothing against anything off it — the
+// loopback bind is what actually matters, see README.md).
+async function body(request, maxBytes = 16_384) {
   let raw = '';
   for await (const chunk of request) {
     raw += chunk;
-    if (raw.length > 16_384) throw new Error('Payload trop volumineux.');
+    if (raw.length > maxBytes) throw new Error('Payload trop volumineux.');
   }
   return raw ? JSON.parse(raw) : {};
 }
@@ -154,7 +163,10 @@ const server = createServer(async (request, response) => {
         ? input.paymentMethods.filter((method) => ['CASH', 'CARD', 'BANK_TRANSFER', 'OTHER'].includes(method))
         : [];
       if (!requestId || !saleId || paymentMethods.length === 0) throw new Error('Requête de vente invalide.');
-      const drawerAttempted = shouldOpenDrawer(paymentMethods);
+      // Defaults to true (unset) so any caller/version that doesn't send
+      // this field yet keeps today's behavior exactly — only an explicit
+      // `false` (the terminal's own "Auto-open drawer" setting) skips it.
+      const drawerAttempted = input.autoOpenDrawer !== false && shouldOpenDrawer(paymentMethods);
       const result = await saleOnce(requestId, async () => {
         const displayPromise = showOnVfd(input.display, 'completed').catch((error) => {
           console.error(`[vfd] ${error instanceof Error ? error.message : 'Erreur VFD'}`);
@@ -175,6 +187,35 @@ const server = createServer(async (request, response) => {
         const drawer = await openCashDrawer(await getDrawerPort());
         console.info(`[drawer] Ouverture manuelle USB envoyée à ${drawer.serialPort}`);
         return { ok: true, drawerAttempted: true, drawerOpened: true };
+      });
+      return json(response, 200, result);
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/printers') {
+      return json(response, 200, { ok: true, printers: await listPrinters() });
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/printer/status') {
+      const name = url.searchParams.get('name') || '';
+      return json(response, 200, { ok: true, printer: await getPrinterStatus(name) });
+    }
+    if (request.method === 'POST' && url.pathname === '/v1/print') {
+      // Receipts with many lines/a long note can run past the 16KB default
+      // — this is still just JSON describing the sale, not an upload.
+      const input = await body(request, 65_536);
+      const requestId = String(input.requestId || '').slice(0, 200);
+      if (!requestId) throw new Error('Identifiant de requête manquant.');
+      if (!input.sale || typeof input.sale !== 'object') throw new Error('Contenu du ticket manquant.');
+      if (!input.settings || typeof input.settings !== 'object') throw new Error('Paramètres imprimante manquants.');
+      const printerName = String(input.printerName || '').trim();
+      const copies = Math.min(5, Math.max(1, Number(input.copies) || 1));
+      const result = await printOnce(requestId, async () => {
+        const receipt = buildReceipt(input.sale, input.settings);
+        // Sequential on purpose — copies must not race each other against
+        // the same printer spooler job.
+        for (let i = 0; i < copies; i += 1) {
+          await printRaw(printerName, receipt);
+        }
+        console.info(`[print] Ticket imprimé sur "${printerName}" (${copies} exemplaire(s)).`);
+        return { ok: true, printed: true, copies };
       });
       return json(response, 200, result);
     }

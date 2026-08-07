@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'node:crypto';
+import type { PosPrinterSettings, UpdatePosPrinterSettingsInput } from '@contracts';
 import { BOUTIQUE_CODE } from '@/catalog/location.schema';
 import { PosTerminal, PosTerminalDocument } from './pos-terminal.schema';
 
@@ -100,6 +101,38 @@ export class PosTerminalsService {
     const doc = await this.model.findById(id);
     if (!doc) throw new NotFoundException('Terminal introuvable');
     return doc;
+  }
+
+  /** Self-service — any cashier can read/change the printer settings for
+   *  the till they're physically standing at (PosTerminalGuard already
+   *  resolved which terminal that is). Stored on the terminal document
+   *  itself, not the browser, so it survives a browser restart, a fresh
+   *  login, or a token refresh, and correctly follows the physical
+   *  till rather than whoever happens to be logged in. */
+  async getPrinterSettings(terminalId: string): Promise<PosPrinterSettings> {
+    const doc = await this.getById(terminalId);
+    return {
+      printerName: doc.printerName,
+      paperWidthMm: doc.paperWidthMm,
+      printCopies: doc.printCopies,
+      autoPrint: doc.autoPrint,
+      autoOpenDrawer: doc.autoOpenDrawer,
+      printLogo: doc.printLogo,
+      printQr: doc.printQr,
+    };
+  }
+
+  async updatePrinterSettings(terminalId: string, patch: UpdatePosPrinterSettingsInput): Promise<PosPrinterSettings> {
+    const doc = await this.getById(terminalId);
+    if (patch.printerName !== undefined) doc.printerName = patch.printerName;
+    if (patch.paperWidthMm !== undefined) doc.paperWidthMm = patch.paperWidthMm;
+    if (patch.printCopies !== undefined) doc.printCopies = patch.printCopies;
+    if (patch.autoPrint !== undefined) doc.autoPrint = patch.autoPrint;
+    if (patch.autoOpenDrawer !== undefined) doc.autoOpenDrawer = patch.autoOpenDrawer;
+    if (patch.printLogo !== undefined) doc.printLogo = patch.printLogo;
+    if (patch.printQr !== undefined) doc.printQr = patch.printQr;
+    await doc.save();
+    return this.getPrinterSettings(terminalId);
   }
 
   /** Used by PosTerminalGuard on every POS request. No pairing code, no

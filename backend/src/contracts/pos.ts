@@ -208,4 +208,28 @@ export type PosSale = {
   notes: string | null;
   createdAt: string;
   completedAt: string | null;
+  /** Sale completion and receipt printing are independent — a printer
+   *  jam/offline printer must never cancel or duplicate an already-saved
+   *  sale. 'pending' until the local hardware bridge confirms the print
+   *  (or reports a failure the cashier can retry from history). */
+  printStatus: PosPrintStatus;
+  printedAt: string | null;
 };
+
+export type PosPrintStatus = 'pending' | 'printed' | 'failed';
+
+/** Per-terminal receipt-printer configuration — persisted server-side (not
+ *  just in the browser) so it survives a browser restart, a fresh login, or
+ *  a token refresh, and follows "this physical till" rather than "whoever
+ *  is currently logged in". */
+export type PosPrinterSettings = {
+  printerName: string | null;
+  paperWidthMm: 58 | 80;
+  printCopies: number;
+  autoPrint: boolean;
+  autoOpenDrawer: boolean;
+  printLogo: boolean;
+  printQr: boolean;
+};
+
+export type UpdatePosPrinterSettingsInput = Partial<PosPrinterSettings>;

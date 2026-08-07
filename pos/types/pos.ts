@@ -123,6 +123,20 @@ export type PosSale = {
   notes: string | null;
   createdAt: string;
   completedAt: string | null;
+  printStatus: PosPrintStatus;
+  printedAt: string | null;
+};
+
+export type PosPrintStatus = 'pending' | 'printed' | 'failed';
+
+export type PosPrinterSettings = {
+  printerName: string | null;
+  paperWidthMm: 58 | 80;
+  printCopies: number;
+  autoPrint: boolean;
+  autoOpenDrawer: boolean;
+  printLogo: boolean;
+  printQr: boolean;
 };
 
 export type PosSalesListResponse = {

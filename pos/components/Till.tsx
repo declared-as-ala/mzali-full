@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
-import { canOpenDrawer, completeSaleHardware, openManualDrawer } from '@/lib/hardware';
+import { canOpenDrawer, completeSaleHardware, DEFAULT_PRINTER_SETTINGS, getBridgeStatus, openManualDrawer, printReceiptOnBridge, reportPrintStatus } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
 import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
@@ -13,7 +13,7 @@ import ProductOfferModal from './ProductOfferModal';
 import QuickPickRail from './QuickPickRail';
 import Cart from './Cart';
 import TicketPreview from './TicketPreview';
-import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
+import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosPrinterSettings, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 
 const ACTIVE_SALE_DRAFT_KEY = 'mzali_pos_active_sale_draft';
 
@@ -49,6 +49,10 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const [autoPrintReceipt, setAutoPrintReceipt] = useState(false);
   const [manualDrawerBusy, setManualDrawerBusy] = useState(false);
   const [drawerFeedback, setDrawerFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [printerSettings, setPrinterSettings] = useState<PosPrinterSettings>(DEFAULT_PRINTER_SETTINGS);
+  const [saleFeedback, setSaleFeedback] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
+  const [printFailure, setPrintFailure] = useState<{ sale: PosSale; message: string } | null>(null);
+  const [retryingPrint, setRetryingPrint] = useState(false);
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
   const paymentRequestInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +89,19 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       }));
     } catch { /* storage is best effort */ }
   }, [cart, customerPhone, customerId, customerName, loyaltyAccount, redeemInput, redeemPreview, editingSale, draftReady]);
+
+  useEffect(() => {
+    posFetch('/api/printer/settings', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: Partial<PosPrinterSettings> | null) => { if (data) setPrinterSettings({ ...DEFAULT_PRINTER_SETTINGS, ...data }); })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!saleFeedback) return;
+    const id = setTimeout(() => setSaleFeedback(null), 3000);
+    return () => clearTimeout(id);
+  }, [saleFeedback]);
 
   useEffect(() => {
     posFetch('/api/sessions', { cache: 'no-store' })
@@ -505,17 +522,27 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       if (!res.ok) throw new Error(data?.error ?? 'Erreur de paiement');
       const sale: PosSale = data.after || data;
       if (!wasEditing) {
-        const hardware = await completeSaleHardware(sale);
+        const hardware = await completeSaleHardware(sale, printerSettings.autoOpenDrawer);
         setHardwareWarning(hardware.warning);
-        // Always print the receipt immediately after a completed sale — no
-        // manual "Imprimer" click required. The hardware bridge's own
-        // autoPrintReceipt flag only reflects local printer-driver auto-print
-        // (currently always false — the bridge doesn't drive the printer
-        // itself), which is a separate concern from the on-screen ticket's
-        // window.print() trigger this controls.
-        setAutoPrintReceipt(true);
+
+        // Silent, no on-screen ticket/print dialog — the whole point of the
+        // bridge. A printer failure never touches the sale itself (it's
+        // already saved): 'failed' just means "please retry printing",
+        // surfaced as its own dismissible banner with a retry action, not
+        // the old full-screen ticket preview.
+        if (printerSettings.autoPrint) {
+          try {
+            await printReceiptOnBridge(sale, printerSettings);
+            await reportPrintStatus(sale.id, 'printed');
+            setSaleFeedback({ tone: 'success', message: `Vente #${sale.saleNumber} enregistrée — ticket imprimé.` });
+          } catch (printError) {
+            await reportPrintStatus(sale.id, 'failed');
+            setPrintFailure({ sale, message: printError instanceof Error ? printError.message : "Échec de l'impression." });
+          }
+        } else {
+          setSaleFeedback({ tone: 'warning', message: `Vente #${sale.saleNumber} enregistrée — impression automatique désactivée.` });
+        }
       }
-      setCompletedSale(sale);
       setEditingSale(null);
       setCart([]);
       resetCustomer();
@@ -542,6 +569,31 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     } finally {
       setManualDrawerBusy(false);
     }
+  }
+
+  async function retryPrint() {
+    if (!printFailure || retryingPrint) return;
+    setRetryingPrint(true);
+    try {
+      await printReceiptOnBridge(printFailure.sale, printerSettings);
+      await reportPrintStatus(printFailure.sale.id, 'printed');
+      setSaleFeedback({ tone: 'success', message: `Ticket #${printFailure.sale.saleNumber} imprimé.` });
+      setPrintFailure(null);
+    } catch (error) {
+      setPrintFailure({ sale: printFailure.sale, message: error instanceof Error ? error.message : "Échec de l'impression." });
+    } finally {
+      setRetryingPrint(false);
+    }
+  }
+
+  /** Explicit fallback only — never triggered automatically. Reuses the
+   *  existing on-screen ticket + window.print(), the same manual path
+   *  already used before the bridge existed. */
+  function printFailureManually() {
+    if (!printFailure) return;
+    setCompletedSale(printFailure.sale);
+    setAutoPrintReceipt(true);
+    setPrintFailure(null);
   }
 
   // Keyboard shortcuts: "/" jumps to search from anywhere (unless already
@@ -643,6 +695,54 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         <div role="alert" className="flex flex-none items-center justify-between border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs font-bold text-rose-800">
           <span>{saveError}</span>
           <button className="grid h-8 w-8 place-items-center rounded-lg hover:bg-black/5" onClick={() => setSaveError(null)} aria-label="Fermer le message"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* Brief, self-dismissing confirmation after a silently-printed sale —
+          no ticket modal, the cashier is meant to already be moving on to
+          the next customer. */}
+      {saleFeedback && (
+        <div
+          role="status"
+          className={`flex flex-none items-center justify-between px-6 py-2 text-xs font-bold ${saleFeedback.tone === 'success' ? 'border-b border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-b border-amber-200 bg-amber-50 text-amber-900'}`}
+        >
+          <span>{saleFeedback.message}</span>
+          <button className="grid h-8 w-8 place-items-center rounded-lg hover:bg-black/5" onClick={() => setSaleFeedback(null)} aria-label="Fermer le message"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* The sale is already saved and stays saved either way — a printer
+          failure only ever means "please retry printing", never "redo the
+          sale". Three ways out: retry the same bridge print, print the old
+          way as an explicit fallback, or go handle it later from history. */}
+      {printFailure && (
+        <div role="alert" className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-6 py-2.5 text-xs font-bold text-rose-800">
+          <span>Vente #{printFailure.sale.saleNumber} enregistrée, impression échouée. {printFailure.message}</span>
+          <div className="flex flex-none items-center gap-1.5">
+            <button
+              type="button"
+              disabled={retryingPrint}
+              onClick={() => void retryPrint()}
+              className="rounded-lg border border-rose-300 bg-white px-2.5 py-1.5 font-black text-rose-800 transition hover:bg-rose-100 disabled:opacity-50"
+            >
+              {retryingPrint ? 'Nouvel essai…' : 'Réessayer l’impression'}
+            </button>
+            <button
+              type="button"
+              onClick={printFailureManually}
+              className="rounded-lg border border-rose-300 bg-white px-2.5 py-1.5 font-black text-rose-800 transition hover:bg-rose-100"
+            >
+              Imprimer via le navigateur
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/history')}
+              className="rounded-lg border border-rose-300 bg-white px-2.5 py-1.5 font-black text-rose-800 transition hover:bg-rose-100"
+            >
+              Imprimer depuis l’historique
+            </button>
+            <button className="grid h-8 w-8 place-items-center rounded-lg hover:bg-black/5" onClick={() => setPrintFailure(null)} aria-label="Fermer le message"><X size={14} /></button>
+          </div>
         </div>
       )}
 

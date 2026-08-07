@@ -2,10 +2,15 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
 /**
- * A POS terminal must be paired + approved before it can process sales —
- * the employee JWT alone is not enough (see docs/pos-platform/security-model.md
- * §"POS terminal binding"). Pairing flow: device generates a fingerprint,
- * gets a short-lived `pairingCode`, polls until an admin approves it.
+ * Tracks which physical till a sale/session belongs to, and that till's own
+ * hardware configuration (currently: the receipt printer). No pairing/
+ * approval gate anymore — PosTerminalsService.validate() silently
+ * provisions a record for whatever terminal code + device fingerprint a
+ * logged-in employee's browser presents; the employee JWT is the actual
+ * access control. `pairingCode`/`pairingCodeExpiresAt`/`approvedAt`/
+ * `approvedBy` are legacy columns from when that gate existed — left in
+ * place (existing documents still have them) but no longer read for access
+ * decisions.
  */
 @Schema({ collection: 'pos_terminals', timestamps: true })
 export class PosTerminal {
@@ -52,6 +57,30 @@ export class PosTerminal {
 
   @Prop({ type: String, default: null })
   approvedBy!: string | null;
+
+  // ── Receipt printer configuration (per terminal) ──────────────────────
+  /** Windows printer name as returned by `Get-Printer`, or null until the
+   *  cashier configures one from the printer-settings screen. */
+  @Prop({ type: String, default: null })
+  printerName!: string | null;
+
+  @Prop({ type: Number, enum: [58, 80], default: 80 })
+  paperWidthMm!: 58 | 80;
+
+  @Prop({ type: Number, default: 1, min: 1, max: 5 })
+  printCopies!: number;
+
+  @Prop({ type: Boolean, default: true })
+  autoPrint!: boolean;
+
+  @Prop({ type: Boolean, default: true })
+  autoOpenDrawer!: boolean;
+
+  @Prop({ type: Boolean, default: true })
+  printLogo!: boolean;
+
+  @Prop({ type: Boolean, default: true })
+  printQr!: boolean;
 
   createdAt!: Date;
   updatedAt!: Date;

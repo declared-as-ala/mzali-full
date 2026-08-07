@@ -25,6 +25,7 @@ import { PosTerminalsAdminController } from './pos-terminals-admin.controller';
 import { PosTerminalsController } from './pos-terminals.controller';
 import { PosTerminalGuard } from './guards/pos-terminal.guard';
 import { PosHardwareController } from './pos-hardware.controller';
+import { PosPrinterController } from './pos-printer.controller';
 
 // Read-only cross-channel reporting needs Order/PurchaseOrder models that
 // PosCoreModule doesn't carry (it deliberately avoids importing OrdersModule
@@ -52,6 +53,7 @@ const ReportingMongoose = MongooseModule.forFeature([
     PosCustomersController,
     PosSuggestionsController,
     PosHardwareController,
+    PosPrinterController,
   ],
   providers: [
     PosTerminalGuard, PosAnalyticsService, PosAlertsService, PosReportExportService, PosLostSalesService,

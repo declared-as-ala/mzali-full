@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, FilterQuery, Model, Types } from 'mongoose';
-import type { CreatePosSaleInput, EmployeeRole, PosSale as PosSaleContract, PosSaleLineInput, PosSalePaymentInput } from '@contracts';
+import type { CreatePosSaleInput, EmployeeRole, PosPrintStatus, PosSale as PosSaleContract, PosSaleLineInput, PosSalePaymentInput } from '@contracts';
 import { Product } from '@/catalog/product.schema';
 import { distributeGroupPricing, priceBestCombination, ProductBundleLike } from '@/catalog/product-pricing';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
@@ -600,7 +600,21 @@ export class PosSalesService {
       changeMinor: doc.changeMinor,
       createdAt: doc.createdAt.toISOString(),
       completedAt: doc.completedAt ? doc.completedAt.toISOString() : null,
+      printStatus: doc.printStatus,
+      printedAt: doc.printedAt ? doc.printedAt.toISOString() : null,
     };
+  }
+
+  /** Records the outcome of a receipt-print attempt against the local
+   *  hardware bridge. Never touches sale status/stock/payment — a failed
+   *  print is purely a "please retry printing" state, not a failed sale. */
+  async setPrintStatus(id: string, status: PosPrintStatus): Promise<{ printStatus: PosPrintStatus; printedAt: string | null }> {
+    const doc = await this.sales.findById(id);
+    if (!doc) throw new NotFoundException('Vente introuvable');
+    doc.printStatus = status;
+    doc.printedAt = status === 'printed' ? new Date() : doc.printedAt;
+    await doc.save();
+    return { printStatus: doc.printStatus, printedAt: doc.printedAt ? doc.printedAt.toISOString() : null };
   }
 
   async cancel(id: string, actor: { type: 'employee'; id: string; name: string }): Promise<PosSaleDocument> {

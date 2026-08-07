@@ -97,6 +97,15 @@ export class PosSale {
   @Prop({ type: String, default: null })
   notes!: string | null;
 
+  /** Sale completion and receipt printing are deliberately independent — a
+   *  printer jam/offline printer must never cancel or duplicate an
+   *  already-saved sale (see PosSalesService.setPrintStatus). */
+  @Prop({ type: String, enum: ['pending', 'printed', 'failed'], required: true, default: 'pending' })
+  printStatus!: 'pending' | 'printed' | 'failed';
+
+  @Prop({ type: Date, default: null })
+  printedAt!: Date | null;
+
   createdAt!: Date;
   updatedAt!: Date;
 }

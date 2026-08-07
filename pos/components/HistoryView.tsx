@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Copy, Edit, Eye, History, Printer, Search, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy, Edit, Eye, History, Loader2, Printer, Search, Trash2 } from 'lucide-react';
 import { posFetch } from '@/lib/device';
+import { DEFAULT_PRINTER_SETTINGS, printReceiptOnBridge, reportPrintStatus } from '@/lib/hardware';
 import { formatMinor } from '@/lib/money';
-import type { PosSale, PosSalesListResponse } from '@/types/pos';
+import type { PosPrinterSettings, PosSale, PosSalesListResponse } from '@/types/pos';
 import NavBar from './NavBar';
 import type { PrintFormat } from './PrintMenu';
 import PrintPreview from './PrintPreview';
@@ -30,6 +31,46 @@ export default function HistoryView({ canEdit }: { canEdit: boolean }) {
   const [initialEdit, setInitialEdit] = useState(false);
   const [printJob, setPrintJob] = useState<{ sale: PosSale; format: PrintFormat } | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [printerSettings, setPrinterSettings] = useState<PosPrinterSettings>(DEFAULT_PRINTER_SETTINGS);
+  const [printingId, setPrintingId] = useState<string | null>(null);
+  const [reprintFeedback, setReprintFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    posFetch('/api/printer/settings', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: Partial<PosPrinterSettings> | null) => { if (data) setPrinterSettings({ ...DEFAULT_PRINTER_SETTINGS, ...data }); })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!reprintFeedback) return;
+    const id = setTimeout(() => setReprintFeedback(null), 3000);
+    return () => clearTimeout(id);
+  }, [reprintFeedback]);
+
+  // The one-click printer icon tries a silent bridge reprint first — same as
+  // a fresh sale — and only falls back to the on-screen preview (manual,
+  // cashier-initiated browser printing) if the bridge is unreachable or the
+  // print itself fails. Never touches the sale; only its printStatus.
+  async function handleReprint(s: PosSale) {
+    if (printingId) return;
+    setPrintingId(s.id);
+    setReprintFeedback(null);
+    try {
+      await printReceiptOnBridge(s, printerSettings);
+      await reportPrintStatus(s.id, 'printed');
+      setReprintFeedback({ tone: 'success', message: `Ticket #${s.saleNumber} imprimé.` });
+    } catch (error) {
+      await reportPrintStatus(s.id, 'failed');
+      setReprintFeedback({
+        tone: 'error',
+        message: error instanceof Error ? `Impression automatique indisponible : ${error.message}` : 'Impression automatique indisponible.',
+      });
+      setPrintJob({ sale: s, format: 'receipt' });
+    } finally {
+      setPrintingId(null);
+    }
+  }
 
   function loadSales() {
     setLoading(true);
@@ -71,6 +112,15 @@ export default function HistoryView({ canEdit }: { canEdit: boolean }) {
           <h1 className="hidden text-sm font-black text-slate-700 sm:block">Historique des commandes POS</h1>
         </div>
       </header>
+
+      {reprintFeedback && (
+        <div
+          role="status"
+          className={`flex flex-none items-center px-6 py-2 text-xs font-bold ${reprintFeedback.tone === 'success' ? 'border-b border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-b border-rose-200 bg-rose-50 text-rose-800'}`}
+        >
+          {reprintFeedback.message}
+        </div>
+      )}
 
       <main className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
         <div className="card flex flex-wrap items-center gap-3 p-4">
@@ -144,11 +194,12 @@ export default function HistoryView({ canEdit }: { canEdit: boolean }) {
                               <Edit size={14} />
                             </button>
                             <button
-                              onClick={() => setPrintJob({ sale: s, format: 'receipt' })}
-                              className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition"
+                              disabled={printingId === s.id}
+                              onClick={() => handleReprint(s)}
+                              className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-900 transition disabled:opacity-50"
                               title="Réimprimer le reçu"
                             >
-                              <Printer size={14} />
+                              {printingId === s.id ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
                             </button>
                             <button
                               disabled={deletingId === s.id || s.status === 'CANCELLED'}

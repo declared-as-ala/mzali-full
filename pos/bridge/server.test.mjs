@@ -49,4 +49,39 @@ test('loopback bridge works without setup and exposes safe defaults', async (con
 
   const removedSettings = await fetch(`${url}/v1/settings`, { headers: { Origin: 'https://pos.example' } });
   assert.equal(removedSettings.status, 404);
+
+  const printers = await fetch(`${url}/v1/printers`, { headers: { Origin: 'https://pos.example' } });
+  assert.equal(printers.status, 200);
+  assert.deepEqual(await printers.json(), { ok: true, printers: [] }); // no real printer on the CI runner
+
+  const printerStatus = await fetch(`${url}/v1/printer/status?name=Thermal80`, { headers: { Origin: 'https://pos.example' } });
+  assert.equal(printerStatus.status, 200);
+  const statusBody = await printerStatus.json();
+  assert.equal(statusBody.ok, true);
+  assert.equal(statusBody.printer.name, 'Thermal80');
+
+  const printMissingFields = await fetch(`${url}/v1/print`, {
+    method: 'POST',
+    headers: { Origin: 'https://pos.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: 'print:1' }),
+  });
+  assert.equal(printMissingFields.status, 503);
+  assert.match((await printMissingFields.json()).error, /ticket/i);
+
+  const minimalSale = {
+    saleNumber: 1, createdAt: new Date().toISOString(), completedAt: new Date().toISOString(),
+    lines: [], subtotalMinor: 0, discountMinor: 0, totalMinor: 0, payments: [],
+    loyaltyPointsEarned: 0, loyaltyPointsRedeemed: 0,
+  };
+  const printSettings = { paperWidthMm: 80, printLogo: true, printQr: false };
+  const printResponse = await fetch(`${url}/v1/print`, {
+    method: 'POST',
+    headers: { Origin: 'https://pos.example', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId: 'print:2', printerName: 'Thermal80', sale: minimalSale, settings: printSettings }),
+  });
+  // This test runner isn't Windows, so the receipt still builds correctly
+  // (proves the endpoint wiring end to end) but the actual OS-level print
+  // call correctly refuses — exercised for real on the Windows install.
+  assert.equal(printResponse.status, 503);
+  assert.match((await printResponse.json()).error, /Windows/i);
 });

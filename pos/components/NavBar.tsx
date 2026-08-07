@@ -1,12 +1,13 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutGrid, LayoutDashboard, History } from 'lucide-react';
+import { LayoutGrid, LayoutDashboard, History, Settings } from 'lucide-react';
 
 const TABS = [
   { href: '/till', label: 'Caisse', icon: LayoutGrid },
   { href: '/history', label: 'Commandes', icon: History },
   { href: '/dashboard', label: 'Rapports', icon: LayoutDashboard },
+  { href: '/settings', label: 'Réglages', icon: Settings },
 ];
 
 /** Shared navigation strip across the three POS pages (till/dashboard/
