@@ -11,6 +11,8 @@ if not exist "%~dp0server.mjs" goto :not_extracted
 if not exist "%~dp0drawer.mjs" goto :not_extracted
 if not exist "%~dp0display.mjs" goto :not_extracted
 if not exist "%~dp0dedupe.mjs" goto :not_extracted
+if not exist "%~dp0printer.mjs" goto :not_extracted
+if not exist "%~dp0receipt.mjs" goto :not_extracted
 
 where node.exe >nul 2>nul
 if errorlevel 1 (

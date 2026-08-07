@@ -17,7 +17,7 @@ if (-not $nodeCommand) {
 $installFolder = Join-Path $env:LOCALAPPDATA 'MZALI POS Bridge'
 New-Item -ItemType Directory -Path $installFolder -Force | Out-Null
 
-$bridgeFiles = @('server.mjs', 'drawer.mjs', 'display.mjs', 'dedupe.mjs')
+$bridgeFiles = @('server.mjs', 'drawer.mjs', 'display.mjs', 'dedupe.mjs', 'printer.mjs', 'receipt.mjs')
 foreach ($bridgeFile in $bridgeFiles) {
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot $bridgeFile) -Destination (Join-Path $installFolder $bridgeFile) -Force
 }
