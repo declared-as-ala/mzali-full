@@ -1,7 +1,7 @@
 import { Command, CommandRunner, Option } from 'nest-commander';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { attemptStatus, LEGACY_TENTATIVE_STATUS, MAX_ATTEMPT, MIN_ATTEMPT } from '@/orders/order-status';
+import { attemptStatus, LEGACY_TENTATIVE_STATUS, MIN_ATTEMPT } from '@/orders/order-status';
 import { Order } from '@/orders/order.schema';
 
 type Options = { dryRun?: boolean };
