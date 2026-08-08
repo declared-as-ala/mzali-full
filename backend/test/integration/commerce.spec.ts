@@ -321,6 +321,7 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
   test('the attempt number lives in statusHistory: from/to/actor/date are recorded for every attempt transition, oldest first', async () => {
     if (!infraAvailable) return;
     const productId = await createProduct('Commerce Test Attempt History', 10);
+    await inventoryService.adjust(productId, 1, 'test seed', { type: 'system', id: null, name: 'test' });
     const phone = uniquePhone();
     const created = await request(server)
       .post('/api/v1/orders')
@@ -387,6 +388,9 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
   test('GET /admin/orders/counts returns one aggregation matching individually-filtered list() totals', async () => {
     if (!infraAvailable) return;
     const productId = await createProduct('Commerce Test Counts', 18);
+    // Only order c gets confirmed below (a and b stay at tentative-1), but
+    // confirming still commits real stock, so it needs at least 1 unit on hand.
+    await inventoryService.adjust(productId, 1, 'test seed', { type: 'system', id: null, name: 'test' });
     const makeOrder = () =>
       request(server)
         .post('/api/v1/orders')
