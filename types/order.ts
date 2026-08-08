@@ -62,10 +62,9 @@ export type OrderResponse = {
 
 /**
  * Single-round-trip status breakdown for the admin/employee orders list —
- * mirrors backend/src/contracts/order.ts's OrderStatusCounts (see
- * OrdersService.counts()). `total` is the "Normal" tab total (pending +
- * confirmed + every tentative attempt + cancelled); abandoned/trash are
- * separate buckets on purpose, matching the existing tab split.
+ * see OrdersService.counts(). `total` is the "Normal" tab total (pending +
+ * confirmed + every tentative attempt + cancelled), matching the tab split
+ * already used elsewhere; abandoned/trash are separate buckets on purpose.
  */
 export type OrderStatusCounts = {
   total: number;
