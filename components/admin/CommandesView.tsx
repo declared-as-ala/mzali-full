@@ -208,42 +208,16 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         return false;
       }
 
-      // 3. Date Filter
-      if (datePreset) {
-        const oDate = new Date(o.createdAt);
-        oDate.setHours(0, 0, 0, 0);
+      // Date range is deliberately NOT re-applied here — `orders` already
+      // comes pre-scoped by the server's after/before query (the same
+      // values the counts aggregation uses), which is what keeps the visible
+      // rows and the header/filter counts in agreement. Redoing it here with
+      // the browser's local clock against each order's UTC createdAt used to
+      // silently drop rows the server (and the count) had already correctly
+      // included whenever the browser and server disagreed on what "today"
+      // is — e.g. "Hier" showing a count of 16 but only 4 visible rows.
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        if (datePreset === 'today') {
-          if (oDate.getTime() !== today.getTime()) return false;
-        } else if (datePreset === 'yesterday') {
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          if (oDate.getTime() !== yesterday.getTime()) return false;
-        } else if (datePreset === '7days') {
-          const sevenDaysAgo = new Date(today);
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          if (oDate.getTime() < sevenDaysAgo.getTime()) return false;
-        } else if (datePreset === 'month') {
-          const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-          if (oDate.getTime() < firstOfMonth.getTime()) return false;
-        } else if (datePreset === 'custom') {
-          if (startDate) {
-            const start = new Date(startDate);
-            start.setHours(0, 0, 0, 0);
-            if (oDate.getTime() < start.getTime()) return false;
-          }
-          if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            if (oDate.getTime() > end.getTime()) return false;
-          }
-        }
-      }
-
-      // 4. Search Query Filter
+      // 3. Search Query Filter
       if (!q) return true;
 
       const normQ = q.replace(/\D/g, '');
@@ -274,7 +248,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, query, statusFilter, productFilter, datePreset, startDate, endDate, activeTab]);
+  }, [orders, query, statusFilter, productFilter, activeTab]);
 
   function openCreate() { setEditingId(null); setDrawerOpen(true); }
   function openEdit(id: string) { setEditingId(id); setDrawerOpen(true); }
