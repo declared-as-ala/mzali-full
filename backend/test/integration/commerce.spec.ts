@@ -251,6 +251,170 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     expect(movements.map((m) => m.type).reverse()).toEqual(['manual_adjust', 'order_commit', 'manual_adjust']);
   });
 
+  test('tentative-1..5 transitions never touch stock, and stock still commits exactly once at confirme', async () => {
+    if (!infraAvailable) return;
+    const productId = await createProduct('Commerce Test Attempts Stock', 40);
+    const actor = { type: 'system' as const, id: null, name: 'test' };
+    await inventoryService.adjust(productId, 2, 'test seed', actor);
+    const phone = uniquePhone();
+    const created = await request(server)
+      .post('/api/v1/orders')
+      .set('X-Service-Token', serviceToken())
+      .send({
+        customer: { firstName: 'Test', phone, city: 'Tunis', address: 'Rue Test' },
+        items: [{ lineId: 'l1', productId, name: 'X', price: 40, qty: 2, image: '' }],
+        shipping: 0,
+      })
+      .expect(201);
+    const orderId = created.body.id as string;
+
+    for (const status of ['tentative-1', 'tentative-2', 'tentative-3']) {
+      await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status }).expect(200);
+      const { items } = await inventoryService.list(1, 10, 'Commerce Test Attempts Stock');
+      expect(items[0]?.reserved).toBe(0);
+      expect(items[0]?.onHand).toBe(2); // still seeded 2 — no reservation/commit through any attempt
+    }
+
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
+    const { items } = await inventoryService.list(1, 10, 'Commerce Test Attempts Stock');
+    expect(items[0]?.onHand).toBe(0); // committed exactly once here, not during any attempt
+
+    const { items: movements } = await inventoryService.movementsFor(productId, 1, 10);
+    // Only the seed adjustment and the single commit at confirme — the three
+    // attempt transitions produced zero movement rows.
+    expect(movements.map((m) => m.type).reverse()).toEqual(['manual_adjust', 'order_commit']);
+  });
+
+  test('tentative-5 -> annule restocks exactly once, same as confirme -> annule', async () => {
+    if (!infraAvailable) return;
+    const productId = await createProduct('Commerce Test Attempts Cancel', 25);
+    const actor = { type: 'system' as const, id: null, name: 'test' };
+    await inventoryService.adjust(productId, 1, 'test seed', actor);
+    const phone = uniquePhone();
+    const created = await request(server)
+      .post('/api/v1/orders')
+      .set('X-Service-Token', serviceToken())
+      .send({
+        customer: { firstName: 'Test', phone, city: 'Tunis', address: 'Rue Test' },
+        items: [{ lineId: 'l1', productId, name: 'X', price: 25, qty: 1, image: '' }],
+        shipping: 0,
+      })
+      .expect(201);
+    const orderId = created.body.id as string;
+
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'tentative-5' }).expect(200);
+    let { items } = await inventoryService.list(1, 10, 'Commerce Test Attempts Cancel');
+    expect(items[0]?.onHand).toBe(1); // still untouched — an attempt is not a commit
+
+    await request(server)
+      .put(`/api/v1/admin/orders/${orderId}`)
+      .set('Authorization', adminAuth)
+      .send({ status: 'annule', reason: 'client injoignable' })
+      .expect(200);
+    ({ items } = await inventoryService.list(1, 10, 'Commerce Test Attempts Cancel'));
+    expect(items[0]?.onHand).toBe(1); // cancelling a never-committed order restocks nothing extra, stays at 1
+
+    const order = await orders.findById(orderId);
+    expect(order?.status).toBe('annule');
+  });
+
+  test('the attempt number lives in statusHistory: from/to/actor/date are recorded for every attempt transition, oldest first', async () => {
+    if (!infraAvailable) return;
+    const productId = await createProduct('Commerce Test Attempt History', 10);
+    const phone = uniquePhone();
+    const created = await request(server)
+      .post('/api/v1/orders')
+      .set('X-Service-Token', serviceToken())
+      .send({
+        customer: { firstName: 'Test', phone, city: 'Tunis', address: 'Rue Test' },
+        items: [{ lineId: 'l1', productId, name: 'X', price: 10, qty: 1, image: '' }],
+        shipping: 0,
+      })
+      .expect(201);
+    const orderId = created.body.id as string;
+
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'tentative-1' }).expect(200);
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'tentative-2' }).expect(200);
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
+
+    const order = await orders.findById(orderId);
+    const transitions = (order?.statusHistory ?? []).map((h) => ({ from: h.from, to: h.to }));
+    expect(transitions).toEqual([
+      { from: null, to: 'en-attente' },
+      { from: 'en-attente', to: 'tentative-1' },
+      { from: 'tentative-1', to: 'tentative-2' },
+      { from: 'tentative-2', to: 'confirme' },
+    ]);
+    for (const entry of order?.statusHistory ?? []) {
+      expect(entry.by).toBeTruthy();
+      expect(entry.at).toBeInstanceOf(Date);
+    }
+    // the legacy attempts counter (still exposed as meta._mzem_attempts)
+    // tracks the last attempt number reached, not reset by the later confirm
+    expect(order?.attempts).toBe(2);
+  });
+
+  test('saving the same status twice is a no-op: no duplicate history entry, no duplicate stock movement', async () => {
+    if (!infraAvailable) return;
+    const productId = await createProduct('Commerce Test No Dup Save', 12);
+    const actor = { type: 'system' as const, id: null, name: 'test' };
+    await inventoryService.adjust(productId, 1, 'test seed', actor);
+    const phone = uniquePhone();
+    const created = await request(server)
+      .post('/api/v1/orders')
+      .set('X-Service-Token', serviceToken())
+      .send({
+        customer: { firstName: 'Test', phone, city: 'Tunis', address: 'Rue Test' },
+        items: [{ lineId: 'l1', productId, name: 'X', price: 12, qty: 1, image: '' }],
+        shipping: 0,
+      })
+      .expect(201);
+    const orderId = created.body.id as string;
+
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
+    await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
+
+    const order = await orders.findById(orderId);
+    // Only one 'confirme' entry beyond the initial creation entry — the
+    // second identical PUT is a same-status no-op (applyStatusTransition
+    // returns early when from === nextStatus).
+    expect((order?.statusHistory ?? []).filter((h) => h.to === 'confirme')).toHaveLength(1);
+
+    const { items: movements } = await inventoryService.movementsFor(productId, 1, 10);
+    expect(movements.filter((m) => m.type === 'order_commit')).toHaveLength(1);
+  });
+
+  test('GET /admin/orders/counts returns one aggregation matching individually-filtered list() totals', async () => {
+    if (!infraAvailable) return;
+    const productId = await createProduct('Commerce Test Counts', 18);
+    const makeOrder = () =>
+      request(server)
+        .post('/api/v1/orders')
+        .set('X-Service-Token', serviceToken())
+        .send({
+          customer: { firstName: 'Test', phone: uniquePhone(), city: 'Tunis', address: 'Rue Test' },
+          items: [{ lineId: 'l1', productId, name: 'X', price: 18, qty: 1, image: '' }],
+          shipping: 0,
+        })
+        .expect(201);
+
+    const [a, b, c] = await Promise.all([makeOrder(), makeOrder(), makeOrder()]);
+    await request(server).put(`/api/v1/admin/orders/${a.body.id}`).set('Authorization', adminAuth).send({ status: 'tentative-1' }).expect(200);
+    await request(server).put(`/api/v1/admin/orders/${b.body.id}`).set('Authorization', adminAuth).send({ status: 'tentative-1' }).expect(200);
+    await request(server).put(`/api/v1/admin/orders/${c.body.id}`).set('Authorization', adminAuth).send({ status: 'confirme' }).expect(200);
+
+    const counts = await request(server).get('/api/v1/admin/orders/counts').set('Authorization', adminAuth).expect(200);
+    const list = await request(server)
+      .get('/api/v1/admin/orders')
+      .set('Authorization', adminAuth)
+      .query({ status: 'tentative-1', perPage: 1 })
+      .expect(200);
+
+    expect(counts.body.attempts.attempt1).toBeGreaterThanOrEqual(2);
+    expect(counts.body.attempts.attempt1).toBe(list.body.total);
+    expect(counts.body.total).toBe(counts.body.pending + counts.body.confirmed + counts.body.attempts.total + counts.body.cancelled);
+  });
+
   // Order-to-employee assignment was intentionally removed — every employee
   // can see and act on every order (no per-employee ownership scoping).
   test('every employee can read/update any order — no per-employee assignment scoping', async () => {

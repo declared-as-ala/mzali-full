@@ -1,3 +1,5 @@
+import { TENTATIVE_STATUSES } from '@/orders/order-status';
+
 export type RevenueBucket = {
   date: string;
   revenue: number;
@@ -10,6 +12,10 @@ export type RawRevenueBucket = {
   orders: number;
 };
 
+// tentative-1..5 replace the single flat 'tentative' bar so the funnel
+// shows attempt progression instead of one permanently-zero legacy bucket
+// (see order-status.ts — no document should hold status:'tentative' after
+// the tentative-status migration runs).
 export const FUNNEL_ORDER = [
   'checkout-draft',
   'en-attente',
@@ -17,7 +23,7 @@ export const FUNNEL_ORDER = [
   'processing',
   'confirme',
   'completed',
-  'tentative',
+  ...TENTATIVE_STATUSES,
   'annule',
   'cancelled',
 ] as const;

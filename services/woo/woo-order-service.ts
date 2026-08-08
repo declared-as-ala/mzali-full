@@ -1,5 +1,5 @@
-import type { CheckoutPayload, OrderResponse } from '@/types';
-import type { OrderService, OrderListQuery, OrderListResult, OrderUpdate } from '../order-service';
+import type { CheckoutPayload, OrderResponse, OrderStatusCounts } from '@/types';
+import type { OrderCountsQuery, OrderService, OrderListQuery, OrderListResult, OrderUpdate } from '../order-service';
 import { wooClient } from './woo-client';
 import type { WooOrderRaw } from './woo-types';
 import { mapOrder } from './woo-mappers';
@@ -17,6 +17,38 @@ export class WooCommerceOrderService implements OrderService {
     });
     const items = res.data.map(mapOrder);
     return { items, total: res.total, totalPages: res.totalPages, page: query.page ?? 1 };
+  }
+
+  /**
+   * WooCommerce has no equivalent to the Mongo backend's single-aggregation
+   * counts endpoint (and never got the tentative-1..5 migration — this
+   * provider is legacy/rollback-only, still on the flat 'tentative'
+   * status), so this falls back to one list({perPage:1}) request per
+   * bucket, same as the admin orders page used to do inline before the
+   * mzali-api provider got a real aggregation. Only exercised if
+   * COMMERCE_PROVIDER is ever rolled back to 'woocommerce'.
+   */
+  async counts(query: OrderCountsQuery = {}): Promise<OrderStatusCounts> {
+    const buckets = ['en-attente', 'confirme', 'tentative', 'annule', 'checkout-draft', 'trash'] as const;
+    const totals = await Promise.all(
+      buckets.map((status) =>
+        this.list({ page: 1, perPage: 1, status, search: query.search, after: query.after, before: query.before })
+          .then((r) => r.total)
+          .catch(() => 0),
+      ),
+    );
+    const [pending, confirmed, tentative, cancelled, abandoned, trash] = totals;
+    return {
+      total: pending + confirmed + tentative + cancelled,
+      pending,
+      confirmed,
+      // Woo never had per-attempt statuses — the whole flat bucket reports
+      // as attempt1 so it's at least visible somewhere, not silently lost.
+      attempts: { total: tentative, attempt1: tentative, attempt2: 0, attempt3: 0, attempt4: 0, attempt5: 0 },
+      cancelled,
+      abandoned,
+      trash,
+    };
   }
 
   async create(payload: CheckoutPayload): Promise<OrderResponse> {

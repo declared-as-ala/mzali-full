@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Queue } from 'bullmq';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
-import type { AuditActor, CheckoutPayload, OrderResponse } from '@contracts';
+import type { AuditActor, CheckoutPayload, OrderResponse, OrderStatusCounts } from '@contracts';
 import { AuditService } from '@/audit/audit.service';
 import { Product } from '@/catalog/product.schema';
 import { primaryProductImage } from '@/catalog/product-media';
@@ -26,7 +26,7 @@ import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
 import { computeOrderTotals, computeStockDeltas } from './order-calc';
 import { toOrderContract } from './order.mapper';
-import { DEFAULT_STATUS, DRAFT_STATUS, planStockTransition, stockEffectForStatus } from './order-status';
+import { DEFAULT_STATUS, DRAFT_STATUS, getAttemptNumber, planStockTransition, stockEffectForStatus } from './order-status';
 import { Order, OrderDocument } from './order.schema';
 
 const ORDER_NUMBER_SEQUENCE = 'orderNumber';
@@ -182,7 +182,7 @@ export class OrdersService {
               deliveryCompany: dto.deliveryCompany ?? '',
               paymentMethod: dto.paymentMethod ?? 'cod',
               source: dto.source ?? '',
-              attempts: dto.attempts ?? 0,
+              attempts: getAttemptNumber(status) ?? dto.attempts ?? 0,
               idempotencyKey: idempotencyKey ?? undefined,
             },
           ],
@@ -294,6 +294,77 @@ export class OrdersService {
       this.model.countDocuments(filter),
     ]);
     return paginate(docs.map((d) => toOrderContract(d)), total, page, perPage);
+  }
+
+  /**
+   * Single round-trip status breakdown, replacing what used to be 6
+   * separate list({perPage:1}) calls (one per status) just to read their
+   * totals. One $facet aggregation scans the (search/date-filtered)
+   * collection once and counts every status bucket in parallel branches.
+   *
+   * Scope choice: counts respect `search`/`after`/`before` exactly like
+   * list() does, so "counts for Hier" and "the orders list for Hier" always
+   * agree — deliberately NOT always-global, see docs on the admin orders
+   * page for why. `total` here is the "Normal" tab total (pending +
+   * confirmed + every attempt + cancelled) — abandoned/trash are separate,
+   * intentionally-excluded buckets, exactly like the tab split already
+   * works; see OrderStatusCounts in contracts/order.ts for the exact shape.
+   */
+  async counts(query: Pick<OrderListQueryDto, 'search' | 'after' | 'before'>): Promise<OrderStatusCounts> {
+    const filter: Record<string, unknown> = {};
+    if (query.search) {
+      filter.$or = [
+        { 'customer.firstName': { $regex: query.search, $options: 'i' } },
+        { 'customer.phone': { $regex: query.search, $options: 'i' } },
+        { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
+      ];
+    }
+    if (query.after || query.before) {
+      filter.createdAt = {
+        ...(query.after ? { $gte: new Date(query.after) } : {}),
+        ...(query.before ? { $lte: new Date(query.before) } : {}),
+      };
+    }
+
+    const countBranch = (status: string) => [{ $match: { status } }, { $count: 'n' }];
+    const [facets] = await this.model.aggregate<Record<string, { n: number }[]>>([
+      { $match: filter },
+      {
+        $facet: {
+          pending: countBranch('en-attente'),
+          confirmed: countBranch('confirme'),
+          attempt1: countBranch('tentative-1'),
+          attempt2: countBranch('tentative-2'),
+          attempt3: countBranch('tentative-3'),
+          attempt4: countBranch('tentative-4'),
+          attempt5: countBranch('tentative-5'),
+          cancelled: countBranch('annule'),
+          abandoned: countBranch('checkout-draft'),
+          trash: countBranch('trash'),
+        },
+      },
+    ]);
+
+    const n = (key: string): number => facets?.[key]?.[0]?.n ?? 0;
+    const attempt1 = n('attempt1');
+    const attempt2 = n('attempt2');
+    const attempt3 = n('attempt3');
+    const attempt4 = n('attempt4');
+    const attempt5 = n('attempt5');
+    const attemptsTotal = attempt1 + attempt2 + attempt3 + attempt4 + attempt5;
+    const pending = n('pending');
+    const confirmed = n('confirmed');
+    const cancelled = n('cancelled');
+
+    return {
+      total: pending + confirmed + attemptsTotal + cancelled,
+      pending,
+      confirmed,
+      attempts: { total: attemptsTotal, attempt1, attempt2, attempt3, attempt4, attempt5 },
+      cancelled,
+      abandoned: n('abandoned'),
+      trash: n('trash'),
+    };
   }
 
   async ordersByPhone(phone: string) {
@@ -590,6 +661,14 @@ export class OrdersService {
 
     await this.maybeEarnLoyaltyPoints(doc, from, nextStatus, session);
 
+    // The attempt number now lives IN the status (tentative-N) — this keeps
+    // the legacy `attempts` field (still exposed as meta._mzem_attempts for
+    // any code still reading it) authoritatively in sync instead of trusting
+    // a caller-supplied value that could drift from the real status, which
+    // is exactly how orders used to end up displaying "Tentative 0".
+    const attemptNumber = getAttemptNumber(nextStatus);
+    if (attemptNumber !== null) doc.attempts = attemptNumber;
+
     doc.status = nextStatus;
     doc.statusHistory.push({ from, to: nextStatus, by: actor, at: new Date(), note } as Order['statusHistory'][number]);
     await this.audit.log({
@@ -597,9 +676,9 @@ export class OrdersService {
       action: 'order.status_change',
       entityType: 'order',
       entityId: doc.id,
-      summary: `Statut changé de "${from}" à "${nextStatus}"`,
+      summary: note ? `Statut changé de "${from}" à "${nextStatus}" — ${note}` : `Statut changé de "${from}" à "${nextStatus}"`,
       before: { status: from },
-      after: { status: nextStatus },
+      after: { status: nextStatus, note },
       ip: null,
     });
   }

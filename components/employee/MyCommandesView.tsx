@@ -5,32 +5,8 @@ import { Eye, Edit, Trash2, Search, X } from 'lucide-react';
 import OrderDrawer from '@/components/admin/OrderDrawer';
 import { useToast } from '@/components/admin/Toast';
 import { formatPrice, formatDate } from '@/lib/site-config';
+import { getOrderStatusLabel, getOrderStatusTone } from '@/lib/order-status';
 import type { OrderResponse } from '@/types';
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'En attente', 'en-attente': 'En attente', 'on-hold': 'En pause',
-  processing: 'En traitement', confirme: 'Confirmée',
-  completed: 'Terminée', cancelled: 'Annulée', annule: 'Annulée',
-  refunded: 'Remboursée', failed: 'Échouée', tentative: 'Tentative',
-  'auto-draft': 'Brouillon', 'checkout-draft': 'Abandonnée',
-  trash: 'Supprimée',
-};
-
-const STATUS_TONE: Record<string, string> = {
-  pending: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  'en-attente': 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  'on-hold': 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  processing: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-  confirme: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  cancelled: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  annule: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  failed: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  refunded: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
-  tentative: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
-  'checkout-draft': 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-  trash: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-};
 
 export default function MyCommandesView() {
   const router = useRouter();
@@ -337,7 +313,7 @@ export default function MyCommandesView() {
             <option value="">Tous les statuts</option>
             {availableStatuses.map((s) => (
               <option key={s} value={s}>
-                {STATUS_LABEL[s] ?? s} ×{statusCounts[s] ?? 0}
+                {getOrderStatusLabel(s)} ×{statusCounts[s] ?? 0}
               </option>
             ))}
           </select>
@@ -435,7 +411,7 @@ export default function MyCommandesView() {
           <tbody>
             {loading && <tr><td colSpan={10} className="p-6 text-center text-ink-700">Chargement…</td></tr>}
             {!loading && filteredOrders.map((o) => {
-              const tone = STATUS_TONE[String(o.status)] ?? 'bg-ink-100 text-ink-700 ring-1 ring-ink-200';
+              const tone = getOrderStatusTone(String(o.status));
               const isSelected = selected.has(o.id);
               return (
                 <tr key={o.id} className={`border-t border-ink-200 transition ${isSelected ? 'bg-brand-50/60' : 'hover:bg-ink-100'}`}>
@@ -460,7 +436,7 @@ export default function MyCommandesView() {
                   <td className="px-4 py-3 text-ink-700">{formatDate(o.createdAt)}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}>
-                      {STATUS_LABEL[o.status] ?? o.status}
+                      {getOrderStatusLabel(String(o.status))}
                     </span>
                   </td>
                   <td className="px-4 py-3">

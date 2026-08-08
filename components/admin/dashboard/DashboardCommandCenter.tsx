@@ -20,7 +20,7 @@ import type {
   GeographyPerformance, PosCashierPerformance, PosDailyPoint,
   RevenueSeriesPoint, StatusFunnelPoint
 } from '@/types/dashboard';
-import { STATUS_CHART_COLOR, STATUS_LABEL } from '../CommandesView';
+import { getOrderStatusChartColor, getOrderStatusLabel } from '@/lib/order-status';
 import { adminLoginHref } from '@/lib/admin-nav';
 import { useAdminHref } from '@/lib/admin-nav-context';
 
@@ -488,11 +488,11 @@ function StatusFunnel({ data }: { data: StatusFunnelPoint[] }) {
         <BarChart data={visible} layout="vertical" margin={{ left: 10, right: 10 }}>
           <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" horizontal={false} />
           <XAxis type="number" allowDecimals={false} hide />
-          <YAxis type="category" dataKey="status" width={95} tickFormatter={(st) => STATUS_LABEL[st] ?? st} tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(v) => [Number(v), 'Commandes']} labelFormatter={(st) => STATUS_LABEL[String(st)] ?? st} />
+          <YAxis type="category" dataKey="status" width={95} tickFormatter={(st) => getOrderStatusLabel(st)} tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false} />
+          <Tooltip formatter={(v) => [Number(v), 'Commandes']} labelFormatter={(st) => getOrderStatusLabel(String(st))} />
           <Bar dataKey="count" name="Commandes" radius={[0, 8, 8, 0]}>
             {visible.map((row) => (
-              <Cell key={row.status} fill={STATUS_CHART_COLOR[row.status] ?? '#2563eb'} />
+              <Cell key={row.status} fill={getOrderStatusChartColor(row.status)} />
             ))}
           </Bar>
         </BarChart>

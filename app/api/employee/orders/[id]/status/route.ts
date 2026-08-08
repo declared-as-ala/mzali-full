@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { orderService } from '@/services';
+import { TENTATIVE_STATUSES } from '@/lib/order-status';
 
 const ALLOWED_FOR_EMPLOYEE = new Set([
   'pending', 'en-attente',
   'processing', 'confirme',
-  'on-hold', 'tentative',
+  'on-hold', ...TENTATIVE_STATUSES,
   'completed',
   'cancelled', 'annule',
 ]);

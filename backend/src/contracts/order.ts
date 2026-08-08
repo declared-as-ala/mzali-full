@@ -59,3 +59,26 @@ export type OrderResponse = {
   shipping: number;
   meta?: Record<string, unknown>;
 };
+
+/**
+ * Single-round-trip status breakdown for the admin/employee orders list —
+ * see OrdersService.counts(). `total` is the "Normal" tab total (pending +
+ * confirmed + every tentative attempt + cancelled), matching the tab split
+ * already used elsewhere; abandoned/trash are separate buckets on purpose.
+ */
+export type OrderStatusCounts = {
+  total: number;
+  pending: number;
+  confirmed: number;
+  attempts: {
+    total: number;
+    attempt1: number;
+    attempt2: number;
+    attempt3: number;
+    attempt4: number;
+    attempt5: number;
+  };
+  cancelled: number;
+  abandoned: number;
+  trash: number;
+};

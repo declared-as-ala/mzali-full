@@ -25,6 +25,16 @@ export class OrdersAdminController {
     return this.orders.list(query);
   }
 
+  /** Single-round-trip status breakdown for the orders list header/filters
+   *  — see OrdersService.counts(). Deliberately ignores `status`/`page`/
+   *  `perPage` (it computes every bucket at once) but respects `search`/
+   *  `after`/`before`, same scope as list(). */
+  @Get('admin/orders/counts')
+  @RequirePermissions('orders.read')
+  counts(@Query() query: OrderListQueryDto) {
+    return this.orders.counts(query);
+  }
+
   @Post('admin/orders')
   @RequirePermissions('orders.write')
   create(@Body() dto: CheckoutDto) {

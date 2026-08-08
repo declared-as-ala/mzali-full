@@ -10,6 +10,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { ORDER_STATUS_VALUES } from '@/orders/order-status';
 
 class CheckoutCustomerDto {
   @IsString() firstName!: string;
@@ -46,7 +47,7 @@ export class CheckoutDto {
   @IsOptional() @IsString() deliveryCompany?: string;
   @IsOptional() @IsIn(['cod', 'card']) paymentMethod?: 'cod' | 'card';
   @IsOptional() @IsString() source?: string;
-  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsIn(ORDER_STATUS_VALUES) status?: string;
   @IsOptional() @IsInt() attempts?: number;
   @IsOptional() @IsString() couponCode?: string;
 }

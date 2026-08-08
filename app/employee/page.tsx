@@ -3,10 +3,10 @@ import { ShoppingCart, Clock, CheckCircle2, Package } from 'lucide-react';
 import { getSession } from '@/lib/auth';
 import { orderService } from '@/services';
 import { formatPrice } from '@/lib/site-config';
+import { TENTATIVE_STATUSES } from '@/lib/order-status';
 
 export const dynamic = 'force-dynamic';
 
-const ACTIVE = ['pending', 'en-attente', 'processing', 'confirme', 'on-hold', 'tentative'];
 const DONE = ['completed'];
 const CANCELLED = ['cancelled', 'annule', 'refunded', 'failed'];
 
@@ -19,7 +19,9 @@ export default async function EmployeeDashboard() {
   }).catch(() => ({ items: [], total: 0, totalPages: 0, page: 1 }));
 
   const items = result.items;
-  const pending = items.filter((o) => ['pending', 'en-attente', 'on-hold', 'tentative'].includes(String(o.status))).length;
+  // 'tentative' (flat) kept for any pre-migration document a report might
+  // still surface; tentative-1..5 are the real statuses going forward.
+  const pending = items.filter((o) => ['pending', 'en-attente', 'on-hold', 'tentative', ...TENTATIVE_STATUSES].includes(String(o.status))).length;
   const inProgress = items.filter((o) => ['processing', 'confirme'].includes(String(o.status))).length;
   const completed = items.filter((o) => DONE.includes(String(o.status))).length;
   const cancelled = items.filter((o) => CANCELLED.includes(String(o.status))).length;

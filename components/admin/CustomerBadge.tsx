@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Users, Copy } from 'lucide-react';
 import { formatPrice } from '@/lib/site-config';
 import { useAdminHref } from '@/lib/admin-nav-context';
+import { getOrderStatusLabel, isAttemptStatus } from '@/lib/order-status';
 
 type CustomerOrder = {
   id: string;
@@ -15,17 +16,10 @@ type CustomerOrder = {
   thumbnails: string[];
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'En attente', 'en-attente': 'En attente', 'on-hold': 'En attente',
-  processing: 'En traitement', confirme: 'Confirmée',
-  completed: 'Terminée', cancelled: 'Annulée', annule: 'Annulée',
-  refunded: 'Remboursée', failed: 'Échouée', tentative: 'Tentative',
-};
 const STATUS_TONE: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-700',
   'en-attente': 'bg-amber-50 text-amber-700',
   'on-hold': 'bg-amber-50 text-amber-700',
-  tentative: 'bg-amber-50 text-amber-700',
   processing: 'bg-blue-50 text-blue-700',
   confirme: 'bg-blue-50 text-blue-700',
   completed: 'bg-emerald-50 text-emerald-700',
@@ -34,6 +28,10 @@ const STATUS_TONE: Record<string, string> = {
   refunded: 'bg-slate-100 text-slate-700',
   failed: 'bg-red-50 text-red-700',
 };
+function toneFor(status: string): string {
+  if (isAttemptStatus(status)) return 'bg-amber-50 text-amber-700';
+  return STATUS_TONE[status] ?? 'bg-ink-100 text-ink-700';
+}
 
 type Props = {
   phone: string;
@@ -112,8 +110,8 @@ export default function CustomerBadge({ phone, label = 'Client régulier', apiBa
             <ul className="max-h-72 space-y-2 overflow-auto">
               {data.orders.slice(0, 8).map((o) => {
                 const dt = new Date(o.createdAt);
-                const tone = STATUS_TONE[o.status] ?? 'bg-ink-100 text-ink-700';
-                const lbl = STATUS_LABEL[o.status] ?? o.status;
+                const tone = toneFor(o.status);
+                const lbl = getOrderStatusLabel(o.status);
                 return (
                   <li key={o.id} className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-3">
                     <div className="mb-2 flex items-center justify-between">

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ORDER_STATUS_VALUES } from '@/orders/order-status';
 
 class OrderUpdateCustomerDto {
   @IsOptional() @IsString() firstName?: string;
@@ -23,7 +24,7 @@ class OrderUpdateItemDto {
 
 /** Admin/employee order edits — every field optional (PATCH-style). */
 export class UpdateOrderDto {
-  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsIn(ORDER_STATUS_VALUES) status?: string;
   @IsOptional() @ValidateNested() @Type(() => OrderUpdateCustomerDto) customer?: OrderUpdateCustomerDto;
   @IsOptional() @IsNumber() shipping?: number;
   @IsOptional() @IsString() deliveryCompany?: string;
@@ -39,5 +40,5 @@ export class UpdateOrderDto {
 }
 
 export class UpdateStatusDto {
-  @IsString() status!: string;
+  @IsIn(ORDER_STATUS_VALUES) status!: string;
 }

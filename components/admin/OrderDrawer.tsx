@@ -5,6 +5,7 @@ import NumberField from './NumberField';
 import { Save, Trash2, Plus, Check, AlertTriangle } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
+import { attemptStatus, getAttemptNumber, getOrderStatusLabel, isAttemptStatus, MAX_ATTEMPT, MIN_ATTEMPT } from '@/lib/order-status';
 import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/types';
 
 type ProductPickerItem = { id: string; name: string; price: number; image?: string };
@@ -25,23 +26,8 @@ type ProductInfo = {
   image?: string;
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'En attente',
-  'en-attente': 'En attente',
-  processing: 'En traitement',
-  confirme: 'Confirmée',
-  'on-hold': 'En pause',
-  completed: 'Terminée',
-  cancelled: 'Annulée',
-  annule: 'Annulée',
-  refunded: 'Remboursée',
-  failed: 'Échouée',
-  tentative: 'Tentative',
-  'auto-draft': 'Brouillon',
-  'checkout-draft': 'Abandonnée',
-};
 function labelFor(slug: string): string {
-  return STATUS_LABEL[slug] ?? slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return getOrderStatusLabel(slug);
 }
 
 /** Mirrors backend/src/orders/order-status.ts's COMMIT_STATUSES — an order
@@ -269,9 +255,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         if (r.ok) setProducts(await r.json());
       }).catch(() => {});
     }
-    // Load available order-status slugs
+    // Load available order-status slugs — 'tentative' is the sentinel for
+    // "any attempt", resolved to a real tentative-N status on save (see
+    // save()'s resolvedStatus) and expanded from a loaded order's real
+    // status back to this sentinel + attempts above.
     if (!statusList.length) {
-      setStatusList(['confirme', 'en-attente', 'tentative', 'annule']);
+      setStatusList(['en-attente', 'confirme', 'tentative', 'annule']);
     }
     if (orderId) {
       setLoading(true);
@@ -286,9 +275,15 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           return r.json();
         })
         .then((o: OrderResponse) => {
-          setStatus(o.status);
-          setOriginalStatus(String(o.status));
-          setAttempts(Number(o.meta?._mzem_attempts ?? 1));
+          const loadedStatus = String(o.status);
+          const attemptNumber = getAttemptNumber(loadedStatus);
+          // The main selector only ever shows the 'tentative' sentinel — the
+          // specific attempt number lives in the secondary selector, driven
+          // by `attempts` below, exactly like a fresh "En attente -> Tentative"
+          // selection would set it.
+          setStatus((isAttemptStatus(loadedStatus) ? 'tentative' : loadedStatus) as OrderStatus);
+          setOriginalStatus(loadedStatus);
+          setAttempts(attemptNumber ?? MIN_ATTEMPT);
           setNavexTracking(String((o.meta?._navex_tracking as string) ?? ''));
           setNavexStatus(((o.meta?._navex_status as 'sent' | 'failed') ?? 'idle'));
           setNavexMsg(String((o.meta?._navex_error as string) ?? ''));
@@ -474,7 +469,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     saveInFlightRef.current = true;
     setSaving(true);
     try {
-      const statusChanged = isEdit ? (status && status !== originalStatus) : Boolean(status);
+      // The main selector only ever holds the 'tentative' sentinel — resolve
+      // it to the real tentative-N status (from the secondary selector)
+      // right before it's compared/sent, exactly like the load path resolves
+      // the other direction.
+      const resolvedStatus = status === 'tentative' ? attemptStatus(attempts) : status;
+      const statusChanged = isEdit ? (resolvedStatus && resolvedStatus !== originalStatus) : Boolean(resolvedStatus);
       // Edit and create hit entirely different backend endpoints with
       // entirely different DTOs — an edit goes to admin/employee
       // UpdateOrderDto (whitelists unitPrice/bundleSlot/privateNote/
@@ -522,8 +522,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           };
       // subtotal/total are deliberately NOT sent either way — the backend
       // always recomputes real totals from items+shipping server-side.
-      if (statusChanged) payload.status = status;
-      payload.attempts = attempts;
+      if (statusChanged) payload.status = resolvedStatus;
+      // attempts is no longer sent from here — the backend derives it
+      // straight from the tentative-N status itself (see
+      // OrdersService.applyStatusTransition), which is what fixed "Tentative
+      // 0" in the first place: a separately-tracked counter that could
+      // drift out of sync with the actual status.
       if (isEdit && editReason.trim()) payload.reason = editReason.trim();
       const url = isEdit ? `${apiBase}/orders/${orderId}` : `${apiBase}/orders`;
       const method = isEdit ? 'PUT' : 'POST';
@@ -656,37 +660,22 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 <select className="input" value={status} onChange={(e) => setStatus(e.target.value as OrderStatus)}>
                   <option value="">— Par défaut —</option>
                   {statusList.map((s) => (
-                    <option key={s} value={s}>
-                      {s === 'tentative' ? `Tentative ${attempts}` : labelFor(s)}
-                    </option>
+                    <option key={s} value={s}>{labelFor(s)}</option>
                   ))}
                 </select>
               </Field>
 
               {status === 'tentative' && (
-                <Field label="Attempt">
-                  <div className="flex items-center gap-1 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setAttempts((v) => Math.max(1, v - 1))}
-                      className="grid h-12 w-12 place-items-center rounded-xl border border-ink-200 bg-white text-ink-900 font-bold hover:bg-ink-100 transition active:scale-95"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      value={attempts}
-                      onChange={(e) => setAttempts(Math.max(1, Number(e.target.value) || 1))}
-                      className="h-12 w-28 rounded-xl border border-ink-200 bg-white px-4 text-center font-black outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50 text-ink-900"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setAttempts((v) => v + 1)}
-                      className="grid h-12 w-12 place-items-center rounded-xl border border-ink-200 bg-white text-ink-900 font-bold hover:bg-ink-100 transition active:scale-95"
-                    >
-                      +
-                    </button>
-                  </div>
+                <Field label="Numéro de tentative">
+                  <select
+                    className="input"
+                    value={attempts}
+                    onChange={(e) => setAttempts(Number(e.target.value))}
+                  >
+                    {Array.from({ length: MAX_ATTEMPT - MIN_ATTEMPT + 1 }, (_, i) => MIN_ATTEMPT + i).map((n) => (
+                      <option key={n} value={n}>Tentative {n}</option>
+                    ))}
+                  </select>
                 </Field>
               )}
             </div>

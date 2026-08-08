@@ -7,65 +7,21 @@ import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
 import { formatPrice, formatDate } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
-import type { OrderResponse } from '@/types';
+import { getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, TENTATIVE_STATUSES } from '@/lib/order-status';
+import type { OrderResponse, OrderStatusCounts } from '@/types';
 
-export const STATUS_LABEL: Record<string, string> = {
-  pending: 'En attente',
-  'en-attente': 'En attente',
-  'on-hold': 'En attente',
-  processing: 'En traitement',
-  confirme: 'Confirmée',
-  completed: 'Terminée',
-  cancelled: 'Annulée',
-  annule: 'Annulée',
-  refunded: 'Remboursée',
-  failed: 'Échouée',
-  tentative: 'Tentative',
-  'auto-draft': 'Brouillon',
-  'checkout-draft': 'Abandonnée',
-  abandoned: 'Abandonnée',
-  abondonne: 'Abandonnée',
-  trash: 'Supprimée',
+const EMPTY_COUNTS: OrderStatusCounts = {
+  total: 0, pending: 0, confirmed: 0,
+  attempts: { total: 0, attempt1: 0, attempt2: 0, attempt3: 0, attempt4: 0, attempt5: 0 },
+  cancelled: 0, abandoned: 0, trash: 0,
 };
 
-// Color tones — green=confirmé/livré, red=annulé, orange=tentative, amber=en-attente, blue=processing
-export const STATUS_TONE: Record<string, string> = {
-  pending: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  'en-attente': 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  'on-hold': 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  processing: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-  confirme: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  cancelled: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  annule: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  failed: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  refunded: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
-  tentative: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
-  'auto-draft': 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
-  'checkout-draft': 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200',
-  abandoned: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  abondonne: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  trash: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-};
-
-export const STATUS_CHART_COLOR: Record<string, string> = {
-  pending: '#d97706',
-  'en-attente': '#d97706',
-  'on-hold': '#d97706',
-  processing: '#0e55fb',
-  confirme: '#059669',
-  completed: '#059669',
-  cancelled: '#dc2626',
-  annule: '#dc2626',
-  failed: '#dc2626',
-  refunded: '#64748b',
-  tentative: '#ea580c',
-  'auto-draft': '#64748b',
-  'checkout-draft': '#4f46e5',
-  abandoned: '#dc2626',
-  abondonne: '#dc2626',
-  trash: '#dc2626',
-};
+/** Fixed set for the "Normal" tab's status filter — no longer derived from
+ *  whichever statuses happen to be on the currently loaded page (that was
+ *  a real source of the "counts don't mean what you think" confusion this
+ *  view used to have). 'tentative' here is a UI-only sentinel meaning "any
+ *  of tentative-1..5", expanded server-side — see app/admin/commandes/page.tsx. */
+const NORMAL_STATUS_FILTERS = ['en-attente', 'confirme', 'tentative', 'annule'];
 
 type Props = {
   initialOrders: OrderResponse[];
@@ -73,15 +29,17 @@ type Props = {
   totalPages?: number;
   page?: number;
   repeatCounts?: Record<string, number>;
-  tabCounts?: { normal: number; abandoned: number; trash: number };
-  statusCounts?: Record<string, number>;
+  /** Real backend aggregation (OrdersService.counts()) — one number per
+   *  status bucket, always reflecting the full database (scoped to the
+   *  active search/date filter), never just the currently loaded page. */
+  counts?: OrderStatusCounts;
   /** Employees get this exact same view (full list + pagination, not the
    *  separate MyCommandesView) pointed at the employee-scoped proxy routes —
    *  full parity with admin: view, create, edit, delete, all of it. */
   apiBase?: '/api/admin' | '/api/employee';
 };
 
-export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, tabCounts, statusCounts, apiBase = '/api/admin' }: Props) {
+export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, counts = EMPTY_COUNTS, apiBase = '/api/admin' }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -182,22 +140,26 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       .catch(() => {});
   }, [apiBase]);
 
-  // Compute normal vs abandoned counts dynamically based on loaded orders
-  const computedCounts = useMemo(() => {
-    let normal = 0;
-    let abandoned = 0;
-    let trash = 0;
-    for (const o of orders) {
-      const isTrash = o.status === 'trash';
-      const isAb = o.status === 'checkout-draft' || o.status === 'abandoned' || o.status === 'abondonne';
-      if (isTrash) trash++;
-      else if (isAb) abandoned++;
-      else normal++;
-    }
-    return { normal, abandoned, trash };
-  }, [orders]);
+  // Tab counts (Normal/Abandonnées/Supprimées) and the per-status breakdown
+  // both come straight from the backend aggregation prop — never recomputed
+  // from `orders` (that's only ever the current page's rows, which is
+  // exactly the mismatch that made the header and the filter counts look
+  // inconsistent with each other before).
+  const tabCounts = { normal: counts.total, abandoned: counts.abandoned, trash: counts.trash };
 
-  const counts = tabCounts ?? computedCounts;
+  // The one-level "Tentative" bucket in the main filter maps to the sum of
+  // all 5 attempts; the nested filter (see the JSX below) breaks it down.
+  const statusFilterCounts: Record<string, number> = {
+    'en-attente': counts.pending,
+    confirme: counts.confirmed,
+    tentative: counts.attempts.total,
+    'tentative-1': counts.attempts.attempt1,
+    'tentative-2': counts.attempts.attempt2,
+    'tentative-3': counts.attempts.attempt3,
+    'tentative-4': counts.attempts.attempt4,
+    'tentative-5': counts.attempts.attempt5,
+    annule: counts.cancelled,
+  };
 
   // Build unique products dynamically using both catalog products and loaded orders
   const productOptions = useMemo(() => {
@@ -213,36 +175,9 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     return Array.from(set).sort();
   }, [allProducts, orders]);
 
-  // Build status options dynamically from current data
-  const availableStatuses = useMemo(() => {
-    if (activeTab === 'normal') {
-      return ['en-attente', 'confirme', 'tentative', 'annule'];
-    }
-    const set = new Set<string>();
-    for (const o of orders) {
-      if (o.status) {
-        const isTrash = o.status === 'trash';
-        const isAb = o.status === 'checkout-draft' || o.status === 'abandoned' || o.status === 'abondonne';
-        if (activeTab === 'abandoned' && !isAb) continue;
-        if (activeTab === 'trash' && !isTrash) continue;
-        set.add(String(o.status));
-      }
-    }
-    return Array.from(set);
-  }, [orders, activeTab]);
-
-  const localStatusCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const o of orders) {
-      if (o.status) {
-        const s = String(o.status);
-        counts[s] = (counts[s] ?? 0) + 1;
-      }
-    }
-    return counts;
-  }, [orders]);
-
-  const activeStatusCounts = statusCounts ?? localStatusCounts;
+  // The main status selector shown when the sentinel 'tentative' is picked —
+  // narrows to one specific attempt, or stays on every attempt.
+  const isTentativeFilterActive = statusFilter === 'tentative' || isAttemptStatus(statusFilter);
 
   const filteredOrders = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -260,6 +195,9 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
           // Strictly match abandoned/draft orders and exclude tentative call attempts
           const isAbandoned = o.status === 'checkout-draft' || o.status === 'abandoned' || o.status === 'abondonne';
           if (!isAbandoned) return false;
+        } else if (statusFilter === 'tentative') {
+          // Sentinel: "any attempt", not the retired flat status itself.
+          if (!isAttemptStatus(String(o.status))) return false;
         } else if (String(o.status) !== statusFilter) {
           return false;
         }
@@ -441,11 +379,16 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             <h1 className="text-3xl font-black tracking-tight text-ink-900">Commandes</h1>
             <p className="text-sm font-semibold text-ink-500">
               {activeTab === 'normal'
-                ? `${counts.normal} commande${counts.normal > 1 ? 's' : ''}`
+                ? `${tabCounts.normal} commande${tabCounts.normal > 1 ? 's' : ''}`
                 : activeTab === 'abandoned'
-                ? `${counts.abandoned} commande${counts.abandoned > 1 ? 's' : ''} abandonnée${counts.abandoned > 1 ? 's' : ''}`
-                : `${counts.trash} commande${counts.trash > 1 ? 's' : ''} supprimée${counts.trash > 1 ? 's' : ''}`}
+                ? `${tabCounts.abandoned} commande${tabCounts.abandoned > 1 ? 's' : ''} abandonnée${tabCounts.abandoned > 1 ? 's' : ''}`
+                : `${tabCounts.trash} commande${tabCounts.trash > 1 ? 's' : ''} supprimée${tabCounts.trash > 1 ? 's' : ''}`}
             </p>
+            {activeTab === 'normal' && (
+              <p className="mt-0.5 text-xs text-ink-400">
+                = En attente ({counts.pending}) + Confirmée ({counts.confirmed}) + Tentative ({counts.attempts.total}) + Annulée ({counts.cancelled})
+              </p>
+            )}
           </div>
         </div>
         <button onClick={openCreate} className="btn-primary inline-flex min-h-11 items-center gap-2">
@@ -462,7 +405,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             activeTab === 'normal' ? 'bg-brand-500 text-white shadow-soft' : 'text-ink-700 hover:bg-ink-100 hover:text-ink-900'
           }`}
         >
-          Normal <span className="tabular-nums opacity-80">({counts.normal})</span>
+          Normal <span className="tabular-nums opacity-80">({tabCounts.normal})</span>
         </button>
         <button
           onClick={() => handleTabChange('abandoned')}
@@ -471,7 +414,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             activeTab === 'abandoned' ? 'bg-indigo-500 text-white shadow-soft' : 'text-ink-700 hover:bg-ink-100 hover:text-ink-900'
           }`}
         >
-          Abandonnées <span className="tabular-nums opacity-80">({counts.abandoned})</span>
+          Abandonnées <span className="tabular-nums opacity-80">({tabCounts.abandoned})</span>
         </button>
         <button
           onClick={() => handleTabChange('trash')}
@@ -480,7 +423,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             activeTab === 'trash' ? 'bg-rose-500 text-white shadow-soft' : 'text-ink-700 hover:bg-ink-100 hover:text-ink-900'
           }`}
         >
-          Supprimées <span className="tabular-nums opacity-80">({counts.trash})</span>
+          Supprimées <span className="tabular-nums opacity-80">({tabCounts.trash})</span>
         </button>
       </div>
 
@@ -507,18 +450,37 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         </div>
 
         {activeTab === 'normal' && (
-          <select
-            value={statusFilter}
-            onChange={(e) => handleStatusChange(e.target.value)}
-            className="input w-44"
-          >
-            <option value="">Tous les statuts</option>
-            {availableStatuses.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s] ?? s} {activeStatusCounts[s] !== undefined && activeStatusCounts[s] > 0 ? `×${activeStatusCounts[s]}` : ''}
-              </option>
-            ))}
-          </select>
+          <>
+            <select
+              value={isTentativeFilterActive ? 'tentative' : statusFilter}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              className="input w-44"
+            >
+              <option value="">Toutes ({tabCounts.normal})</option>
+              {NORMAL_STATUS_FILTERS.map((s) => (
+                <option key={s} value={s}>
+                  {getOrderStatusLabel(s)} ({statusFilterCounts[s] ?? 0})
+                </option>
+              ))}
+            </select>
+            {/* Nested attempt filter — only meaningful once "Tentative" is the
+                active bucket; picking a specific one narrows further, picking
+                "Toutes les tentatives" goes back to every attempt. */}
+            {isTentativeFilterActive && (
+              <select
+                value={isAttemptStatus(statusFilter) ? statusFilter : ''}
+                onChange={(e) => handleStatusChange(e.target.value || 'tentative')}
+                className="input w-48"
+              >
+                <option value="">Toutes les tentatives ({statusFilterCounts.tentative ?? 0})</option>
+                {TENTATIVE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {getOrderStatusLabel(s)} ({statusFilterCounts[s] ?? 0})
+                  </option>
+                ))}
+              </select>
+            )}
+          </>
         )}
 
         <select
@@ -623,7 +585,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
               const phoneKey = (o.customer?.phone || '').replace(/\s/g, '');
               const repeats = phoneKey ? (repeatCounts[phoneKey] ?? 0) : 0;
               const isRegular = repeats > 1;
-              const tone = STATUS_TONE[String(o.status)] ?? 'bg-ink-100 text-ink-700 ring-1 ring-ink-200';
+              const tone = getOrderStatusTone(String(o.status));
               const isSelected = selected.has(o.id);
               return (
                 <tr
@@ -651,7 +613,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                   <td className="px-4 py-3">{o.customer?.city}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${tone}`}>
-                      {o.status === 'tentative' ? `Tentative ${o.meta?._mzem_attempts ?? 1}` : (STATUS_LABEL[o.status] ?? o.status)}
+                      {getOrderStatusLabel(String(o.status))}
                     </span>
                   </td>
                   <td className="px-4 py-3">

@@ -1,6 +1,7 @@
 import { orderService } from '@/services';
 import CommandesView from '@/components/admin/CommandesView';
 import { getSession } from '@/lib/auth';
+import { NORMAL_STATUSES as normalStatuses, TENTATIVE_STATUSES } from '@/lib/order-status';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,9 +63,15 @@ export default async function Commandes(props: {
     }
   }
 
-  // Active WooCommerce statuses for each tab
-  const NORMAL_STATUSES = 'en-attente,confirme,annule,tentative';
+  // Active statuses for each tab
+  const NORMAL_STATUSES = normalStatuses.join(',');
   const ABANDONED_STATUSES = 'checkout-draft';
+
+  // 'tentative' in the URL is the UI's sentinel for "every attempt" (see
+  // lib/order-status.ts + CommandesView's nested filter) — expand it to the
+  // real tentative-1..5 statuses before it ever reaches the backend, which
+  // has no concept of that sentinel.
+  const resolvedStatus = status === 'tentative' ? TENTATIVE_STATUSES.join(',') : status;
 
   // Determine which status to query based on current tab and active status filter
   let queryStatus = '';
@@ -73,14 +80,18 @@ export default async function Commandes(props: {
   } else if (tab === 'abandoned') {
     queryStatus = ABANDONED_STATUSES;
   } else {
-    queryStatus = status || NORMAL_STATUSES;
+    queryStatus = resolvedStatus || NORMAL_STATUSES;
   }
 
   const wcPageSize = 100;
-  const promises = [];
 
-  // 1. Fetch current tab's items
-  promises.push(
+  // Two calls total instead of the previous seven: the current tab's page
+  // of items, and ONE aggregation covering every status bucket at once
+  // (backend OrdersService.counts() — a single $facet query). Both share
+  // the exact same search/date scope, so the header total and every filter
+  // count are guaranteed to describe the same slice of data — see
+  // lib/order-status.ts for the shared labels these counts are paired with.
+  const [mainResult, statusCounts] = await Promise.all([
     orderService.list({
       page,
       perPage: wcPageSize,
@@ -88,59 +99,24 @@ export default async function Commandes(props: {
       search: q,
       after,
       before,
-    }).catch(() => ({
-      items: [],
-      total: 0,
-      totalPages: 0,
-      page,
-    }))
-  );
+    }).catch(() => ({ items: [] as any[], total: 0, totalPages: 0, page })),
+    orderService.counts({ search: q, after, before }).catch(() => ({
+      total: 0, pending: 0, confirmed: 0,
+      attempts: { total: 0, attempt1: 0, attempt2: 0, attempt3: 0, attempt4: 0, attempt5: 0 },
+      cancelled: 0, abandoned: 0, trash: 0,
+    })),
+  ]);
 
-  // 2. Fetch counts for each individual status dynamically in parallel to get exact counts
-  const statusesToCount = ['en-attente', 'confirme', 'tentative', 'annule', 'checkout-draft', 'trash'];
-  for (const s of statusesToCount) {
-    promises.push(
-      orderService.list({
-        page: 1,
-        perPage: 1,
-        status: s as any,
-        search: q,
-        after,
-        before,
-      }).then((res) => ({ status: s, total: res.total }))
-        .catch(() => ({ status: s, total: 0 }))
-    );
-  }
-
-  const [mainResult, ...countResults] = await Promise.all(promises);
-
-  const items = (mainResult as any).items;
-  const total = (mainResult as any).total;
-  const totalPages = (mainResult as any).totalPages;
-
-  // Build map of status counts
-  const statusCountsMap: Record<string, number> = {};
-  for (const r of countResults) {
-    const res = r as { status: string; total: number };
-    statusCountsMap[res.status] = res.total;
-  }
-
-  // Derive tab counts from the status counts map
-  const tabCounts = {
-    normal: (statusCountsMap['en-attente'] ?? 0) + 
-            (statusCountsMap['confirme'] ?? 0) + 
-            (statusCountsMap['tentative'] ?? 0) + 
-            (statusCountsMap['annule'] ?? 0),
-    abandoned: statusCountsMap['checkout-draft'] ?? 0,
-    trash: statusCountsMap['trash'] ?? 0,
-  };
+  const items = mainResult.items;
+  const total = mainResult.total;
+  const totalPages = mainResult.totalPages;
 
   // Count orders per phone for "Client régulier" badge in the loaded subset
-  const counts: Record<string, number> = {};
+  const repeatCounts: Record<string, number> = {};
   for (const o of items) {
     const p = (o.customer?.phone || '').replace(/\s/g, '');
     if (!p) continue;
-    counts[p] = (counts[p] ?? 0) + 1;
+    repeatCounts[p] = (repeatCounts[p] ?? 0) + 1;
   }
 
   return (
@@ -149,9 +125,8 @@ export default async function Commandes(props: {
       total={total}
       totalPages={totalPages}
       page={page}
-      repeatCounts={counts}
-      tabCounts={tabCounts}
-      statusCounts={statusCountsMap}
+      repeatCounts={repeatCounts}
+      counts={statusCounts}
       apiBase={apiBase}
     />
   );
