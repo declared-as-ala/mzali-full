@@ -535,27 +535,29 @@ export class OrdersService {
         manualSubtotalMinor: doc.manualSubtotalMinor ?? null,
         manualTotalMinor: doc.manualTotalMinor ?? null,
       };
-      await this.audit.log({
-        actor,
-        action: 'order.update',
-        entityType: 'order',
-        entityId: id,
-        summary: patch.reason ? `Commande modifiée — ${patch.reason}` : 'Commande modifiée',
-        before: {
-          ...before,
-          items: before.items,
-          orderNumber: doc.orderNumber,
-        },
-        after: {
-          ...after,
-          items: after.items,
-          changedFields: changed,
-          lineChanges: itemDiff.changed,
-          orderNumber: doc.orderNumber,
-          reason: patch.reason?.trim() ?? null,
-        },
-        ip: null,
-      });
+      if (changed.some((f) => f !== 'status')) {
+        await this.audit.log({
+          actor,
+          action: 'order.update',
+          entityType: 'order',
+          entityId: id,
+          summary: patch.reason ? `Commande modifiée — ${patch.reason}` : 'Commande modifiée',
+          before: {
+            ...before,
+            items: before.items,
+            orderNumber: doc.orderNumber,
+          },
+          after: {
+            ...after,
+            items: after.items,
+            changedFields: changed,
+            lineChanges: itemDiff.changed,
+            orderNumber: doc.orderNumber,
+            reason: patch.reason?.trim() ?? null,
+          },
+          ip: null,
+        });
+      }
 
       if (doc.status !== DRAFT_STATUS) await this.maybeEnqueueAutoPush(doc);
       return toOrderContract(await this.model.findById(id) as OrderDocument);
