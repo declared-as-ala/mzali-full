@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { ORDER_STATUS_VALUES } from '@/orders/order-status';
 
 class OrderUpdateCustomerDto {
@@ -37,6 +37,10 @@ export class UpdateOrderDto {
   /** Required when editing an order that's already confirmed (stock has
    *  physically moved) — see OrdersService.update()'s sensitivity check. */
   @IsOptional() @IsString() reason?: string;
+  /** Optimistic concurrency: the version the editor loaded (see
+   *  Order.version). Mismatch with the persisted version aborts with 409 —
+   *  the order was modified by someone else since it was opened. */
+  @IsOptional() @IsInt() @Min(0) version?: number;
 }
 
 export class UpdateStatusDto {

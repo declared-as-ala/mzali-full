@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -25,6 +25,7 @@ import { CheckoutDto } from './dto/checkout.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
 import { computeOrderTotals, computeStockDeltas } from './order-calc';
+import { diffCustomer, diffItems, hasItemChanges, ItemSnapshot, OrderSnapshot, snapshotCustomer, snapshotItems } from './order-diff';
 import { toOrderContract } from './order.mapper';
 import { DEFAULT_STATUS, DRAFT_STATUS, getAttemptNumber, planStockTransition, stockEffectForStatus } from './order-status';
 import { Order, OrderDocument } from './order.schema';
@@ -373,37 +374,122 @@ export class OrdersService {
   }
 
   /**
-   * Admin/employee order edits. Totals are ALWAYS recomputed server-side
-   * from the resolved items (computeOrderTotals) — patch.subtotal/patch.total
-   * only ever feed the separate manualSubtotalMinor/manualTotalMinor
-   * override fields (an explicit, clearly-labeled admin override the mapper
-   * already prefers when present), never the real computed totals. This is
-   * also where item-quantity edits actually take effect — previously
-   * `patch.items` was accepted by the DTO but silently dropped.
+   * Admin/employee order edits — the backend owns the whole confirmed-order
+   * modification transaction:
+   *
+   *   1. load persisted order + optimistic-concurrency check (version)
+   *   2. resolve requested items against the catalog
+   *   3. diff old vs new — a no-op edit returns untouched (no reason, no
+   *      stock movement, no audit, no write)
+   *   4. a meaningful change on an already-committed order REQUIRES a
+   *      modification reason
+   *   5. inventory deltas (only the difference; idempotent by construction —
+   *      a re-save of the same state yields delta 0) unless the business has
+   *      stock tracking disabled (settings.inventory.enabled=false)
+   *   6. apply fields, recompute totals, status transition, bump version
+   *   7. rich audit entry (before/after values, changed fields, per-line
+   *      changes, reason) — all inside one transaction, rolled back together.
+   *
+   * Totals are ALWAYS recomputed server-side from the resolved items
+   * (computeOrderTotals) — patch.subtotal/patch.total only ever feed the
+   * separate manualSubtotalMinor/manualTotalMinor override fields (an
+   * explicit, clearly-labeled admin override the mapper already prefers
+   * when present), never the real computed totals.
    */
   async update(id: string, patch: UpdateOrderDto, actor: AuditActor): Promise<OrderResponse> {
     const doc = await this.findDoc(id);
 
-    // A "sensitive" order already had stock physically committed — editing
-    // its items/shipping/status without a reason is exactly the "silent
-    // editing of a confirmed order" the business rules forbid.
-    const wasCommitted = stockEffectForStatus(doc.status) === 'commit';
-    const touchesSensitiveFields = patch.items !== undefined || patch.shipping !== undefined || (patch.status !== undefined && patch.status !== doc.status);
-    if (wasCommitted && touchesSensitiveFields && !patch.reason?.trim()) {
-      throw new BadRequestException('Un motif est requis pour modifier une commande déjà confirmée.');
+    // Optimistic concurrency: the editor must write against the version it
+    // loaded. Any other write since (another employee's edit, a status
+    // change, a carrier push) bumps it — silently overwriting someone
+    // else's save is exactly what this guards against.
+    const currentVersion = doc.version ?? 0;
+    if (patch.version !== undefined && patch.version !== currentVersion) {
+      throw new ConflictException('Cette commande a été modifiée depuis son ouverture. Rechargez-la avant d\'enregistrer.');
     }
 
-    const before = {
+    const beforeItems = snapshotItems(doc.items);
+    const resolved = patch.items ? await this.resolveUpdateItems(patch.items) : null;
+    const afterItems: ItemSnapshot[] = resolved ? resolved.map((l) => ({
+      productId: l.productId,
+      qty: l.qty,
+      unitPriceMinor: l.unitPriceMinor,
+      variation: l.variation,
+      bundleName: l.bundleName,
+      bundleSlot: l.bundleSlot,
+    })) : beforeItems;
+
+    // ── 3. Real change detection (never index-based guessing) ────────────
+    const itemDiff = diffItems(beforeItems, afterItems);
+    const changedFields: string[] = [];
+    if (hasItemChanges(itemDiff)) changedFields.push('items');
+    if (patch.shipping !== undefined && toMinor(patch.shipping) !== doc.shippingMinor) changedFields.push('shipping');
+    if (patch.deliveryCompany !== undefined && patch.deliveryCompany !== doc.deliveryCompany) changedFields.push('deliveryCompany');
+    if (patch.exchange !== undefined && patch.exchange !== doc.exchange) changedFields.push('exchange');
+    if (patch.privateNote !== undefined && patch.privateNote !== doc.privateNote) changedFields.push('privateNote');
+    if (patch.status && patch.status !== doc.status) changedFields.push('status');
+    if (patch.customer) changedFields.push(...diffCustomer(snapshotCustomer(doc.customer), patch.customer as Order['customer']));
+    if (patch.attempts !== undefined && patch.attempts !== doc.attempts) changedFields.push('attempts');
+    if (patch.subtotal !== undefined && toMinor(patch.subtotal) !== (doc.manualSubtotalMinor ?? null)) changedFields.push('manualSubtotal');
+    if (patch.total !== undefined && toMinor(patch.total) !== (doc.manualTotalMinor ?? null)) changedFields.push('manualTotal');
+
+    const changed = [...new Set(changedFields)];
+
+    // Nothing meaningful changed — do not write, do not move stock, do not
+    // audit, do not demand a reason. This also makes retries idempotent:
+    // re-sending the exact same save after a successful one is a no-op.
+    if (changed.length === 0) {
+      return toOrderContract(doc);
+    }
+
+    // ── 4. Reason gate for already-committed orders ──────────────────────
+    const wasCommitted = stockEffectForStatus(doc.status) === 'commit';
+    if (wasCommitted && !patch.reason?.trim()) {
+      throw new BadRequestException('Motif de modification requis.');
+    }
+
+    const before: OrderSnapshot = {
       status: doc.status,
-      items: doc.items.map((i) => ({ productId: i.productId, qty: i.qty, unitPriceMinor: i.unitPriceMinor })),
-      subtotalMinor: doc.subtotalMinor,
+      customer: snapshotCustomer(doc.customer),
+      items: beforeItems,
       shippingMinor: doc.shippingMinor,
-      totalMinor: doc.totalMinor,
+      deliveryCompany: doc.deliveryCompany,
+      exchange: doc.exchange,
+      privateNote: doc.privateNote,
+      attempts: doc.attempts,
+      manualSubtotalMinor: doc.manualSubtotalMinor ?? null,
+      manualTotalMinor: doc.manualTotalMinor ?? null,
     };
 
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        // ── 5. Inventory deltas for committed orders ─────────────────────
+        // Only the per-product DELTA moves (never a full re-deduct/restore),
+        // so a repeated/retried save of the same state deduces nothing twice.
+        // Variation-only edits produce delta 0 and move nothing. Skipped
+        // entirely in "mode sans stock" (settings.inventory.enabled=false).
+        const inventorySettings = await this.settings.getInventorySettings();
+        if (wasCommitted && inventorySettings.enabled !== false && itemDiff.added.length + itemDiff.removed.length + itemDiff.changed.length > 0) {
+          const deltas = computeStockDeltas(beforeItems, afterItems);
+          const strict = this.config.get<boolean>('STRICT_STOCK') ?? false;
+          for (const [productId, delta] of deltas) {
+            if (delta > 0) {
+              try {
+                await this.inventory.commit(productId, delta, id, actor, session, strict);
+              } catch (err) {
+                if (err instanceof InsufficientStockError) {
+                  throw new BadRequestException('Stock insuffisant pour augmenter la quantité.');
+                }
+                throw err;
+              }
+            } else {
+              await this.inventory.adjust(productId, -delta, `Modification de commande #${doc.orderNumber}`, actor, session);
+            }
+          }
+        }
+
+        // ── 6. Apply fields ──────────────────────────────────────────────
         if (patch.customer) Object.assign(doc.customer, patch.customer);
         if (patch.deliveryCompany !== undefined) doc.deliveryCompany = patch.deliveryCompany;
         if (patch.exchange !== undefined) doc.exchange = patch.exchange;
@@ -412,46 +498,11 @@ export class OrdersService {
         if (patch.total !== undefined) doc.manualTotalMinor = toMinor(patch.total);
         if (patch.attempts !== undefined) doc.attempts = patch.attempts;
 
-        let itemsOrShippingChanged = false;
+        if (resolved) doc.items = resolved as unknown as Order['items'];
 
-        if (patch.items) {
-          const beforeItems = doc.items.map((i) => ({ productId: i.productId, qty: i.qty }));
-          const resolved = await this.resolveUpdateItems(patch.items);
+        if (patch.shipping !== undefined) doc.shippingMinor = toMinor(patch.shipping);
 
-          // Stock was already deducted for this order (wasCommitted) — move
-          // only the per-product DELTA, never re-deduct/re-restore the whole
-          // line. Must run before any status transition below, so a restock
-          // triggered by the same request reverses the correct (post-edit)
-          // quantities — see the class-level note on this method.
-          if (wasCommitted) {
-            const deltas = computeStockDeltas(beforeItems, resolved);
-            const strict = this.config.get<boolean>('STRICT_STOCK') ?? false;
-            for (const [productId, delta] of deltas) {
-              if (delta > 0) {
-                try {
-                  await this.inventory.commit(productId, delta, id, actor, session, strict);
-                } catch (err) {
-                  if (err instanceof InsufficientStockError) {
-                    throw new BadRequestException('Stock insuffisant pour augmenter la quantité de cet article');
-                  }
-                  throw err;
-                }
-              } else {
-                await this.inventory.adjust(productId, -delta, `Modification de commande #${doc.orderNumber}`, actor, session);
-              }
-            }
-          }
-
-          doc.items = resolved as unknown as Order['items'];
-          itemsOrShippingChanged = true;
-        }
-
-        if (patch.shipping !== undefined) {
-          doc.shippingMinor = toMinor(patch.shipping);
-          itemsOrShippingChanged = true;
-        }
-
-        if (itemsOrShippingChanged) {
+        if (resolved || patch.shipping !== undefined) {
           const totals = computeOrderTotals(
             doc.items.map((i) => ({ unitPriceMinor: i.unitPriceMinor, qty: i.qty })),
             doc.shippingMinor,
@@ -462,24 +513,46 @@ export class OrdersService {
         }
 
         if (patch.status && patch.status !== doc.status) {
-          await this.applyStatusTransition(doc, patch.status, actor, patch.reason ?? null, session);
+          await this.applyStatusTransition(doc, patch.status, actor, patch.reason?.trim() ?? null, session);
         }
+
+        doc.version = currentVersion + 1;
         await doc.save({ session });
       });
 
+      // ── 7. Modification history — before/after, changed fields, per-line
+      //     changes, reason, employee. Written after commit so the snapshot
+      //     is stable; audit logging itself is best-effort (see AuditService).
+      const after: OrderSnapshot = {
+        status: doc.status,
+        customer: snapshotCustomer(doc.customer),
+        items: afterItems,
+        shippingMinor: doc.shippingMinor,
+        deliveryCompany: doc.deliveryCompany,
+        exchange: doc.exchange,
+        privateNote: doc.privateNote,
+        attempts: doc.attempts,
+        manualSubtotalMinor: doc.manualSubtotalMinor ?? null,
+        manualTotalMinor: doc.manualTotalMinor ?? null,
+      };
       await this.audit.log({
         actor,
         action: 'order.update',
         entityType: 'order',
         entityId: id,
         summary: patch.reason ? `Commande modifiée — ${patch.reason}` : 'Commande modifiée',
-        before,
+        before: {
+          ...before,
+          items: before.items,
+          orderNumber: doc.orderNumber,
+        },
         after: {
-          status: doc.status,
-          items: doc.items.map((i) => ({ productId: i.productId, qty: i.qty, unitPriceMinor: i.unitPriceMinor })),
-          subtotalMinor: doc.subtotalMinor,
-          shippingMinor: doc.shippingMinor,
-          totalMinor: doc.totalMinor,
+          ...after,
+          items: after.items,
+          changedFields: changed,
+          lineChanges: itemDiff.changed,
+          orderNumber: doc.orderNumber,
+          reason: patch.reason?.trim() ?? null,
         },
         ip: null,
       });
@@ -527,6 +600,7 @@ export class OrdersService {
     try {
       await session.withTransaction(async () => {
         await this.applyStatusTransition(doc, status, actor, null, session);
+        doc.version = (doc.version ?? 0) + 1;
         await doc.save({ session });
       });
       if (doc.status !== DRAFT_STATUS) await this.maybeEnqueueAutoPush(doc);

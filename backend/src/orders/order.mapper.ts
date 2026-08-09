@@ -69,6 +69,8 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     currency: doc.currency,
     total: toDinars(total),
     createdAt: doc.createdAt.toISOString(),
+    updatedAt: (doc.updatedAt ?? doc.createdAt).toISOString(),
+    version: doc.version ?? 0,
     customer: {
       firstName: doc.customer.firstName,
       lastName: doc.customer.lastName || undefined,

@@ -43,6 +43,9 @@ export type OrderUpdate = {
   /** Required by the backend when editing an order that's already
    *  confirmed (stock has physically moved) — see OrdersService.update(). */
   reason?: string;
+  /** Optimistic concurrency: the version the editor loaded (OrderResponse
+   *  .version). A mismatch with the persisted version aborts with 409. */
+  version?: number;
 };
 
 export interface OrderService {

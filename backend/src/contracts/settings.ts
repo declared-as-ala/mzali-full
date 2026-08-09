@@ -29,6 +29,10 @@ export type CommerceSettings = {
 export type StockPolicy = 'DEPOT_ONLY' | 'BOUTIQUE_ONLY' | 'COMBINED_LOCATIONS' | 'PRIORITY_LOCATIONS';
 
 export type InventorySettings = {
+  /** Master switch — when false ("mode sans stock") order edits never
+   *  compute stock deltas or create stock movements; the order document
+   *  itself still updates normally. Default true. */
+  enabled: boolean;
   stockPolicy: StockPolicy;
   /** A stocktake line's |counted - expected| beyond this requires reasonIfLarge before it can be posted. */
   stocktakeVarianceThreshold: number;

@@ -118,6 +118,13 @@ export class Order {
   @Prop({ type: String, unique: true, sparse: true })
   idempotencyKey?: string;
 
+  /** Optimistic-concurrency counter. Bumped on every employee/admin write
+   *  (update/changeStatus); the update DTO carries the version the editor
+   *  loaded, and a mismatch aborts the write with 409 so two employees can
+   *  never silently overwrite each other. Legacy docs default to 0. */
+  @Prop({ type: Number, default: 0 })
+  version!: number;
+
   @Prop({ type: String, unique: true, sparse: true })
   legacyId?: string;
 

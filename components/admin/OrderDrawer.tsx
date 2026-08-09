@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import NumberField from './NumberField';
+import ReasonModal from './ReasonModal';
+import { useToast } from './Toast';
 import { Save, Trash2, Plus, Check, AlertTriangle } from 'lucide-react';
 import { SITE, formatPrice } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
@@ -180,6 +182,17 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [pickerQuery, setPickerQuery] = useState('');
   const pickerRef = useRef<HTMLDivElement>(null);
   const saveInFlightRef = useRef(false);
+  const toast = useToast();
+
+  /** Persisted state captured when the order was loaded — the baseline for
+   *  "did anything meaningful change?" (no-op saves skip the request, the
+   *  reason modal, and stock movements entirely). */
+  const originalRef = useRef<{ customer: typeof INITIAL_CUSTOMER; lines: LineDraft[]; shipping: number; deliveryCompany: string; exchange: boolean; privateNote: string } | null>(null);
+  /** Optimistic concurrency token (OrderResponse.version) loaded with the
+   *  order and echoed back on save; a 409 means someone else saved first. */
+  const [version, setVersion] = useState<number | undefined>(undefined);
+  const [reasonModalOpen, setReasonModalOpen] = useState(false);
+  const [reasonError, setReasonError] = useState<string | null>(null);
 
   async function ensureProductInfo(pid: string): Promise<ProductInfo | null> {
     if (productInfo[pid]) {
@@ -263,99 +276,132 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setStatusList(['en-attente', 'confirme', 'tentative', 'annule']);
     }
     if (orderId) {
-      setLoading(true);
-      setProductInfo({});
-      fetch(`${apiBase}/orders/${orderId}`)
-        .then((r) => {
-          if (r.status === 401) {
-            window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-            throw new Error('Session expirée');
-          }
-          if (!r.ok) throw new Error('Erreur de chargement');
-          return r.json();
-        })
-        .then((o: OrderResponse) => {
-          const loadedStatus = String(o.status);
-          const attemptNumber = getAttemptNumber(loadedStatus);
-          // The main selector only ever shows the 'tentative' sentinel — the
-          // specific attempt number lives in the secondary selector, driven
-          // by `attempts` below, exactly like a fresh "En attente -> Tentative"
-          // selection would set it.
-          setStatus((isAttemptStatus(loadedStatus) ? 'tentative' : loadedStatus) as OrderStatus);
-          setOriginalStatus(loadedStatus);
-          setAttempts(attemptNumber ?? MIN_ATTEMPT);
-          setNavexTracking(String((o.meta?._navex_tracking as string) ?? ''));
-          setNavexStatus(((o.meta?._navex_status as 'sent' | 'failed') ?? 'idle'));
-          setNavexMsg(String((o.meta?._navex_error as string) ?? ''));
-          setFdTracking(String((o.meta?._fd_tracking as string) ?? ''));
-          setFdStatus(((o.meta?._fd_status as 'sent' | 'failed') ?? 'idle'));
-          setFdMsg(String((o.meta?._fd_error as string) ?? ''));
-          setAxessTracking(String((o.meta?._axess_tracking as string) ?? ''));
-          setAxessStatus(((o.meta?._axess_status as 'sent' | 'failed') ?? 'idle'));
-          setAxessMsg(String((o.meta?._axess_error as string) ?? ''));
-
-          setDeliveryCompany(String((o.meta?._mzem_delivery_company as string) ?? ''));
-          setExchange(o.meta?._mzem_exchange === 'yes');
-          setShipping(o.shipping ?? 8);
-          setPrivateNote(String((o.meta?._mzem_private_note as string) ?? ''));
-          setCustomer({
-            firstName: o.customer?.firstName ?? '',
-            phone: o.customer?.phone ?? '',
-            city: o.customer?.city ?? '',
-            address: o.customer?.address ?? '',
-            phone2: String((o.meta?._mzem_phone_2 as string) ?? ''),
-            email: o.customer?.email ?? '',
-            note: '',
-          });
-          setLines(o.items.map((i) => parseLine(i)));
-          // Lazy-load product info (options + bundles) for each product in the order
-          const uniqueIds = Array.from(new Set(o.items.map((i) => i.productId)));
-          uniqueIds.forEach((pid) => { void ensureProductInfo(pid); });
-          restoreDraftIfAny();
-        })
-        .catch(() => alert('Erreur de chargement de la commande'))
-        .finally(() => setLoading(false));
+      void loadOrder(orderId);
     } else {
-      // reset on open-for-create — leave status blank so we DON'T send it,
-      // letting WooCommerce apply the site's default (works on custom-status plugins).
-      setStatus('');
-      setOriginalStatus('');
-      setAttempts(1);
-      setNavexTracking('');
-      setNavexStatus('idle');
-      setNavexMsg('');
-      setFdTracking('');
-      setFdStatus('idle');
-      setFdMsg('');
-      setAxessTracking('');
-      setAxessStatus('idle');
-      setAxessMsg('');
-      setDeliveryCompany('');
-      setExchange(false);
-      setShipping(8);
-      setPrivateNote('');
-      setCustomer({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
-      setLines([]);
-      restoreDraftIfAny();
-    }
-
-    function restoreDraftIfAny() {
-      const draft = loadDraftFromStorage(orderId);
-      if (!draft) return;
-      setCustomer(draft.customer);
-      setLines(draft.lines);
-      setShipping(draft.shipping);
-      setDeliveryCompany(draft.deliveryCompany);
-      setExchange(draft.exchange);
-      setPrivateNote(draft.privateNote);
-      if (draft.status) setStatus(draft.status);
-      setAttempts(draft.attempts);
-      setEditReason(draft.editReason ?? '');
-      clearDraftFromStorage(orderId);
-      alert('Votre session avait expiré avant l\'enregistrement — vos modifications ont été restaurées, vous pouvez réessayer.');
+      resetForCreate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, orderId]);
+
+  /** Fetch the order and hydrate the form. Also re-baselines originalRef +
+   *  version, so a concurrency-conflict reload keeps change detection honest. */
+  async function loadOrder(id: string) {
+    setLoading(true);
+    setProductInfo({});
+    try {
+      const res = await fetch(`${apiBase}/orders/${id}`);
+      if (res.status === 401) {
+        window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        return;
+      }
+      if (!res.ok) throw new Error('Erreur de chargement de la commande');
+      const o = (await res.json()) as OrderResponse;
+      const loadedStatus = String(o.status);
+      const attemptNumber = getAttemptNumber(loadedStatus);
+      // The main selector only ever shows the 'tentative' sentinel — the
+      // specific attempt number lives in the secondary selector, driven
+      // by `attempts` below, exactly like a fresh "En attente -> Tentative"
+      // selection would set it.
+      setStatus((isAttemptStatus(loadedStatus) ? 'tentative' : loadedStatus) as OrderStatus);
+      setOriginalStatus(loadedStatus);
+      setAttempts(attemptNumber ?? MIN_ATTEMPT);
+      setNavexTracking(String((o.meta?._navex_tracking as string) ?? ''));
+      setNavexStatus(((o.meta?._navex_status as 'sent' | 'failed') ?? 'idle'));
+      setNavexMsg(String((o.meta?._navex_error as string) ?? ''));
+      setFdTracking(String((o.meta?._fd_tracking as string) ?? ''));
+      setFdStatus(((o.meta?._fd_status as 'sent' | 'failed') ?? 'idle'));
+      setFdMsg(String((o.meta?._fd_error as string) ?? ''));
+      setAxessTracking(String((o.meta?._axess_tracking as string) ?? ''));
+      setAxessStatus(((o.meta?._axess_status as 'sent' | 'failed') ?? 'idle'));
+      setAxessMsg(String((o.meta?._axess_error as string) ?? ''));
+
+      setDeliveryCompany(String((o.meta?._mzem_delivery_company as string) ?? ''));
+      setExchange(o.meta?._mzem_exchange === 'yes');
+      setShipping(o.shipping ?? 8);
+      setPrivateNote(String((o.meta?._mzem_private_note as string) ?? ''));
+      const loadedCustomer = {
+        firstName: o.customer?.firstName ?? '',
+        phone: o.customer?.phone ?? '',
+        city: o.customer?.city ?? '',
+        address: o.customer?.address ?? '',
+        phone2: String((o.meta?._mzem_phone_2 as string) ?? ''),
+        email: o.customer?.email ?? '',
+        note: '',
+      };
+      const loadedLines = o.items.map((i) => parseLine(i));
+      setCustomer(loadedCustomer);
+      setLines(loadedLines);
+      setVersion(typeof o.version === 'number' ? o.version : undefined);
+      setEditReason('');
+      setReasonModalOpen(false);
+      setReasonError(null);
+      originalRef.current = {
+        customer: loadedCustomer,
+        lines: loadedLines,
+        shipping: o.shipping ?? 8,
+        deliveryCompany: String((o.meta?._mzem_delivery_company as string) ?? ''),
+        exchange: o.meta?._mzem_exchange === 'yes',
+        privateNote: String((o.meta?._mzem_private_note as string) ?? ''),
+      };
+      // Lazy-load product info (options + bundles) for each product in the order
+      const uniqueIds = Array.from(new Set(o.items.map((i) => i.productId)));
+      uniqueIds.forEach((pid) => { void ensureProductInfo(pid); });
+      restoreDraftIfAny(id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Erreur de chargement de la commande');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** A confirmed-expired session stashed the work — offer it back after
+   *  re-login instead of forcing the employee to redo it. The persisted
+   *  baseline (originalRef) stays on the server values so the restored
+   *  edits are correctly seen as real changes. */
+  function restoreDraftIfAny(id: string | null | undefined) {
+    const draft = loadDraftFromStorage(id);
+    if (!draft) return;
+    setCustomer(draft.customer);
+    setLines(draft.lines);
+    setShipping(draft.shipping);
+    setDeliveryCompany(draft.deliveryCompany);
+    setExchange(draft.exchange);
+    setPrivateNote(draft.privateNote);
+    if (draft.status) setStatus(draft.status);
+    setAttempts(draft.attempts);
+    setEditReason(draft.editReason ?? '');
+    clearDraftFromStorage(id);
+    toast.info('Votre session avait expiré avant l\'enregistrement — vos modifications ont été restaurées, vous pouvez réessayer.');
+  }
+
+  function resetForCreate() {
+    // reset on open-for-create — leave status blank so we DON'T send it,
+    // letting WooCommerce apply the site's default (works on custom-status plugins).
+    setStatus('');
+    setOriginalStatus('');
+    setAttempts(1);
+    setNavexTracking('');
+    setNavexStatus('idle');
+    setNavexMsg('');
+    setFdTracking('');
+    setFdStatus('idle');
+    setFdMsg('');
+    setAxessTracking('');
+    setAxessStatus('idle');
+    setAxessMsg('');
+    setDeliveryCompany('');
+    setExchange(false);
+    setShipping(8);
+    setPrivateNote('');
+    setCustomer({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
+    setLines([]);
+    setVersion(undefined);
+    setEditReason('');
+    setReasonModalOpen(false);
+    setReasonError(null);
+    originalRef.current = null;
+    restoreDraftIfAny(null);
+  }
 
   // Close picker on click outside
   useEffect(() => {
@@ -452,20 +498,86 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     });
   }
 
+  /** Variation equality mirroring the backend's order-diff comparison —
+   *  keys and values compared case-insensitively, empty values ignored, so
+   *  an untouched order never trips the "something changed" detector. */
+  function variationsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+    const keyOf = (k: string) => k.toLowerCase().trim();
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)].map(keyOf));
+    for (const k of keys) {
+      const va = Object.entries(a).find(([key]) => keyOf(key) === k)?.[1]?.trim().toLowerCase() ?? '';
+      const vb = Object.entries(b).find(([key]) => keyOf(key) === k)?.[1]?.trim().toLowerCase() ?? '';
+      if (va !== vb) return false;
+    }
+    return true;
+  }
+
+  function lineDraftsEqual(a: LineDraft, b: LineDraft): boolean {
+    return (
+      a.productId === b.productId &&
+      a.qty === b.qty &&
+      a.unitPrice === b.unitPrice &&
+      (a.bundleName ?? '') === (b.bundleName ?? '') &&
+      (a.slotIndex ?? null) === (b.slotIndex ?? null) &&
+      variationsEqual(a.variation, b.variation)
+    );
+  }
+
+  /** True when the form differs from the persisted baseline — the no-op
+   *  detector that keeps pointless writes (and pointless reason prompts)
+   *  from ever leaving the browser. */
+  function hasRealChanges(): boolean {
+    if (!isEdit) return true; // a create always sends
+    const orig = originalRef.current;
+    if (!orig) return true; // order not loaded — let the backend judge
+    const resolvedStatus = status === 'tentative' ? attemptStatus(attempts) : status;
+    if (resolvedStatus && resolvedStatus !== originalStatus) return true;
+    const customerChanged = (Object.keys(orig.customer) as (keyof typeof orig.customer)[]).some((k) => customer[k] !== orig.customer[k]);
+    if (customerChanged) return true;
+    if (shipping !== orig.shipping) return true;
+    if (deliveryCompany !== orig.deliveryCompany) return true;
+    if (exchange !== orig.exchange) return true;
+    if (privateNote !== orig.privateNote) return true;
+    if (lines.length !== orig.lines.length) return true;
+    return lines.some((l, i) => !lineDraftsEqual(l, orig.lines[i]!));
+  }
+
   async function save() {
     if (saveInFlightRef.current) return;
     if (!customer.firstName || !customer.phone) {
-      alert('Nom et téléphone obligatoires.');
+      toast.error('Nom et téléphone obligatoires.');
       return;
     }
     if (!lines.length) {
-      alert('Ajoutez au moins un produit.');
+      toast.error('Ajoutez au moins un produit.');
       return;
     }
-    if (isSensitiveOrder && !editReason.trim()) {
-      alert('Cette commande est déjà confirmée — indiquez un motif de modification.');
+    if (!hasRealChanges()) {
+      toast.info('Aucune modification détectée — rien à enregistrer.');
       return;
     }
+    if (isEdit && isSensitiveOrder) {
+      // Already-committed order with real changes: the backend requires a
+      // modification reason — collect it through the modal, then save.
+      setReasonError(null);
+      setReasonModalOpen(true);
+      return;
+    }
+    await doSave(null);
+  }
+
+  function confirmReason() {
+    if (!editReason.trim()) {
+      setReasonError('Motif de modification requis.');
+      return;
+    }
+    setReasonError(null);
+    setReasonModalOpen(false);
+    void doSave(editReason);
+  }
+
+  async function doSave(reason: string | null) {
+    if (saveInFlightRef.current) return;
     saveInFlightRef.current = true;
     setSaving(true);
     try {
@@ -478,11 +590,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       // Edit and create hit entirely different backend endpoints with
       // entirely different DTOs — an edit goes to admin/employee
       // UpdateOrderDto (whitelists unitPrice/bundleSlot/privateNote/
-      // exchange/reason...), a create goes to the public checkout endpoint's
-      // CheckoutDto (whitelists lineId/name/price/image instead, and has no
-      // privateNote/exchange/reason fields at all). Sending the wrong shape
-      // to either always 400s under forbidNonWhitelisted, so the payload
-      // must be built differently per case rather than shared.
+      // exchange/reason/version...), a create goes to the public checkout
+      // endpoint's CheckoutDto (whitelists lineId/name/price/image instead,
+      // and has no privateNote/exchange/reason fields at all). Sending the
+      // wrong shape to either always 400s under forbidNonWhitelisted, so the
+      // payload must be built differently per case rather than shared.
       const payload: Record<string, unknown> = isEdit
         ? {
             customer,
@@ -528,7 +640,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       // OrdersService.applyStatusTransition), which is what fixed "Tentative
       // 0" in the first place: a separately-tracked counter that could
       // drift out of sync with the actual status.
-      if (isEdit && editReason.trim()) payload.reason = editReason.trim();
+      if (isEdit && reason?.trim()) payload.reason = reason.trim();
+      // Optimistic concurrency: echo the version this drawer loaded. A 409
+      // means someone else saved in the meantime — see the handler below.
+      if (isEdit && version !== undefined) payload.version = version;
       const url = isEdit ? `${apiBase}/orders/${orderId}` : `${apiBase}/orders`;
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -540,9 +655,19 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         saveDraftToStorage(orderId, {
           customer, lines, shipping, deliveryCompany, exchange, privateNote, status, attempts, editReason,
         });
-        alert('Votre session a expiré. Vos modifications ont été sauvegardées — reconnectez-vous, elles seront restaurées automatiquement.');
+        toast.info('Votre session a expiré. Vos modifications ont été sauvegardées — reconnectez-vous, elles seront restaurées automatiquement.');
         window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
-        throw new Error('Session expirée');
+        return;
+      }
+      if (res.status === 409) {
+        // Another employee modified this order while the drawer was open —
+        // never silently overwrite their work: surface the conflict, then
+        // reload the fresh data so the employee re-applies on top of it.
+        const data = await res.json().catch(() => ({}));
+        toast.error((data?.error as string) ?? 'Cette commande a été modifiée depuis son ouverture. Rechargez-la avant d\'enregistrer.');
+        setReasonModalOpen(false);
+        if (orderId) await loadOrder(orderId);
+        return;
       }
       if (!res.ok) throw new Error((await res.json()).error ?? 'Erreur');
       const order = await res.json();
@@ -603,7 +728,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       onSaved?.(order);
       onClose();
     } catch (e) {
-      alert(`Échec: ${e instanceof Error ? e.message : 'inconnu'}`);
+      toast.error(`Impossible d'enregistrer la modification: ${e instanceof Error ? e.message : 'inconnu'}`);
     } finally {
       setSaving(false);
       saveInFlightRef.current = false;
@@ -613,7 +738,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   return (
     <Drawer
       open={open}
-      onClose={onClose}
+      onClose={() => { setReasonModalOpen(false); setReasonError(null); onClose(); }}
       title={isEdit ? `Modifier la commande` : 'Créer une commande'}
       actions={
         <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white shadow-soft hover:bg-brand-600 disabled:opacity-50">
@@ -640,11 +765,9 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 <AlertTriangle size={16} /> Commande déjà confirmée — le stock a été déduit
               </p>
               <p className="mt-1 text-xs text-amber-700">
-                Modifier les articles, la livraison ou le statut ajustera le stock en conséquence et sera journalisé. Un motif est requis.
+                Modifier les articles, la livraison ou le statut ajustera le stock en conséquence et sera journalisé.
+                Au moment de l&apos;enregistrement, un motif de modification vous sera demandé.
               </p>
-              <label className="mt-3 block text-xs font-bold text-amber-800">Motif de la modification
-                <input className="input mt-1" value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Ex. Client a demandé une taille différente" />
-              </label>
             </div>
           )}
 
@@ -898,6 +1021,26 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           </Card>
         </div>
       )}
+
+      <ReasonModal
+        open={reasonModalOpen}
+        title="Modifier une commande confirmée"
+        message="Cette commande est déjà confirmée. Veuillez indiquer la raison de cette modification."
+        label="Motif de modification"
+        placeholder="Ex. Client a changé la couleur"
+        examples={[
+          'Client a changé la couleur',
+          'Client a changé la taille',
+          'Correction d\'une erreur',
+          'Modification demandée par le client',
+        ]}
+        value={editReason}
+        onChange={(v) => { setEditReason(v); if (reasonError) setReasonError(null); }}
+        error={reasonError}
+        confirming={saving}
+        onCancel={() => setReasonModalOpen(false)}
+        onConfirm={confirmReason}
+      />
     </Drawer>
   );
 }

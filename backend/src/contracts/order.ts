@@ -54,6 +54,11 @@ export type OrderResponse = {
   currency: string;
   total: number;
   createdAt: string;       // ISO
+  /** Last write timestamp — the optimistic-concurrency basis for admin
+   *  edits: the frontend echoes this (via `version`) on update. */
+  updatedAt: string;       // ISO
+  /** Optimistic-concurrency counter bumped on every admin/employee write. */
+  version: number;
   customer: CheckoutCustomer;
   items: OrderLineItem[];
   shipping: number;

@@ -25,6 +25,7 @@ const DEFAULT_COMMERCE: CommerceSettings = {
 };
 
 const DEFAULT_INVENTORY: InventorySettings = {
+  enabled: true,
   stockPolicy: 'DEPOT_ONLY',
   stocktakeVarianceThreshold: 3,
 };
