@@ -466,7 +466,16 @@ describe('Confirmed-order edit (integration)', () => {
       .send({ ...fullEditPayload({ color: 'gris', size: 'xxl' }, 2), reason: 'Client a changé couleur et taille' })
       .expect(200);
 
-    const entry = await auditLogs.findOne({ entityId: orderId, action: 'order.update' }).lean();
+    const entry = (await auditLogs.findOne({ entityId: orderId, action: 'order.update' }).lean()) as unknown as {
+      actor: { type: string; id: string | null; name: string };
+      summary: string;
+      after: {
+        reason: string;
+        changedFields: string[];
+        lineChanges: Array<{ fields: Array<{ field: string; from: unknown; to: unknown }> }>;
+      };
+      before: { items: Array<{ qty: number; variation: Record<string, string> }> };
+    } | null;
     expect(entry).toBeTruthy();
     expect(entry!.actor).toEqual({ type: 'employee', id: expect.any(String), name: 'Edit Admin' });
     expect(entry!.summary).toContain('Client a changé couleur et taille');
