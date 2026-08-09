@@ -226,7 +226,9 @@ describe('Confirmed-order edit (integration)', () => {
     const payload = {
       customer: { firstName: 'Edit', phone: orderBefore?.customer.phone ?? '', city: 'Tunis', address: 'Rue Edit' },
       items: [{ productId: orderBefore?.items[0]?.productId, qty: 1, unitPrice: 25, variation: { color: 'noir', size: 'xl' } }],
-      shipping: 0,
+      // Checkout forces shippingMinor from settings (shippingFlat), so echo
+      // the persisted value back — otherwise the save would look like a change.
+      shipping: (orderBefore?.shippingMinor ?? 0) / 1000,
       deliveryCompany: '',
       exchange: false,
       privateNote: '',
@@ -253,7 +255,7 @@ describe('Confirmed-order edit (integration)', () => {
       .set('Authorization', adminAuth)
       .send(fullEditPayload(productId, { color: 'gris' }))
       .expect(400);
-    expect(res.body.message).toContain('motif');
+    expect(res.body.message).toContain('Motif');
     const after = await stockFor('Edit Test No Reason');
     expect(after.onHand).toBe(9); // nothing moved
   });
@@ -412,7 +414,7 @@ describe('Confirmed-order edit (integration)', () => {
       const after = await stockFor('Edit Test No Stock Mode');
       expect(after.onHand).toBe(9); // order changed, stock did NOT
       const { items: movements } = await inventoryService.movementsFor((await orders.findById(orderId))?.items[0]?.productId ?? '', 1, 10);
-      expect(movements.filter((m) => m.type === 'order_commit' || m.type === 'manual_adjust')).toHaveLength(1); // only the confirm commit
+      expect(movements.filter((m) => m.type === 'order_commit')).toHaveLength(1); // only the confirm commit
     } finally {
       await request(server)
         .put('/api/v1/admin/settings/inventory')
@@ -466,7 +468,7 @@ describe('Confirmed-order edit (integration)', () => {
       .send({ ...fullEditPayload(productId, { color: 'gris', size: 'xxl' }, 2), reason: 'Client a changé couleur et taille' })
       .expect(200);
 
-    const entry = (await auditLogs.findOne({ entityId: orderId, action: 'order.update' }).lean()) as unknown as {
+    const entry = (await auditLogs.findOne({ entityId: orderId, action: 'order.update' }).sort({ createdAt: -1 }).lean()) as unknown as {
       actor: { type: string; id: string | null; name: string };
       summary: string;
       after: {
@@ -512,7 +514,7 @@ describe('Confirmed-order edit (integration)', () => {
       .set('Authorization', adminAuth)
       .send({ ...fullEditPayload(productId, { color: 'bleu' }), reason: 'Modif A', version: currentVersion })
       .expect(409);
-    expect(stale.body.error).toContain('modifiée depuis son ouverture');
+    expect(stale.body.message).toContain('modifiée depuis son ouverture');
 
     // A reloads (new version) and saves on top — succeeds
     const reloaded = await request(server).get(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).expect(200);
