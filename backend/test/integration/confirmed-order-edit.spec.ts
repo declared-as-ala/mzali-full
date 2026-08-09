@@ -290,7 +290,7 @@ describe('Confirmed-order edit (integration)', () => {
     if (!infraAvailable) return;
     const productBId = await createProduct('Edit Test Swap B', 25);
     await inventoryService.adjust(productBId, 10, 'test seed', seedActor);
-    const { orderId, productId: productAId } = await makeConfirmedOrder('Swap A', 25, 1, { color: 'noir' });
+    const { orderId } = await makeConfirmedOrder('Swap A', 25, 1, { color: 'noir' });
     expect((await stockFor('Edit Test Swap A')).onHand).toBe(9);
     expect((await stockFor('Edit Test Swap B')).onHand).toBe(10);
 
