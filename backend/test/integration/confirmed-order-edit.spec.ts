@@ -169,7 +169,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('change color only on a confirmed order succeeds with a reason', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Color Only', 25, 1, { color: 'noir', size: 'xl' });
+    const { orderId, productId } = await makeConfirmedOrder('Color Only', 25, 1, { color: 'noir', size: 'xl' });
     const before = await stockFor('Edit Test Color Only');
     expect(before.onHand).toBe(9); // 10 seeded - 1 committed at confirm
 
@@ -190,7 +190,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('change size only on a confirmed order succeeds with a reason', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Size Only', 25, 1, { color: 'noir', size: 'xl' });
+    const { orderId, productId } = await makeConfirmedOrder('Size Only', 25, 1, { color: 'noir', size: 'xl' });
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
@@ -205,7 +205,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('change color + size together succeeds with a reason', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Color And Size', 25, 1, { color: 'noir', size: 'xl' });
+    const { orderId, productId } = await makeConfirmedOrder('Color And Size', 25, 1, { color: 'noir', size: 'xl' });
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
@@ -247,7 +247,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('a real modification on a confirmed order without a reason is rejected cleanly (400)', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('No Reason', 25, 1, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('No Reason', 25, 1, { color: 'noir' });
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
@@ -262,7 +262,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('quantity 1 -> 3 deducts exactly 2 more units', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Qty Up', 25, 1, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('Qty Up', 25, 1, { color: 'noir' });
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
@@ -275,7 +275,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('quantity 3 -> 1 restores exactly 2 units', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Qty Down', 25, 3, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('Qty Down', 25, 3, { color: 'noir' });
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
@@ -374,7 +374,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('saving the same request twice never double-deducts stock', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Idempotent', 25, 1, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('Idempotent', 25, 1, { color: 'noir' });
     const payload = { ...fullEditPayload(productId, { color: 'gris' }, 3), reason: 'Augmentation quantité' };
 
     const first = await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send(payload).expect(200);
@@ -393,7 +393,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('with inventory tracking disabled, confirmed-order edits create no stock movement', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('No Stock Mode', 25, 1, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('No Stock Mode', 25, 1, { color: 'noir' });
     const before = await stockFor('Edit Test No Stock Mode');
     expect(before.onHand).toBe(9);
 
@@ -459,7 +459,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('every confirmed-order edit writes before/after values, changed fields, and the reason', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Audit Trail', 25, 1, { color: 'noir', size: 'xl' });
+    const { orderId, productId } = await makeConfirmedOrder('Audit Trail', 25, 1, { color: 'noir', size: 'xl' });
     await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
@@ -495,7 +495,7 @@ describe('Confirmed-order edit (integration)', () => {
 
   test('a stale version aborts the save with 409 — concurrent edits are never silently overwritten', async () => {
     if (!infraAvailable) return;
-    const { orderId } = await makeConfirmedOrder('Concurrency', 25, 1, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('Concurrency', 25, 1, { color: 'noir' });
     const fresh = await request(server).get(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).expect(200);
     const currentVersion = fresh.body.version as number;
 
