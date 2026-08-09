@@ -81,7 +81,7 @@ export class OrdersService {
 
     const commerce = await this.settings.getCommerce();
     const status = dto.status === DRAFT_STATUS ? DRAFT_STATUS : (dto.status || commerce.defaultOrderStatus);
-    const strict = this.config.get<boolean>('STRICT_STOCK') ?? false;
+    const strict = this.isStrictStock;
 
     const lines = await this.resolveLines(dto);
     const shippingMinor = status === DRAFT_STATUS ? toMinor(dto.shipping ?? 0) : toMinor(commerce.shippingFlat);
@@ -472,7 +472,7 @@ export class OrdersService {
         const inventorySettings = await this.settings.getInventorySettings();
         if (wasCommitted && inventorySettings.enabled !== false && itemDiff.added.length + itemDiff.removed.length + itemDiff.changed.length > 0) {
           const deltas = computeStockDeltas(beforeItems, afterItems);
-          const strict = this.config.get<boolean>('STRICT_STOCK') ?? false;
+          const strict = this.isStrictStock;
           for (const [productId, delta] of deltas) {
             if (delta > 0) {
               try {
@@ -707,7 +707,7 @@ export class OrdersService {
     const fromEffect = stockEffectForStatus(from);
     const toEffect = stockEffectForStatus(nextStatus);
     const action = isTrashTransition ? 'none' : planStockTransition(fromEffect, toEffect);
-    const strict = this.config.get<boolean>('STRICT_STOCK') ?? false;
+    const strict = this.isStrictStock;
 
     for (const item of doc.items) {
       if (action === 'reserve') {
@@ -821,6 +821,11 @@ export class OrdersService {
     } catch (err) {
       this.logger.warn(`Failed to enqueue carrier auto-push for order ${doc.id}: ${String(err)}`);
     }
+  }
+
+  private get isStrictStock(): boolean {
+    const val = this.config.get('STRICT_STOCK');
+    return val === true || val === 'true' || process.env.STRICT_STOCK === 'true';
   }
 }
 
