@@ -446,7 +446,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'noir' }, 2), reason: 'Augmentation quantité' })
+      .send({ ...fullEditPayload(productId, { color: 'noir' }, 2), reason: 'Augmentation quantité' })
       .expect(400);
     expect(res.body.message).toContain('Stock insuffisant');
 
