@@ -156,9 +156,9 @@ describe('Confirmed-order edit (integration)', () => {
     return { orderId, productId };
   }
 
-  const fullEditPayload = (variation: Record<string, string>, qty = 1) => ({
+  const fullEditPayload = (productId: string, variation: Record<string, string>, qty = 1) => ({
     customer: { firstName: 'Edit', phone: '00000000', city: 'Tunis', address: 'Rue Edit', phone2: '', email: '', note: '' },
-    items: [{ productId: 'REPLACED', qty, unitPrice: 25, variation, bundleName: undefined, bundleSlot: undefined }],
+    items: [{ productId, qty, unitPrice: 25, variation, bundleName: undefined, bundleSlot: undefined }],
     shipping: 0,
     deliveryCompany: '',
     exchange: false,
@@ -176,7 +176,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'gris', size: 'xl' }), reason: 'Client a changé la couleur' })
+      .send({ ...fullEditPayload(productId, { color: 'gris', size: 'xl' }), reason: 'Client a changé la couleur' })
       .expect(200);
 
     expect(res.body.items[0].attributes).toEqual(
@@ -194,7 +194,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'noir', size: 'xxl' }), reason: 'Client a changé la taille' })
+      .send({ ...fullEditPayload(productId, { color: 'noir', size: 'xxl' }), reason: 'Client a changé la taille' })
       .expect(200);
     expect(res.body.items[0].attributes).toEqual(
       expect.arrayContaining([{ key: 'color', value: 'noir' }, { key: 'size', value: 'xxl' }]),
@@ -209,7 +209,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'gris', size: 'xxl' }), reason: 'Modification demandée par le client' })
+      .send({ ...fullEditPayload(productId, { color: 'gris', size: 'xxl' }), reason: 'Modification demandée par le client' })
       .expect(200);
     expect(res.body.items[0].attributes).toEqual(
       expect.arrayContaining([{ key: 'color', value: 'gris' }, { key: 'size', value: 'xxl' }]),
@@ -251,7 +251,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send(fullEditPayload({ color: 'gris' }))
+      .send(fullEditPayload(productId, { color: 'gris' }))
       .expect(400);
     expect(res.body.message).toContain('motif');
     const after = await stockFor('Edit Test No Reason');
@@ -266,7 +266,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'noir' }, 3), reason: 'Augmentation quantité' })
+      .send({ ...fullEditPayload(productId, { color: 'noir' }, 3), reason: 'Augmentation quantité' })
       .expect(200);
     expect(res.body.total).toBe(75); // 3 × 25
     const after = await stockFor('Edit Test Qty Up');
@@ -279,7 +279,7 @@ describe('Confirmed-order edit (integration)', () => {
     const res = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'noir' }, 1), reason: 'Réduction quantité' })
+      .send({ ...fullEditPayload(productId, { color: 'noir' }, 1), reason: 'Réduction quantité' })
       .expect(200);
     expect(res.body.total).toBe(25);
     const after = await stockFor('Edit Test Qty Down');
@@ -290,7 +290,7 @@ describe('Confirmed-order edit (integration)', () => {
     if (!infraAvailable) return;
     const productBId = await createProduct('Edit Test Swap B', 25);
     await inventoryService.adjust(productBId, 10, 'test seed', seedActor);
-    const { orderId } = await makeConfirmedOrder('Swap A', 25, 1, { color: 'noir' });
+    const { orderId, productId } = await makeConfirmedOrder('Swap A', 25, 1, { color: 'noir' });
     expect((await stockFor('Edit Test Swap A')).onHand).toBe(9);
     expect((await stockFor('Edit Test Swap B')).onHand).toBe(10);
 
@@ -298,7 +298,7 @@ describe('Confirmed-order edit (integration)', () => {
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
       .send({
-        ...fullEditPayload({ color: 'noir' }),
+        ...fullEditPayload(productId, { color: 'noir' }),
         items: [{ productId: productBId, qty: 1, unitPrice: 25, variation: { color: 'noir' } }],
         reason: 'Client a changé de produit',
       })
@@ -375,7 +375,7 @@ describe('Confirmed-order edit (integration)', () => {
   test('saving the same request twice never double-deducts stock', async () => {
     if (!infraAvailable) return;
     const { orderId } = await makeConfirmedOrder('Idempotent', 25, 1, { color: 'noir' });
-    const payload = { ...fullEditPayload({ color: 'gris' }, 3), reason: 'Augmentation quantité' };
+    const payload = { ...fullEditPayload(productId, { color: 'gris' }, 3), reason: 'Augmentation quantité' };
 
     const first = await request(server).put(`/api/v1/admin/orders/${orderId}`).set('Authorization', adminAuth).send(payload).expect(200);
     expect(first.body.total).toBe(75);
@@ -406,7 +406,7 @@ describe('Confirmed-order edit (integration)', () => {
       const res = await request(server)
         .put(`/api/v1/admin/orders/${orderId}`)
         .set('Authorization', adminAuth)
-        .send({ ...fullEditPayload({ color: 'gris' }, 3), reason: 'Augmentation quantité' })
+        .send({ ...fullEditPayload(productId, { color: 'gris' }, 3), reason: 'Augmentation quantité' })
         .expect(200);
       expect(res.body.items[0].attributes).toEqual(expect.arrayContaining([{ key: 'color', value: 'gris' }]));
       const after = await stockFor('Edit Test No Stock Mode');
@@ -463,7 +463,7 @@ describe('Confirmed-order edit (integration)', () => {
     await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'gris', size: 'xxl' }, 2), reason: 'Client a changé couleur et taille' })
+      .send({ ...fullEditPayload(productId, { color: 'gris', size: 'xxl' }, 2), reason: 'Client a changé couleur et taille' })
       .expect(200);
 
     const entry = (await auditLogs.findOne({ entityId: orderId, action: 'order.update' }).lean()) as unknown as {
@@ -503,14 +503,14 @@ describe('Confirmed-order edit (integration)', () => {
     await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'gris' }), reason: 'Modif B', version: currentVersion })
+      .send({ ...fullEditPayload(productId, { color: 'gris' }), reason: 'Modif B', version: currentVersion })
       .expect(200);
 
     // Employee A still holds the old version — rejected, not overwritten
     const stale = await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'bleu' }), reason: 'Modif A', version: currentVersion })
+      .send({ ...fullEditPayload(productId, { color: 'bleu' }), reason: 'Modif A', version: currentVersion })
       .expect(409);
     expect(stale.body.error).toContain('modifiée depuis son ouverture');
 
@@ -519,7 +519,7 @@ describe('Confirmed-order edit (integration)', () => {
     await request(server)
       .put(`/api/v1/admin/orders/${orderId}`)
       .set('Authorization', adminAuth)
-      .send({ ...fullEditPayload({ color: 'bleu' }), reason: 'Modif A après rechargement', version: reloaded.body.version as number })
+      .send({ ...fullEditPayload(productId, { color: 'bleu' }), reason: 'Modif A après rechargement', version: reloaded.body.version as number })
       .expect(200);
 
     const order = await orders.findById(orderId);
