@@ -4,8 +4,8 @@ import Drawer from './Drawer';
 import NumberField from './NumberField';
 import ReasonModal from './ReasonModal';
 import { useToast } from './Toast';
-import { Save, Trash2, Plus, Check, AlertTriangle } from 'lucide-react';
-import { SITE, formatPrice } from '@/lib/site-config';
+import { Save, Trash2, Plus, Check, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { SITE, formatPrice, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
 import { attemptStatus, getAttemptNumber, getOrderStatusLabel, isAttemptStatus, MAX_ATTEMPT, MIN_ATTEMPT } from '@/lib/order-status';
 import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/types';
@@ -176,6 +176,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [deliveryCompany, setDeliveryCompany] = useState('');
   const [privateNote, setPrivateNote] = useState('');
   const [customer, setCustomer] = useState({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
+  const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [productInfo, setProductInfo] = useState<Record<string, ProductInfo>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -319,6 +321,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setExchange(o.meta?._mzem_exchange === 'yes');
       setShipping(o.shipping ?? 8);
       setPrivateNote(String((o.meta?._mzem_private_note as string) ?? ''));
+      setCreatedAt(o.createdAt ?? null);
+      setConfirmedAt(o.confirmedAt ?? null);
       const loadedCustomer = {
         firstName: o.customer?.firstName ?? '',
         phone: o.customer?.phone ?? '',
@@ -393,6 +397,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     setExchange(false);
     setShipping(8);
     setPrivateNote('');
+    setCreatedAt(null);
+    setConfirmedAt(null);
     setCustomer({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
     setLines([]);
     setVersion(undefined);
@@ -778,6 +784,21 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               Échange
             </label>
           }>
+            {createdAt && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-ink-100/70 p-3 text-xs border border-ink-200">
+                <span className="text-ink-600 font-medium">Date de création :</span>
+                <span className="font-bold text-ink-900">{formatDateTime(createdAt)}</span>
+              </div>
+            )}
+            {confirmedAt && (
+              <div className="mb-4 flex items-center justify-between rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-900">
+                <span className="flex items-center gap-1.5 font-extrabold text-emerald-800">
+                  <CheckCircle2 size={15} className="text-emerald-600" />
+                  Date exacte de confirmation :
+                </span>
+                <span className="font-extrabold text-emerald-950">{formatDateTime(confirmedAt)}</span>
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Statut">
                 <select className="input" value={status} onChange={(e) => setStatus(e.target.value as OrderStatus)}>

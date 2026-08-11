@@ -62,6 +62,14 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     meta._mzem_coupon_discount = toDinars(doc.coupon.discountMinor);
   }
 
+  let confirmedAtIso: string | undefined = doc.confirmedAt ? doc.confirmedAt.toISOString() : undefined;
+  if (!confirmedAtIso && doc.statusHistory && doc.statusHistory.length > 0) {
+    const confirmedEntry = [...doc.statusHistory].reverse().find((e) => e.to === 'confirme' || e.to === 'completed');
+    if (confirmedEntry?.at) {
+      confirmedAtIso = new Date(confirmedEntry.at).toISOString();
+    }
+  }
+
   return {
     id: String(doc.id ?? doc._id),
     number: String(doc.orderNumber),
@@ -69,6 +77,7 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     currency: doc.currency,
     total: toDinars(total),
     createdAt: doc.createdAt.toISOString(),
+    confirmedAt: confirmedAtIso,
     updatedAt: (doc.updatedAt ?? doc.createdAt).toISOString(),
     version: doc.version ?? 0,
     customer: {

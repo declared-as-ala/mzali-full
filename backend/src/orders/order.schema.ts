@@ -128,6 +128,9 @@ export class Order {
   @Prop({ type: String, unique: true, sparse: true })
   legacyId?: string;
 
+  @Prop({ type: Date, default: null })
+  confirmedAt?: Date | null;
+
   createdAt!: Date;
   updatedAt!: Date;
 }

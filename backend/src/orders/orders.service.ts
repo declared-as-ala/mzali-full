@@ -184,6 +184,7 @@ export class OrdersService {
               paymentMethod: dto.paymentMethod ?? 'cod',
               source: dto.source ?? '',
               attempts: getAttemptNumber(status) ?? dto.attempts ?? 0,
+              confirmedAt: (status === 'confirme' || stockEffectForStatus(status) === 'commit') ? now : null,
               idempotencyKey: idempotencyKey ?? undefined,
             },
           ],
@@ -744,6 +745,12 @@ export class OrdersService {
     // is exactly how orders used to end up displaying "Tentative 0".
     const attemptNumber = getAttemptNumber(nextStatus);
     if (attemptNumber !== null) doc.attempts = attemptNumber;
+
+    if (nextStatus === 'confirme' || stockEffectForStatus(nextStatus) === 'commit') {
+      if (!doc.confirmedAt) {
+        doc.confirmedAt = new Date();
+      }
+    }
 
     doc.status = nextStatus;
     doc.statusHistory.push({ from, to: nextStatus, by: actor, at: new Date(), note } as Order['statusHistory'][number]);

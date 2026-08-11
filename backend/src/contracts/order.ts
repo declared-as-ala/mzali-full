@@ -54,6 +54,7 @@ export type OrderResponse = {
   currency: string;
   total: number;
   createdAt: string;       // ISO
+  confirmedAt?: string | null;  // ISO date/time of confirmation
   /** Last write timestamp — basis for optimistic concurrency on edits. */
   updatedAt?: string;      // ISO
   /** Optimistic-concurrency counter bumped by the backend on every

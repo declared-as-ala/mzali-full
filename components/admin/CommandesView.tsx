@@ -5,7 +5,7 @@ import { Eye, Edit, Trash2, Plus, Search, X, ShoppingBag } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
 import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
-import { formatPrice, formatDate } from '@/lib/site-config';
+import { formatPrice, formatDate, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
 import { getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, TENTATIVE_STATUSES } from '@/lib/order-status';
 import type { OrderResponse, OrderStatusCounts } from '@/types';
@@ -582,7 +582,17 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                       {isRegular && <CustomerBadge phone={o.customer?.phone ?? ''} apiBase={apiBase} />}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-ink-700">{formatDate(o.createdAt)}</td>
+                  <td className="px-4 py-3 text-ink-700">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-semibold text-ink-900">{formatDate(o.createdAt)}</span>
+                      {o.confirmedAt && (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 w-fit" title={`Confirmée le ${formatDateTime(o.confirmedAt)}`}>
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 flex-none" />
+                          Conf: {formatDateTime(o.confirmedAt)}
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">{o.customer?.phone}</td>
                   <td className="px-4 py-3">{o.customer?.city}</td>
                   <td className="px-4 py-3">
