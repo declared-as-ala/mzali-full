@@ -62,7 +62,7 @@ describe('OrdersService.counts', () => {
     const facet = pipeline[0].$facet;
     const pendingMatch = facet.pending[0].$match;
     expect(pendingMatch.$and).toBeDefined();
-    const dateClause = pendingMatch.$and.find((c: any) => c.createdAt);
+    const dateClause = pendingMatch.$and.find((c: Record<string, { $gte?: Date; $lte?: Date }>) => c.createdAt);
     expect(dateClause.createdAt.$gte).toEqual(new Date('2026-08-01T00:00:00.000Z'));
     expect(dateClause.createdAt.$lte).toEqual(new Date('2026-08-07T23:59:59.999Z'));
   });
