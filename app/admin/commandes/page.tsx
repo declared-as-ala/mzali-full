@@ -14,6 +14,7 @@ export default async function Commandes(props: {
     datePreset?: string;
     startDate?: string;
     endDate?: string;
+    sortOrder?: string;
   }>;
 }) {
   const session = await getSession();
@@ -83,6 +84,8 @@ export default async function Commandes(props: {
     queryStatus = resolvedStatus || NORMAL_STATUSES;
   }
 
+  const sortOrder = (sp?.sortOrder === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc';
+
   const wcPageSize = 100;
 
   // Two calls total instead of the previous seven: the current tab's page
@@ -99,6 +102,7 @@ export default async function Commandes(props: {
       search: q,
       after,
       before,
+      sortOrder,
     }).catch(() => ({ items: [] as any[], total: 0, totalPages: 0, page })),
     orderService.counts({ search: q, after, before }).catch(() => ({
       total: 0, pending: 0, confirmed: 0,

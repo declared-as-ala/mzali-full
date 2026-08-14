@@ -272,29 +272,66 @@ export class OrdersService {
 
   async list(query: OrderListQueryDto) {
     const { page, perPage, skip } = clampPagination(query.page, query.perPage, 100);
-    const filter: Record<string, unknown> = {};
+    const andConditions: Record<string, unknown>[] = [];
+
+    let isConfirmedOnly = false;
     if (query.status && query.status !== 'any') {
       const statuses = query.status.split(',').map((status) => status.trim()).filter(Boolean);
-      filter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
+      andConditions.push({ status: statuses.length > 1 ? { $in: statuses } : statuses[0] });
+      if (statuses.length === 1 && statuses[0] === 'confirme') {
+        isConfirmedOnly = true;
+      }
     }
+
     if (query.search) {
-      filter.$or = [
-        { 'customer.firstName': { $regex: query.search, $options: 'i' } },
-        { 'customer.phone': { $regex: query.search, $options: 'i' } },
-        { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
-      ];
+      andConditions.push({
+        $or: [
+          { 'customer.firstName': { $regex: query.search, $options: 'i' } },
+          { 'customer.phone': { $regex: query.search, $options: 'i' } },
+          { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
+        ],
+      });
     }
+
     if (query.after || query.before) {
-      filter.createdAt = {
+      const dateRange = {
         ...(query.after ? { $gte: new Date(query.after) } : {}),
         ...(query.before ? { $lte: new Date(query.before) } : {}),
       };
+      if (isConfirmedOnly) {
+        andConditions.push({
+          $or: [
+            { confirmedAt: dateRange },
+            { confirmedAt: null, createdAt: dateRange },
+          ],
+        });
+      } else {
+        andConditions.push({ createdAt: dateRange });
+      }
     }
 
+    const filter = andConditions.length > 0 ? { $and: andConditions } : {};
+
+    const sortDir = query.sortOrder === 'asc' ? 1 : -1;
+    const sortObj = isConfirmedOnly
+      ? { confirmedAt: sortDir, createdAt: sortDir }
+      : { createdAt: sortDir };
+
     const [docs, total] = await Promise.all([
-      this.model.find(filter).sort({ createdAt: -1 }).skip(skip).limit(perPage),
+      this.model.find(filter).sort(sortObj as any).skip(skip).limit(perPage),
       this.model.countDocuments(filter),
     ]);
+
+    for (const doc of docs) {
+      if (doc.status === 'confirme' && !doc.confirmedAt && doc.statusHistory?.length) {
+        const confirmedEntry = [...doc.statusHistory].reverse().find((e) => e.to === 'confirme' || e.to === 'completed');
+        if (confirmedEntry?.at) {
+          doc.confirmedAt = new Date(confirmedEntry.at);
+          void doc.save().catch(() => {});
+        }
+      }
+    }
+
     return paginate(docs.map((d) => toOrderContract(d)), total, page, perPage);
   }
 
@@ -313,24 +350,43 @@ export class OrdersService {
    * works; see OrderStatusCounts in contracts/order.ts for the exact shape.
    */
   async counts(query: Pick<OrderListQueryDto, 'search' | 'after' | 'before'>): Promise<OrderStatusCounts> {
-    const filter: Record<string, unknown> = {};
-    if (query.search) {
-      filter.$or = [
-        { 'customer.firstName': { $regex: query.search, $options: 'i' } },
-        { 'customer.phone': { $regex: query.search, $options: 'i' } },
-        { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
-      ];
-    }
-    if (query.after || query.before) {
-      filter.createdAt = {
-        ...(query.after ? { $gte: new Date(query.after) } : {}),
-        ...(query.before ? { $lte: new Date(query.before) } : {}),
-      };
-    }
+    const searchCondition = query.search
+      ? {
+          $or: [
+            { 'customer.firstName': { $regex: query.search, $options: 'i' } },
+            { 'customer.phone': { $regex: query.search, $options: 'i' } },
+            { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
+          ],
+        }
+      : null;
 
-    const countBranch = (status: string) => [{ $match: { status } }, { $count: 'n' }];
+    const hasDate = Boolean(query.after || query.before);
+    const dateRange = hasDate
+      ? {
+          ...(query.after ? { $gte: new Date(query.after) } : {}),
+          ...(query.before ? { $lte: new Date(query.before) } : {}),
+        }
+      : null;
+
+    const countBranch = (status: string) => {
+      const ands: Record<string, unknown>[] = [{ status }];
+      if (searchCondition) ands.push(searchCondition);
+      if (dateRange) {
+        if (status === 'confirme') {
+          ands.push({
+            $or: [
+              { confirmedAt: dateRange },
+              { confirmedAt: null, createdAt: dateRange },
+            ],
+          });
+        } else {
+          ands.push({ createdAt: dateRange });
+        }
+      }
+      return [{ $match: { $and: ands } }, { $count: 'n' }];
+    };
+
     const [facets] = await this.model.aggregate<Record<string, { n: number }[]>>([
-      { $match: filter },
       {
         $facet: {
           pending: countBranch('en-attente'),

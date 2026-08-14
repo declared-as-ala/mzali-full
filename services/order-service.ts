@@ -7,6 +7,7 @@ export type OrderListQuery = {
   search?: string;
   after?: string;
   before?: string;
+  sortOrder?: 'asc' | 'desc';
 };
 
 export type OrderCountsQuery = {

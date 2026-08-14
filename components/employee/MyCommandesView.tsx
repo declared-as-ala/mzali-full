@@ -129,7 +129,8 @@ export default function MyCommandesView() {
 
       // 3. Date Filter
       if (datePreset) {
-        const oDate = new Date(o.createdAt);
+        const targetDateStr = (statusFilter === 'confirme' && o.confirmedAt) ? o.confirmedAt : o.createdAt;
+        const oDate = new Date(targetDateStr);
         oDate.setHours(0, 0, 0, 0);
 
         const today = new Date();

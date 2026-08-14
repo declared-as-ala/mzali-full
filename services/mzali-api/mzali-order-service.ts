@@ -41,6 +41,7 @@ export class MzaliApiOrderService implements OrderService {
           search: query.search,
           after: query.after,
           before: query.before,
+          sortOrder: query.sortOrder,
         },
       }),
     );

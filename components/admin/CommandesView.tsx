@@ -49,6 +49,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const datePresetParam = searchParams.get('datePreset') || '';
   const startDateParam = searchParams.get('startDate') || '';
   const endDateParam = searchParams.get('endDate') || '';
+  const sortOrderParam = searchParams.get('sortOrder') || 'desc';
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -61,6 +62,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const [activeTab, setActiveTab] = useState<'normal' | 'abandoned' | 'trash'>(tabParam);
   const [query, setQuery] = useState(qParam);
   const [statusFilter, setStatusFilter] = useState(statusParam);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(sortOrderParam === 'asc' ? 'asc' : 'desc');
   const [productFilter, setProductFilter] = useState('');
   const [datePreset, setDatePreset] = useState(datePresetParam);
   const [startDate, setStartDate] = useState(startDateParam);
@@ -71,6 +73,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   useEffect(() => { setActiveTab(tabParam); }, [tabParam]);
   useEffect(() => { setQuery(qParam); }, [qParam]);
   useEffect(() => { setStatusFilter(statusParam); }, [statusParam]);
+  useEffect(() => { setSortOrder(sortOrderParam === 'asc' ? 'asc' : 'desc'); }, [sortOrderParam]);
   useEffect(() => { setDatePreset(datePresetParam); }, [datePresetParam]);
   useEffect(() => { setStartDate(startDateParam); }, [startDateParam]);
   useEffect(() => { setEndDate(endDateParam); }, [endDateParam]);
@@ -454,6 +457,17 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                 ))}
               </select>
             )}
+            {statusFilter === 'confirme' && (
+              <select
+                value={sortOrder}
+                onChange={(e) => updateFilters({ sortOrder: e.target.value === 'asc' ? 'asc' : null })}
+                className="input w-52 text-xs font-bold text-ink-900 border-emerald-300 bg-emerald-50/50"
+                aria-label="Trier par date de confirmation"
+              >
+                <option value="desc">Plus récentes confirmées</option>
+                <option value="asc">Plus anciennes confirmées</option>
+              </select>
+            )}
           </>
         )}
 
@@ -506,7 +520,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             onClick={() => { 
               setQuery(''); 
               setProductFilter(''); 
-              updateFilters({ q: null, status: null, datePreset: null, startDate: null, endDate: null });
+              updateFilters({ q: null, status: null, datePreset: null, startDate: null, endDate: null, sortOrder: null });
             }} 
             className="btn-ghost"
           >
