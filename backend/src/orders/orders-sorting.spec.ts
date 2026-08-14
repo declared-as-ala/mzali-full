@@ -1,10 +1,30 @@
 import { OrdersService } from './orders.service';
 
-function mockOrdersModel(docs: any[]) {
-  const model: any = {
-    find: jest.fn().mockImplementation((filter: any) => {
+type MockDoc = {
+  _id: string;
+  orderNumber: number;
+  status: string;
+  createdAt: Date;
+  confirmedAt?: Date;
+  customer?: { firstName: string; phone: string };
+  carrier?: Record<string, unknown>;
+  items?: unknown[];
+  [key: string]: unknown;
+};
+
+type FilterClause = {
+  status?: string;
+  $or?: Array<{
+    confirmedAt?: { $gte?: string; $lte?: string };
+    createdAt?: { $gte?: string; $lte?: string };
+    [key: string]: unknown;
+  }>;
+};
+
+function mockOrdersModel(docs: MockDoc[]) {
+  const model = {
+    find: jest.fn().mockImplementation((filter: { $and?: FilterClause[] }) => {
       let filtered = [...docs];
-      // Basic match simulation for test verification
       if (filter?.$and) {
         for (const cond of filter.$and) {
           if (cond.status) {
@@ -12,7 +32,7 @@ function mockOrdersModel(docs: any[]) {
           }
           if (cond.$or) {
             filtered = filtered.filter((d) => {
-              return cond.$or.some((clause: any) => {
+              return cond.$or?.some((clause) => {
                 if (clause.confirmedAt) {
                   const val = d.confirmedAt ? new Date(d.confirmedAt).getTime() : null;
                   const gte = clause.confirmedAt.$gte ? new Date(clause.confirmedAt.$gte).getTime() : -Infinity;
@@ -33,12 +53,12 @@ function mockOrdersModel(docs: any[]) {
       }
 
       return {
-        sort: jest.fn().mockImplementation((sortObj: any) => {
+        sort: jest.fn().mockImplementation((sortObj: Record<string, number>) => {
           const key = sortObj.confirmedAt !== undefined ? 'confirmedAt' : 'createdAt';
           const dir = sortObj[key];
           filtered.sort((a, b) => {
-            const valA = a[key] ? new Date(a[key]).getTime() : 0;
-            const valB = b[key] ? new Date(b[key]).getTime() : 0;
+            const valA = a[key] ? new Date(a[key] as Date).getTime() : 0;
+            const valB = b[key] ? new Date(b[key] as Date).getTime() : 0;
             return dir === 1 ? valA - valB : valB - valA;
           });
           return {
@@ -73,23 +93,25 @@ function mockOrdersModel(docs: any[]) {
 }
 
 describe('OrdersService - confirmedAt sorting and filtering', () => {
-  const docA = {
+  const docA: MockDoc = {
     _id: 'order-a',
     orderNumber: 101,
     status: 'confirme',
     createdAt: new Date('2026-08-10T10:00:00Z'),
     confirmedAt: new Date('2026-08-14T12:00:00Z'),
     customer: { firstName: 'Alice', phone: '123' },
+    carrier: {},
     items: [],
   };
 
-  const docB = {
+  const docB: MockDoc = {
     _id: 'order-b',
     orderNumber: 102,
     status: 'confirme',
     createdAt: new Date('2026-08-12T10:00:00Z'),
     confirmedAt: new Date('2026-08-14T10:00:00Z'),
     customer: { firstName: 'Bob', phone: '456' },
+    carrier: {},
     items: [],
   };
 
@@ -133,11 +155,11 @@ describe('OrdersService - confirmedAt sorting and filtering', () => {
       before: '2026-08-14T23:59:59.999Z',
     });
 
-    const pipeline = model.find.mock.calls[0][0];
+    const pipeline = model.find.mock.calls[0][0] as { $and: Array<{ $or?: Array<{ confirmedAt?: { $gte?: Date } }> }> };
     const ands = pipeline.$and;
-    const dateClause = ands.find((c: any) => c.$or && c.$or.some((clause: any) => clause.confirmedAt));
+    const dateClause = ands.find((c) => c.$or && c.$or.some((clause) => clause.confirmedAt));
     expect(dateClause).toBeDefined();
-    expect(dateClause.$or[0].confirmedAt.$gte).toEqual(new Date('2026-08-14T00:00:00.000Z'));
+    expect(dateClause?.$or?.[0]?.confirmedAt?.$gte).toEqual(new Date('2026-08-14T00:00:00.000Z'));
   });
 
   it('counts confirmed orders in date range using confirmedAt filter', async () => {
@@ -148,11 +170,20 @@ describe('OrdersService - confirmedAt sorting and filtering', () => {
       before: '2026-08-14T23:59:59.999Z',
     });
 
-    const pipeline = model.aggregate.mock.calls[0][0];
+    type AggregatePipeline = Array<{
+      $facet: {
+        confirmed: Array<{
+          $match: {
+            $and: Array<{ $or?: Array<{ confirmedAt?: { $gte?: Date } }> }>;
+          };
+        }>;
+      };
+    }>;
+    const pipeline = model.aggregate.mock.calls[0][0] as AggregatePipeline;
     const facet = pipeline[0].$facet;
     const confirmedMatch = facet.confirmed[0].$match.$and;
-    const dateClause = confirmedMatch.find((c: any) => c.$or);
+    const dateClause = confirmedMatch.find((c) => c.$or);
     expect(dateClause).toBeDefined();
-    expect(dateClause.$or[0].confirmedAt.$gte).toEqual(new Date('2026-08-14T00:00:00.000Z'));
+    expect(dateClause?.$or?.[0]?.confirmedAt?.$gte).toEqual(new Date('2026-08-14T00:00:00.000Z'));
   });
 });

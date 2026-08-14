@@ -318,7 +318,7 @@ export class OrdersService {
       : { createdAt: sortDir };
 
     const [docs, total] = await Promise.all([
-      this.model.find(filter).sort(sortObj as any).skip(skip).limit(perPage),
+      this.model.find(filter).sort(sortObj as unknown as Record<string, 1 | -1>).skip(skip).limit(perPage),
       this.model.countDocuments(filter),
     ]);
 

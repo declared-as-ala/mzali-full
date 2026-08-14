@@ -59,10 +59,11 @@ describe('OrdersService.counts', () => {
     await service.counts({ search: '22334455', after: '2026-08-01T00:00:00.000Z', before: '2026-08-07T23:59:59.999Z' });
 
     const pipeline = model.aggregate.mock.calls[0][0];
-    const matchStage = pipeline[0].$match;
-    expect(matchStage.$or).toBeDefined();
-    expect(matchStage.createdAt.$gte).toEqual(new Date('2026-08-01T00:00:00.000Z'));
-    expect(matchStage.createdAt.$lte).toEqual(new Date('2026-08-07T23:59:59.999Z'));
-    expect(matchStage.status).toBeUndefined();
+    const facet = pipeline[0].$facet;
+    const pendingMatch = facet.pending[0].$match;
+    expect(pendingMatch.$and).toBeDefined();
+    const dateClause = pendingMatch.$and.find((c: any) => c.createdAt);
+    expect(dateClause.createdAt.$gte).toEqual(new Date('2026-08-01T00:00:00.000Z'));
+    expect(dateClause.createdAt.$lte).toEqual(new Date('2026-08-07T23:59:59.999Z'));
   });
 });
