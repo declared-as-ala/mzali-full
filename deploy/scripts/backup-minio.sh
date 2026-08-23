@@ -54,11 +54,13 @@ echo "Mirroring MinIO into $minio_dir"
 # MinIO credentials expand in the one-shot container, not in the host shell.
 # shellcheck disable=SC2016
 compose run --rm --no-deps --entrypoint /bin/sh minio-init -ec '
+  find /backups/minio -mindepth 1 -maxdepth 1 -type d -mtime "+'"$BACKUP_RETENTION_DAYS"'" -exec rm -rf -- {} + 2>/dev/null || true
   mc alias set backup-source http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
   mc mirror --overwrite backup-source/ "/backups/minio/'"$timestamp"'"
+  chmod -R a+rwX "/backups/minio/'"$timestamp"'" 2>/dev/null || true
 '
 
-find "$BACKUP_TARGET/minio" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} +
+find "$BACKUP_TARGET/minio" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} + 2>/dev/null || true
 
 echo "MinIO backup completed: $timestamp"
 echo "REMINDER: this is a local copy only — mirror $BACKUP_TARGET/minio off-server" \

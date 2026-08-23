@@ -59,7 +59,7 @@ compose exec -T mongo sh -ec '
 ' > "$mongo_dir/dump.archive.gz"
 [[ -s "$mongo_dir/dump.archive.gz" ]] || { echo "MongoDB backup is empty" >&2; exit 1; }
 
-find "$BACKUP_TARGET/mongo" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} +
+find "$BACKUP_TARGET/mongo" -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf -- {} + 2>/dev/null || true
 
 echo "MongoDB backup completed: $timestamp"
 echo "REMINDER: this is a local copy only — mirror $BACKUP_TARGET/mongo off-server" \
