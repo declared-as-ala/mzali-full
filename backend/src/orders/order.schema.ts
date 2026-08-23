@@ -3,13 +3,13 @@ import { HydratedDocument } from 'mongoose';
 
 @Schema({ _id: false })
 class OrderCustomer {
-  @Prop({ type: String, required: true }) firstName!: string;
+  @Prop({ type: String, default: '' }) firstName!: string;
   @Prop({ type: String, default: '' }) lastName!: string;
   @Prop({ type: String, required: true }) phone!: string;
   @Prop({ type: String, default: '' }) phone2!: string;
   @Prop({ type: String, default: '' }) email!: string;
-  @Prop({ type: String, required: true }) city!: string;
-  @Prop({ type: String, required: true }) address!: string;
+  @Prop({ type: String, default: '' }) city!: string;
+  @Prop({ type: String, default: '' }) address!: string;
   @Prop({ type: String, default: '' }) note!: string;
 }
 const OrderCustomerSchema = SchemaFactory.createForClass(OrderCustomer);

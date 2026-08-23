@@ -57,11 +57,11 @@ export class WooCommerceOrderService implements OrderService {
     // For boutiqueahmedmzali.com the allowed values are: en-attente, confirme, annule, tentative, auto-draft, checkout-draft
     const defaultStatus = process.env.WC_DEFAULT_ORDER_STATUS || 'en-attente';
     const billing: Record<string, string> = {
-      first_name: customer.firstName,
+      first_name: customer.firstName || 'Client',
       last_name: customer.lastName ?? '',
       phone: customer.phone,
-      address_1: customer.address,
-      city: customer.city,
+      address_1: customer.address || '',
+      city: customer.city || '',
       country: 'TN',
     };
     // WC rejects '' as an invalid email — only include the field if non-empty AND valid.
@@ -75,10 +75,10 @@ export class WooCommerceOrderService implements OrderService {
       status: payload.status || defaultStatus,
       billing,
       shipping: {
-        first_name: customer.firstName,
+        first_name: customer.firstName || 'Client',
         last_name: customer.lastName ?? '',
-        address_1: customer.address,
-        city: customer.city,
+        address_1: customer.address || '',
+        city: customer.city || '',
         country: 'TN',
       },
       line_items: items.map((i) => {
@@ -123,12 +123,12 @@ export class WooCommerceOrderService implements OrderService {
       const { designation: productLabel, nbArticle: itemsCount } = buildNavexDesignation(items);
       const result = await navex.createShipment({
         reference: `#${order.number || order.id}`,
-        receiverName: customer.firstName + (customer.lastName ? ' ' + customer.lastName : ''),
+        receiverName: (customer.firstName ?? '') + (customer.lastName ? ' ' + customer.lastName : ''),
         receiverPhone: customer.phone,
         receiverPhone2: customer.phone2,
-        receiverGov: customer.city,
-        receiverCity: customer.city,
-        receiverAddress: customer.address,
+        receiverGov: customer.city ?? '',
+        receiverCity: customer.city ?? '',
+        receiverAddress: customer.address ?? '',
         codAmount,
         itemsCount,
         productLabel,
@@ -251,12 +251,12 @@ export class WooCommerceOrderService implements OrderService {
       const { designation: productLabel, nbArticle: itemsCount } = buildNavexDesignation(order.items);
       const result = await navex.createShipment({
         reference: `#${order.number || order.id}`,
-        receiverName: order.customer.firstName + (order.customer.lastName ? ' ' + order.customer.lastName : ''),
+        receiverName: (order.customer.firstName ?? '') + (order.customer.lastName ? ' ' + order.customer.lastName : ''),
         receiverPhone: order.customer.phone,
         receiverPhone2: String((order.meta?._mzem_phone_2 as string) ?? ''),
-        receiverGov: order.customer.city,
-        receiverCity: order.customer.city,
-        receiverAddress: order.customer.address,
+        receiverGov: order.customer.city ?? '',
+        receiverCity: order.customer.city ?? '',
+        receiverAddress: order.customer.address ?? '',
         codAmount,
         itemsCount,
         productLabel,

@@ -75,8 +75,8 @@ export class OrdersService {
       if (existing) return toOrderContract(existing);
     }
     if (dto.items.length === 0) throw new BadRequestException('Panier vide.');
-    if (!dto.customer?.phone || !dto.customer?.firstName) {
-      throw new BadRequestException('Nom et téléphone obligatoires.');
+    if (!dto.customer?.phone) {
+      throw new BadRequestException('Numéro de téléphone obligatoire.');
     }
 
     const commerce = await this.settings.getCommerce();
@@ -149,13 +149,13 @@ export class OrdersService {
               status,
               statusHistory: [{ from: null, to: status, by: SYSTEM_ACTOR, at: now, note: null }],
               customer: {
-                firstName: dto.customer.firstName,
+                firstName: dto.customer.firstName ?? '',
                 lastName: dto.customer.lastName ?? '',
                 phone: dto.customer.phone,
                 phone2: dto.customer.phone2 ?? '',
                 email: dto.customer.email ?? '',
-                city: dto.customer.city,
-                address: dto.customer.address,
+                city: dto.customer.city ?? '',
+                address: dto.customer.address ?? '',
                 note: dto.customer.note ?? '',
               },
               customerId: customerDoc?.id ?? null,
@@ -206,30 +206,60 @@ export class OrdersService {
   /** Matches app/api/orders/route.ts's `{orderId}` upsert semantics for checkout drafts. */
   async updateDraft(id: string, dto: CheckoutDto): Promise<OrderResponse> {
     const doc = await this.findDoc(id);
+    const nextStatus = dto.status || doc.status;
+
+    // Idempotency / race guard: if already finalized into a real order and caller tries to confirm again, return safely
+    if (doc.status !== DRAFT_STATUS && nextStatus !== DRAFT_STATUS) {
+      return toOrderContract(doc);
+    }
+
     const lines = await this.resolveLines(dto);
     const commerce = await this.settings.getCommerce();
-    const nextStatus = dto.status || doc.status;
     const shippingMinor = nextStatus === DRAFT_STATUS ? toMinor(dto.shipping ?? 0) : toMinor(commerce.shippingFlat);
-    const totals = computeOrderTotals(
-      lines.map((l) => ({ unitPriceMinor: l.unitPriceMinor, qty: l.qty })),
-      shippingMinor,
-      0,
-    );
 
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        let discountMinor = 0;
+        let couponSnapshot: Order['coupon'] = doc.coupon ?? null;
+        if (dto.couponCode && nextStatus !== DRAFT_STATUS) {
+          const eligibleSubtotal = this.eligibleSubtotalForCoupon(lines, null);
+          const applied = await this.coupons.applyWithinTxn(
+            dto.couponCode,
+            eligibleSubtotal,
+            dto.customer.phone,
+            doc._id.toString(),
+            session,
+          );
+          discountMinor = applied.discountMinor;
+          couponSnapshot = {
+            couponId: applied.couponId,
+            code: applied.code,
+            type: applied.type,
+            value: applied.value,
+            discountMinor: applied.discountMinor,
+          };
+        } else if (doc.coupon && doc.coupon.discountMinor > 0) {
+          discountMinor = doc.coupon.discountMinor;
+        }
+
+        const totals = computeOrderTotals(
+          lines.map((l) => ({ unitPriceMinor: l.unitPriceMinor, qty: l.qty })),
+          shippingMinor,
+          discountMinor,
+        );
+
         // Update customer + line items BEFORE the status transition so that
         // a draft->reserving transition reserves against the current cart,
         // not whatever items the draft happened to hold previously.
         doc.customer = {
-          firstName: dto.customer.firstName,
+          firstName: dto.customer.firstName ?? '',
           lastName: dto.customer.lastName ?? '',
           phone: dto.customer.phone,
           phone2: dto.customer.phone2 ?? '',
           email: dto.customer.email ?? '',
-          city: dto.customer.city,
-          address: dto.customer.address,
+          city: dto.customer.city ?? '',
+          address: dto.customer.address ?? '',
           note: dto.customer.note ?? '',
         } as Order['customer'];
         doc.items = lines.map((l) => ({
@@ -248,7 +278,9 @@ export class OrdersService {
         })) as Order['items'];
         doc.subtotalMinor = totals.subtotalMinor;
         doc.shippingMinor = totals.shippingMinor;
+        doc.discountMinor = totals.discountMinor;
         doc.totalMinor = totals.totalMinor;
+        doc.coupon = couponSnapshot;
         if (dto.subtotal != null) doc.manualSubtotalMinor = toMinor(dto.subtotal);
         if (dto.total != null) doc.manualTotalMinor = toMinor(dto.total);
         if (dto.attempts != null) doc.attempts = dto.attempts;

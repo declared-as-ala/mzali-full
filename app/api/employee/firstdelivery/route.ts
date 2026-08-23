@@ -42,12 +42,12 @@ export async function POST(req: Request) {
     const { designation: productLabel, nbArticle: itemsCount } = buildFirstDeliveryDesignation(order.items);
 
     const result = await firstDelivery.createShipment({
-      receiverName: order.customer.firstName + (order.customer.lastName ? ' ' + order.customer.lastName : ''),
+      receiverName: (order.customer.firstName ?? '') + (order.customer.lastName ? ' ' + order.customer.lastName : ''),
       receiverPhone: order.customer.phone,
       receiverPhone2: String((order.meta?._mzem_phone_2 as string) ?? ''),
-      receiverGov: order.customer.city,
-      receiverCity: order.customer.city,
-      receiverAddress: order.customer.address,
+      receiverGov: order.customer.city ?? '',
+      receiverCity: order.customer.city ?? '',
+      receiverAddress: order.customer.address ?? '',
       codAmount,
       itemsCount,
       productLabel,

@@ -13,13 +13,13 @@ import {
 import { ORDER_STATUS_VALUES } from '@/orders/order-status';
 
 class CheckoutCustomerDto {
-  @IsString() firstName!: string;
+  @IsOptional() @IsString() firstName?: string;
   @IsOptional() @IsString() lastName?: string;
   @IsString() phone!: string;
   @IsOptional() @IsString() phone2?: string;
   @IsOptional() @IsString() email?: string;
-  @IsString() city!: string;
-  @IsString() address!: string;
+  @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() note?: string;
 }
 

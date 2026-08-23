@@ -43,11 +43,11 @@ export async function POST(req: Request) {
 
     const result = await navex.createShipment({
       reference: `#${order.number || order.id}`,
-      receiverName: order.customer.firstName + (order.customer.lastName ? ' ' + order.customer.lastName : ''),
+      receiverName: (order.customer.firstName ?? '') + (order.customer.lastName ? ' ' + order.customer.lastName : ''),
       receiverPhone: order.customer.phone,
-      receiverGov: order.customer.city,
-      receiverCity: order.customer.city,
-      receiverAddress: order.customer.address,
+      receiverGov: order.customer.city ?? '',
+      receiverCity: order.customer.city ?? '',
+      receiverAddress: order.customer.address ?? '',
       codAmount,
       itemsCount,
       productLabel,

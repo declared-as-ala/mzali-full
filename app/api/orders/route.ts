@@ -8,14 +8,29 @@ const PROVIDER = process.env.COMMERCE_PROVIDER ?? 'woocommerce';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { orderId, ...payload } = body as CheckoutPayload & { orderId?: string; couponCode?: string };
+    const idempotencyKey = req.headers.get('idempotency-key') || body.idempotencyKey || undefined;
+    const { orderId, ...rawPayload } = body as CheckoutPayload & { orderId?: string; couponCode?: string; idempotencyKey?: string };
 
-    if (!payload?.customer?.phone || !payload?.customer?.firstName) {
-      return NextResponse.json({ error: 'Nom et téléphone obligatoires.' }, { status: 400 });
+    if (!rawPayload?.customer?.phone || !rawPayload.customer.phone.trim()) {
+      return NextResponse.json({ error: 'Numéro de téléphone obligatoire.' }, { status: 400 });
     }
-    if (!Array.isArray(payload.items) || payload.items.length === 0) {
+    if (!Array.isArray(rawPayload.items) || rawPayload.items.length === 0) {
       return NextResponse.json({ error: 'Panier vide.' }, { status: 400 });
     }
+
+    const payload: CheckoutPayload & { couponCode?: string } = {
+      ...rawPayload,
+      customer: {
+        firstName: rawPayload.customer.firstName ?? '',
+        lastName: rawPayload.customer.lastName ?? '',
+        phone: rawPayload.customer.phone.trim(),
+        phone2: rawPayload.customer.phone2 ?? '',
+        email: rawPayload.customer.email ?? '',
+        city: rawPayload.customer.city ?? '',
+        address: rawPayload.customer.address ?? '',
+        note: rawPayload.customer.note ?? '',
+      },
+    };
 
     // mzali-api draft-upsert (orderId present) goes straight to the
     // dedicated public draft endpoint — the generic OrderService.update()
@@ -26,6 +41,7 @@ export async function POST(req: Request) {
       const order = await apiRequest<{ id: string; number: string; total: number }>(`/orders/${orderId}/draft`, {
         method: 'PUT',
         serviceToken: true,
+        idempotencyKey,
         body: payload,
       });
       return NextResponse.json({ id: order.id, number: order.number, total: order.total });

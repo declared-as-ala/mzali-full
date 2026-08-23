@@ -1,13 +1,13 @@
 import type { CartItem } from './cart';
 
 export type CheckoutCustomer = {
-  firstName: string;
+  firstName?: string;
   lastName?: string;
   phone: string;
   phone2?: string;
   email?: string;
-  city: string;
-  address: string;
+  city?: string;
+  address?: string;
   note?: string;
 };
 
