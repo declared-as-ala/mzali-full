@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { ShieldCheck, Truck, ShoppingBag, ArrowRight, Loader2, Tag, CheckCircle2, AlertCircle } from 'lucide-react';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
@@ -174,9 +173,10 @@ export default function CheckoutPage() {
     setPhoneTouched(true);
     if (!isValidPhone(form.phone)) {
       setPhoneError(t.checkout.phoneInvalid);
-      // Focus the phone input
+      // Focus and scroll to the phone input
       const phoneInput = document.getElementById('checkout-phone-input');
       phoneInput?.focus();
+      phoneInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     setPhoneError(null);
@@ -273,7 +273,7 @@ export default function CheckoutPage() {
   return (
     <>
       <Header categories={[]} />
-      <main className="container-shop py-6 sm:py-10">
+      <main className="container-shop py-6 pb-28 sm:py-10 lg:pb-10">
         <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-black text-ink-900 sm:text-3xl">{t.checkout.title}</h1>
@@ -287,7 +287,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
+        <form id="checkout-form" onSubmit={submit} className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
           {/* Customer Information (Top on Mobile, Left 7-cols on Desktop) */}
           <div className="space-y-6 lg:col-span-7">
             <div className="card space-y-5 p-4 sm:p-6">
@@ -472,7 +472,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Order Summary & Final Confirmation CTA (Below on Mobile, Right 5-cols on Desktop) */}
+          {/* Order Summary & Desktop Confirmation Card (Right 5-cols on Desktop) */}
           <aside className="space-y-6 lg:col-span-5">
             <div className="card p-4 sm:p-6 lg:sticky lg:top-24">
               <div className="flex items-center justify-between border-b border-ink-100 pb-3">
@@ -583,11 +583,11 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Final Confirmation Button */}
-              <div className="mt-6">
+              {/* Desktop Final Confirmation Button (Hidden on mobile since mobile has sticky bottom bar) */}
+              <div className="mt-6 hidden lg:block">
                 <button
                   type="submit"
-                  id="checkout-submit-btn"
+                  id="checkout-submit-btn-desktop"
                   disabled={submitting || !items.length}
                   className="btn-cta w-full py-4 text-base font-black shadow-lg shadow-emerald-600/20 sm:text-lg disabled:opacity-50"
                 >
@@ -611,6 +611,36 @@ export default function CheckoutPage() {
           </aside>
         </form>
       </main>
+
+      {/* Pinned Mobile Confirmation Bottom Bar (Always visible on mobile view without scrolling) */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-200 bg-white/95 backdrop-blur-md px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_25px_rgba(0,0,0,0.1)] lg:hidden">
+        <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-ink-500">{t.cart.total}</p>
+            <p className="truncate text-lg font-black text-brand-600">{formatPrice(grand)}</p>
+          </div>
+          <button
+            type="submit"
+            form="checkout-form"
+            id="checkout-submit-btn-mobile"
+            disabled={submitting || !items.length}
+            className="btn-cta flex-1 max-w-[240px] py-3.5 text-sm font-black shadow-md shadow-emerald-600/20 active:scale-[0.98] disabled:opacity-50 sm:text-base"
+          >
+            {submitting ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 size={18} className="animate-spin" />
+                {t.checkout.submitting}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <CheckCircle2 size={18} />
+                {t.checkout.confirm}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
       <Footer />
     </>
   );
