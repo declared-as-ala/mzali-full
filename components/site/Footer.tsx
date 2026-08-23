@@ -68,16 +68,6 @@ export default function Footer() {
         </div>
       </div>
 
-      <a
-        href={`https://wa.me/216${whatsapp}`}
-        target="_blank"
-        rel="noopener"
-        aria-label={t.common.whatsapp}
-        className="fixed bottom-5 right-5 z-40 grid h-14 w-14 place-items-center rounded-full bg-[#25D366] text-white shadow-2xl transition hover:scale-110"
-      >
-        <MessageCircle size={26} />
-      </a>
-
       <div className="border-t border-white/10 py-4 text-center text-xs text-white/50">
         © {new Date().getFullYear()} {t.common.brandName}. {t.footer.rights}
       </div>
