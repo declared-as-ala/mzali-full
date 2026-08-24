@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, Truck, ShoppingBag, ArrowRight, Loader2, Tag, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ShieldCheck, Truck, ShoppingBag, ArrowRight, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import { useCart } from '@/lib/cart';
@@ -11,13 +11,13 @@ import { SITE, formatPrice } from '@/lib/site-config';
 import { useLanguage } from '@/components/site/LanguageProvider';
 import { isValidPhone, normalizePhone } from '@/lib/phone';
 
-const COUPONS_ENABLED = process.env.NEXT_PUBLIC_COMMERCE_PROVIDER === 'mzali-api';
 const DRAFT_STORAGE_KEY = 'mzali_checkout_draft_id';
 const SESSION_ID_KEY = 'mzali_checkout_session_id';
 
 export default function CheckoutPage() {
   const router = useRouter();
   const items = useCart((s) => s.items);
+  const remove = useCart((s) => s.remove);
   const clear = useCart((s) => s.clear);
   const total = useMemo(() => items.reduce((s, x) => s + x.price * x.qty, 0), [items]);
   const { t, lang } = useLanguage();
@@ -43,14 +43,8 @@ export default function CheckoutPage() {
     note: '',
   });
 
-  const [couponInput, setCouponInput] = useState('');
-  const [applyingCoupon, setApplyingCoupon] = useState(false);
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(null);
-  const [couponError, setCouponError] = useState<string | null>(null);
-
   const shipping = 8;
-  const discount = appliedCoupon?.discount ?? 0;
-  const grand = Math.max(0, total - discount) + shipping;
+  const grand = total + shipping;
 
   const draftOrderIdRef = useRef<string | undefined>(undefined);
   const isSubmittingRef = useRef<boolean>(false);
@@ -73,38 +67,6 @@ export default function CheckoutPage() {
       draftOrderIdRef.current = existingDraftId;
     }
   }, []);
-
-  async function applyCoupon() {
-    const code = couponInput.trim();
-    if (!code) return;
-    setApplyingCoupon(true);
-    setCouponError(null);
-    try {
-      const res = await fetch('/api/coupons/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, subtotal: total, phone: form.phone }),
-      });
-      const data = await res.json();
-      if (data.valid) {
-        setAppliedCoupon({ code: data.code ?? code, discount: Number(data.discount) || 0 });
-      } else {
-        setAppliedCoupon(null);
-        setCouponError(data.reason ?? t.checkout.unknownError);
-      }
-    } catch {
-      setAppliedCoupon(null);
-      setCouponError(t.checkout.unknownError);
-    } finally {
-      setApplyingCoupon(false);
-    }
-  }
-
-  function removeCoupon() {
-    setAppliedCoupon(null);
-    setCouponError(null);
-    setCouponInput('');
-  }
 
   // Debounced effect to automatically save checkout drafts in background (abandoned checkout recovery)
   // Trigger ONLY when the customer has entered a valid phone number.
@@ -134,7 +96,6 @@ export default function CheckoutPage() {
           paymentMethod: 'cod',
           source: 'storefront-next',
           status: 'checkout-draft', // Mark as checkout-draft (Abandoned) in backend
-          ...(appliedCoupon ? { couponCode: appliedCoupon.code } : {}),
         };
 
         const res = await fetch('/api/orders', {
@@ -163,7 +124,7 @@ export default function CheckoutPage() {
     return () => {
       if (delayDebounceFn) clearTimeout(delayDebounceFn);
     };
-  }, [form, items, shipping, appliedCoupon]);
+  }, [form, items, shipping]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -208,7 +169,6 @@ export default function CheckoutPage() {
         paymentMethod: 'cod',
         source: 'storefront-next',
         status: 'en-attente',
-        ...(appliedCoupon ? { couponCode: appliedCoupon.code } : {}),
       };
 
       const finalIdempotencyKey = idempotencyKeyRef.current || `confirm_${Date.now()}_${normalizePhone(form.phone)}`;
@@ -232,8 +192,7 @@ export default function CheckoutPage() {
       clear();
 
       const num = data.number || data.id;
-      const discQuery = appliedCoupon ? `&disc=${appliedCoupon.discount}&code=${encodeURIComponent(appliedCoupon.code)}` : '';
-      router.push(`/merci?id=${data.id ?? ''}&n=${encodeURIComponent(num ?? '')}${discQuery}`);
+      router.push(`/merci?id=${data.id ?? ''}&n=${encodeURIComponent(num ?? '')}`);
     } catch (err) {
       // Re-enable in case of submission failure
       isSubmittingRef.current = false;
@@ -510,56 +469,24 @@ export default function CheckoutPage() {
                           {varSummary ? ` · ${varSummary}` : ''}
                         </p>
                       </div>
-                      <span className="whitespace-nowrap text-xs font-bold text-ink-900 sm:text-sm">
-                        {formatPrice(i.price * i.qty)}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="whitespace-nowrap text-xs font-bold text-ink-900 sm:text-sm">
+                          {formatPrice(i.price * i.qty)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => remove(i.lineId)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-400 transition-colors hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                          title={t.cart.remove}
+                          aria-label={t.cart.remove}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
               </ul>
-
-              {/* Promo Code Section */}
-              {COUPONS_ENABLED && (
-                <div className="border-t border-ink-100 pt-3">
-                  {appliedCoupon ? (
-                    <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-xs sm:text-sm">
-                      <div className="flex items-center gap-1.5 font-bold text-emerald-700">
-                        <Tag size={16} />
-                        <span>{t.checkout.couponApplied(appliedCoupon.code)}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={removeCoupon}
-                        className="font-bold text-rose-600 hover:underline"
-                      >
-                        {t.checkout.couponRemove}
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex gap-2">
-                        <input
-                          className="input py-2 text-xs sm:text-sm font-normal"
-                          placeholder={t.checkout.couponPlaceholder}
-                          value={couponInput}
-                          onChange={(e) => setCouponInput(e.target.value)}
-                        />
-                        <button
-                          type="button"
-                          onClick={applyCoupon}
-                          disabled={applyingCoupon || !couponInput.trim()}
-                          className="btn-primary shrink-0 px-3 py-2 text-xs sm:text-sm disabled:opacity-50"
-                        >
-                          {applyingCoupon ? <Loader2 size={16} className="animate-spin" /> : t.checkout.couponApply}
-                        </button>
-                      </div>
-                      {couponError && (
-                        <p className="mt-1 text-xs font-bold text-rose-600">{couponError}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Price Calculation Summary */}
               <div className="space-y-2 border-t border-ink-100 pt-3 text-xs sm:text-sm">
@@ -567,12 +494,6 @@ export default function CheckoutPage() {
                   <span>{t.cart.subtotal}</span>
                   <span className="font-semibold text-ink-900">{formatPrice(total)}</span>
                 </div>
-                {discount > 0 && (
-                  <div className="flex justify-between font-semibold text-emerald-600">
-                    <span>{t.checkout.discount}</span>
-                    <span>-{formatPrice(discount)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-ink-600">
                   <span>{t.cart.shipping}</span>
                   <span className="font-semibold text-ink-900">{formatPrice(shipping)}</span>
