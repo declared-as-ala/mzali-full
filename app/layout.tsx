@@ -9,7 +9,7 @@ import { SITE } from '@/lib/site-config';
 
 export const dynamic = 'force-dynamic';
 
-const fbVerificationToken = process.env.NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION || process.env.FACEBOOK_DOMAIN_VERIFICATION || '';
+const fbVerificationToken = process.env.NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION || process.env.FACEBOOK_DOMAIN_VERIFICATION || 'bsg3jcw76e4zy157f5c4zclm8899d4';
 
 export const metadata: Metadata = {
   title: {
@@ -60,13 +60,9 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  ...(fbVerificationToken
-    ? {
-        other: {
-          'facebook-domain-verification': fbVerificationToken,
-        },
-      }
-    : {}),
+  other: {
+    'facebook-domain-verification': fbVerificationToken,
+  },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -127,6 +123,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang={lang} dir={dir}>
       <head>
+        <meta name="facebook-domain-verification" content={fbVerificationToken} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
