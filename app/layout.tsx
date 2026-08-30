@@ -10,6 +10,7 @@ import { SITE } from '@/lib/site-config';
 export const dynamic = 'force-dynamic';
 
 const fbVerificationToken = process.env.NEXT_PUBLIC_FACEBOOK_DOMAIN_VERIFICATION || process.env.FACEBOOK_DOMAIN_VERIFICATION || 'bsg3jcw76e4zy157f5c4zclm8899d4';
+const fbAppId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID || '';
 
 export const metadata: Metadata = {
   title: {
@@ -62,6 +63,7 @@ export const metadata: Metadata = {
   },
   other: {
     'facebook-domain-verification': fbVerificationToken,
+    ...(fbAppId ? { 'fb:app_id': fbAppId } : {}),
   },
 };
 
