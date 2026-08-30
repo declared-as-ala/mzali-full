@@ -49,9 +49,11 @@ export default function Footer() {
         <div>
           <h4 className="mb-3 font-bold text-white">{t.footer.help}</h4>
           <ul className="space-y-2 text-sm">
-            <li><Link href="/livraison" className="hover:text-white">{t.footer.deliveryReturn}</Link></li>
             <li><Link href="/contact" className="hover:text-white">{t.footer.contact}</Link></li>
+            <li><Link href="/livraison" className="hover:text-white">{t.footer.deliveryReturn}</Link></li>
             <li><Link href="/cgv" className="hover:text-white">{t.footer.terms}</Link></li>
+            <li><Link href="/politique-confidentialite" className="hover:text-white">{t.footer.privacy}</Link></li>
+            <li><Link href="/mentions-legales" className="hover:text-white">{t.footer.legal}</Link></li>
           </ul>
         </div>
 

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
@@ -8,6 +9,14 @@ import { getDictionary } from '@/lib/i18n';
 import { getCurrentLang } from '@/lib/i18n-server';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Merci pour votre commande',
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default async function Merci({ searchParams }: { searchParams: Promise<{ id?: string; n?: string; disc?: string; code?: string }> }) {
   const lang = await getCurrentLang();

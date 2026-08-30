@@ -1,8 +1,17 @@
+import type { Metadata } from 'next';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import FideliteLookup from '@/components/site/FideliteLookup';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: 'Programme de Fidélité',
+  description: 'Consultez votre solde de points et vos avantages fidélité chez Boutique Ahmed Mzali.',
+  alternates: {
+    canonical: 'https://ahmedmzaliboutique.tn/fidelite',
+  },
+};
 
 export default function FidelitePage() {
   return (

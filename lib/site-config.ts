@@ -1,8 +1,10 @@
-// Real data extracted from boutiqueahmedmzali.com (Converty template-3 storefront)
+// Real store configuration for Boutique Ahmed Mzali (ahmedmzaliboutique.tn)
 export const SITE = {
   name: 'Boutique Ahmed Mzali',
-  domain: 'boutiqueahmedmzali.com',
+  domain: 'ahmedmzaliboutique.tn',
+  url: 'https://ahmedmzaliboutique.tn',
   logo: '/hero.webp',
+  ogImage: '/og-image.jpg',
   /** Remote CDN fallback in case you want to reference the original instead. */
   logoRemote: 'https://cdn.converty.shop/images/25fcc422d849332b0a50da9fded0c6b4f3233d728efb1c62aeeffd0edde26cb5_md.webp',
   announcementBar: 'BIENVENUE A BOUTIQUE AHMED MZALI',

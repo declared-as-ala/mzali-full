@@ -1,9 +1,29 @@
 User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin-login
+Disallow: /admin/
+Disallow: /api/
+Disallow: /employee
+Disallow: /employee/
+Disallow: /commande/
+
+User-agent: Googlebot
+Allow: /
 Disallow: /admin
 Disallow: /admin-login
 Disallow: /api/
 Disallow: /employee
-Crawl-delay: 10
+Disallow: /commande/
+
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Facebot
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
 
 User-agent: AhrefsBot
 Disallow: /
@@ -25,3 +45,5 @@ Disallow: /
 
 User-agent: DataForSeoBot
 Disallow: /
+
+Sitemap: https://ahmedmzaliboutique.tn/sitemap.xml

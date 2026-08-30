@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import ProductCard from '@/components/site/ProductCard';
@@ -16,14 +17,51 @@ function param(s: Search, key: string): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Search> }): Promise<Metadata> {
+  const sp = await searchParams;
+  const search = param(sp, 'q');
+
+  const title = search
+    ? `Recherche : « ${search} » — Boutique Ahmed Mzali`
+    : 'Boutique & Catalogue — Prêt-à-porter & Chaussures';
+  const description = 'Découvrez l’ensemble de nos collections de vêtements, chaussures et accessoires chez Boutique Ahmed Mzali. Livraison 24-48h partout en Tunisie, paiement à la livraison.';
+  const canonicalUrl = 'https://ahmedmzaliboutique.tn/shop';
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      type: 'website',
+      url: canonicalUrl,
+      title: `${title} — Boutique Ahmed Mzali`,
+      description,
+      siteName: 'Boutique Ahmed Mzali',
+      images: [
+        {
+          url: 'https://ahmedmzaliboutique.tn/og-image.jpg',
+          width: 1200,
+          height: 630,
+          alt: 'Catalogue Boutique Ahmed Mzali',
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${title} — Boutique Ahmed Mzali`,
+      description,
+      images: ['https://ahmedmzaliboutique.tn/og-image.jpg'],
+    },
+  };
+}
+
 export default async function ShopPage({ searchParams }: { searchParams: Promise<Search> }) {
   const lang = await getCurrentLang();
   const t = getDictionary(lang);
   const sp = await searchParams;
   const page = Math.max(1, Number(param(sp, 'page') ?? 1));
-  // Default to the admin's drag-and-drop product order (matches WooCommerce's
-  // "Default sorting" = menu_order) so reordering in /admin/produits is
-  // immediately visible here without the shopper picking a sort option.
   const sort = (param(sp, 'sort') ?? 'menu_order') as ProductListQuery['orderBy'];
   const order = (param(sp, 'order') ?? (sort === 'menu_order' ? 'asc' : 'desc')) as ProductListQuery['order'];
   const search = param(sp, 'q');

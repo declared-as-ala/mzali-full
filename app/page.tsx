@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import ProductCard from '@/components/site/ProductCard';
@@ -8,6 +9,36 @@ import { Truck, ShieldCheck, Phone, MessageCircle } from 'lucide-react';
 import { getDictionary } from '@/lib/i18n';
 import { getCurrentLang } from '@/lib/i18n-server';
 import type { Product } from '@/types';
+
+export const metadata: Metadata = {
+  title: 'Boutique Ahmed Mzali — Prêt-à-porter & Accessoires Tunisie',
+  description: 'Boutique Ahmed Mzali : Découvrez nos collections de vêtements et chaussures tendance. Livraison rapide 24-48h partout en Tunisie, paiement à la livraison (COD).',
+  alternates: {
+    canonical: 'https://ahmedmzaliboutique.tn/',
+  },
+  openGraph: {
+    type: 'website',
+    url: 'https://ahmedmzaliboutique.tn/',
+    siteName: 'Boutique Ahmed Mzali',
+    title: 'Boutique Ahmed Mzali — Prêt-à-porter & Accessoires en Tunisie',
+    description: 'Boutique Ahmed Mzali : Vêtements, chaussures et accessoires tendance. Livraison rapide 24-48h sur toute la Tunisie, paiement à la livraison (COD).',
+    images: [
+      {
+        url: 'https://ahmedmzaliboutique.tn/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Boutique Ahmed Mzali',
+        type: 'image/jpeg',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Boutique Ahmed Mzali — Prêt-à-porter & Accessoires en Tunisie',
+    description: 'Boutique Ahmed Mzali : Vêtements, chaussures et accessoires tendance. Livraison 24-48h partout en Tunisie.',
+    images: ['https://ahmedmzaliboutique.tn/og-image.jpg'],
+  },
+};
 
 export default async function Home() {
   const lang = await getCurrentLang();

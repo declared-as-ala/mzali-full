@@ -87,6 +87,14 @@ check_status  "www -> storefront"      "https://${WWW_DOMAIN}/"                 
 check_status  "admin -> /admin"        "https://${ADMIN_DOMAIN}/"                              200
 check_status  "pos home"               "https://${POS_DOMAIN}/"                                200
 check_status  "api health/ready"       "https://${API_DOMAIN}/health/ready"                    200
+check_status  "trust /contact"         "https://${STOREFRONT_DOMAIN}/contact"                  200
+check_status  "trust /cgv"             "https://${STOREFRONT_DOMAIN}/cgv"                      200
+check_status  "trust /livraison"       "https://${STOREFRONT_DOMAIN}/livraison"                200
+check_status  "trust /privacy"         "https://${STOREFRONT_DOMAIN}/politique-confidentialite" 200
+check_status  "trust /legal"           "https://${STOREFRONT_DOMAIN}/mentions-legales"         200
+check_status  "seo /robots.txt"        "https://${STOREFRONT_DOMAIN}/robots.txt"               200
+check_status  "seo /sitemap.xml"       "https://${STOREFRONT_DOMAIN}/sitemap.xml"              200
+check_status  "og-image"               "https://${STOREFRONT_DOMAIN}/og-image.jpg"             200
 
 resolved_product_path="$(resolve_smoke_product_path || true)"
 if [[ -n "$resolved_product_path" ]]; then
