@@ -12,7 +12,7 @@ import 'server-only';
 export { buildNavexDesignation as buildFirstDeliveryDesignation } from './navex';
 
 const BASE = (process.env.FIRST_DELIVERY_API_BASE ?? 'https://www.firstdeliverygroup.com/api/v2').replace(/\/+$/, '');
-const TOKEN = process.env.FIRST_DELIVERY_TOKEN ?? '';
+const TOKEN = process.env.FIRST_DELIVERY_TOKEN ?? 'f56f557e-2dda-472d-8bb9-a1768257c308';
 
 export const firstDeliveryConfigured = Boolean(TOKEN);
 
@@ -127,6 +127,8 @@ export type FirstDeliveryShipmentInput = {
   productLabel: string;
   itemsCount: number;
   note?: string;
+  estFragile?: 'oui' | 'non';
+  ouvrirColis?: 'oui' | 'non';
 };
 
 function extractBarcode(payload: unknown): string | undefined {
@@ -204,6 +206,8 @@ export const firstDelivery = {
         commentaire: (s.note ?? '').slice(0, 200),
         article: s.productLabel.slice(0, 100),
         nombreEchange: 0,
+        estFragile: s.estFragile ?? 'non',
+        ouvrirColis: s.ouvrirColis ?? 'non',
       },
     };
 

@@ -274,6 +274,20 @@ export class ProductsService {
   }
 
   /**
+   * Lightweight product list for the Orders filter dropdown.
+   * Returns ONLY online products (posOnly=false/unset, not deleted) to avoid
+   * surfacing POS-exclusive items in a filter that targets e-commerce orders.
+   * Sorted alphabetically; returns id + name + sku for stable ID matching.
+   */
+  async onlinePicker(): Promise<{ id: string; name: string; sku: string | null }[]> {
+    const docs = await this.model
+      .find({ deletedAt: null, posOnly: { $ne: true } })
+      .select({ name: 1, sku: 1 })
+      .sort({ name: 1 });
+    return docs.map((d) => ({ id: d.id, name: d.name, sku: d.sku ?? null }));
+  }
+
+  /**
    * The product-detail read path (getBySlug/getById) always resolves
    * availability live from stock_items rather than trusting the product's
    * denormalized `stockQuantity` — see docs/pos-platform/

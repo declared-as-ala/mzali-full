@@ -15,6 +15,8 @@ export type FirstDeliveryShipmentInput = {
   productLabel: string;
   itemsCount: number;
   note?: string;
+  estFragile?: 'oui' | 'non';
+  ouvrirColis?: 'oui' | 'non';
 };
 
 type FDLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
@@ -72,7 +74,7 @@ export class FirstDeliveryService {
   constructor(private readonly config: ConfigService) {}
 
   get configured(): boolean {
-    return Boolean(this.config.get<string>('FIRST_DELIVERY_TOKEN'));
+    return true; // key is hardcoded
   }
 
   private base(): string {
@@ -80,7 +82,8 @@ export class FirstDeliveryService {
   }
 
   private authHeaders(): Record<string, string> {
-    return { 'Content-Type': 'application/json', Authorization: `Bearer ${this.config.get<string>('FIRST_DELIVERY_TOKEN') ?? ''}` };
+    const token = this.config.get<string>('FIRST_DELIVERY_TOKEN') ?? 'f56f557e-2dda-472d-8bb9-a1768257c308';
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   }
 
   private async getLocalities(): Promise<FDLocality[]> {
@@ -151,6 +154,8 @@ export class FirstDeliveryService {
         commentaire: (s.note ?? '').slice(0, 200),
         article: s.productLabel.slice(0, 100),
         nombreEchange: 0,
+        estFragile: s.estFragile ?? 'non',
+        ouvrirColis: s.ouvrirColis ?? 'non',
       },
     };
 

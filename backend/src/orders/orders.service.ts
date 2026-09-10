@@ -303,7 +303,9 @@ export class OrdersService {
   }
 
   async list(query: OrderListQueryDto) {
-    const { page, perPage, skip } = clampPagination(query.page, query.perPage, 100);
+    // Default page size is 100. clampPagination's built-in default is 20;
+    // explicitly supply 100 so omitting perPage in the query also gives 100.
+    const { page, perPage, skip } = clampPagination(query.page, query.perPage ?? 100, 100);
     const andConditions: Record<string, unknown>[] = [];
 
     let isConfirmedOnly = false;
@@ -323,6 +325,13 @@ export class OrdersService {
           { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
         ],
       });
+    }
+
+    // Product filter — matches any order whose line items contain this product.
+    // Filtered at the DB level so count() and pagination are correct. Uses the
+    // stable productId reference (not the name snapshot) for historical accuracy.
+    if (query.productId) {
+      andConditions.push({ 'items.productId': query.productId });
     }
 
     if (query.after || query.before) {

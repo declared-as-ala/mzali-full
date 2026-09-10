@@ -37,9 +37,11 @@ type Props = {
    *  separate MyCommandesView) pointed at the employee-scoped proxy routes —
    *  full parity with admin: view, create, edit, delete, all of it. */
   apiBase?: '/api/admin' | '/api/employee';
+  /** Product ID currently active in the filter (from URL param). */
+  initialProductId?: string;
 };
 
-export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, counts = EMPTY_COUNTS, apiBase = '/api/admin' }: Props) {
+export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, counts = EMPTY_COUNTS, apiBase = '/api/admin', initialProductId = '' }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -50,6 +52,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const startDateParam = searchParams.get('startDate') || '';
   const endDateParam = searchParams.get('endDate') || '';
   const sortOrderParam = searchParams.get('sortOrder') || 'desc';
+  const productParam = searchParams.get('product') || '';
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -63,7 +66,6 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const [query, setQuery] = useState(qParam);
   const [statusFilter, setStatusFilter] = useState(statusParam);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>(sortOrderParam === 'asc' ? 'asc' : 'desc');
-  const [productFilter, setProductFilter] = useState('');
   const [datePreset, setDatePreset] = useState(datePresetParam);
   const [startDate, setStartDate] = useState(startDateParam);
   const [endDate, setEndDate] = useState(endDateParam);
@@ -134,10 +136,12 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     return `?${params.toString()}`;
   };
 
-  // Fetch all catalogue products to ensure the filter dropdown shows all items in the store
-  const [allProducts, setAllProducts] = useState<{ id: string; name: string }[]>([]);
+  // Fetch online-only products for the Orders filter dropdown.
+  // Uses the dedicated /orders-filter-picker endpoint which excludes posOnly
+  // products at the DB level — never shows POS-only items here.
+  const [allProducts, setAllProducts] = useState<{ id: string; name: string; sku: string | null }[]>([]);
   useEffect(() => {
-    fetch(`${apiBase}/products-picker`)
+    fetch(`${apiBase}/orders-filter-picker`)
       .then((r) => r.ok ? r.json() : [])
       .then((d) => Array.isArray(d) && setAllProducts(d))
       .catch(() => {});
@@ -164,19 +168,16 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     annule: counts.cancelled,
   };
 
-  // Build unique products dynamically using both catalog products and loaded orders
-  const productOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of allProducts) {
-      if (p.name) set.add(p.name);
-    }
-    for (const o of orders) {
-      for (const item of o.items) {
-        if (item.name) set.add(item.name);
-      }
-    }
-    return Array.from(set).sort();
-  }, [allProducts, orders]);
+  // Product filter dropdown: product name displayed, ID stored in URL.
+  // This is intentionally separate from the OrderDrawer's products-picker
+  // (which includes POS-only for in-store edits).
+  const handleProductChange = (productId: string) => {
+    updateFilters({ product: productId || null });
+  };
+
+  // The current product filter value comes from the URL param, not local state,
+  // so it survives page reloads and is always in sync with the backend query.
+  const activeProductId = productParam || initialProductId;
 
   // The main status selector shown when the sentinel 'tentative' is picked —
   // narrows to one specific attempt, or stays on every attempt.
@@ -206,10 +207,10 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         }
       }
 
-      // 2. Product Filter
-      if (productFilter && !o.items.some((item) => item.name === productFilter)) {
-        return false;
-      }
+      // NOTE: Product filter is now handled backend-side (items.productId query)
+      // and is NOT applied here. The server returns only matching orders and the
+      // total/totalPages already reflect the filtered set. Applying it again here
+      // would cause count/row mismatches.
 
       // Date range is deliberately NOT re-applied here — `orders` already
       // comes pre-scoped by the server's after/before query (the same
@@ -220,7 +221,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       // included whenever the browser and server disagreed on what "today"
       // is — e.g. "Hier" showing a count of 16 but only 4 visible rows.
 
-      // 3. Search Query Filter
+      // 2. Search Query Filter
       if (!q) return true;
 
       const normQ = q.replace(/\D/g, '');
@@ -251,7 +252,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       ].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, query, statusFilter, productFilter, activeTab]);
+  }, [orders, query, statusFilter, activeTab]);
 
   function openCreate() { setEditingId(null); setDrawerOpen(true); }
   function openEdit(id: string) { setEditingId(id); setDrawerOpen(true); }
@@ -472,13 +473,15 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         )}
 
         <select
-          value={productFilter}
-          onChange={(e) => setProductFilter(e.target.value)}
+          value={activeProductId}
+          onChange={(e) => handleProductChange(e.target.value)}
           className="input w-44"
+          disabled={pending}
+          aria-label="Filtrer par produit"
         >
           <option value="">Tous les produits</option>
-          {productOptions.map((p) => (
-            <option key={p} value={p}>{p}</option>
+          {allProducts.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}{p.sku ? ` — ${p.sku}` : ''}</option>
           ))}
         </select>
 
@@ -515,12 +518,11 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
           </div>
         )}
 
-        {(query || statusFilter || productFilter || datePreset) && (
+        {(query || statusFilter || activeProductId || datePreset) && (
           <button 
             onClick={() => { 
               setQuery(''); 
-              setProductFilter(''); 
-              updateFilters({ q: null, status: null, datePreset: null, startDate: null, endDate: null, sortOrder: null });
+              updateFilters({ q: null, status: null, product: null, datePreset: null, startDate: null, endDate: null, sortOrder: null });
             }} 
             className="btn-ghost"
           >
@@ -702,17 +704,20 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         </table>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between">
-          <p className="text-sm text-ink-700">
-            Page {page} sur {totalPages} ({total} commande{total > 1 ? 's' : ''})
-          </p>
+      {/* Pagination — always shown so the filtered total is always visible */}
+      <div className="mt-4 flex items-center justify-between">
+        <p className="text-sm text-ink-700">
+          {totalPages > 1
+            ? `Page ${page} sur ${totalPages} (${total} commande${total > 1 ? 's' : ''})`
+            : `${total} commande${total > 1 ? 's' : ''}`}
+        </p>
+        {totalPages > 1 && (
           <div className="flex items-center gap-1">
             {page > 1 && (
               <a
-                href={getPageUrl(page - 1)}
-                className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100"
+                href={pending ? '#' : getPageUrl(page - 1)}
+                aria-disabled={pending}
+                className={`rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`}
               >
                 ← Précédent
               </a>
@@ -731,11 +736,12 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
               return (
                 <a
                   key={p}
-                  href={getPageUrl(p)}
+                  href={pending ? '#' : getPageUrl(p)}
+                  aria-disabled={pending}
                   className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${
                     p === page
                       ? 'bg-brand-500 text-white'
-                      : 'border border-ink-200 bg-white text-ink-900 hover:bg-ink-100'
+                      : `border border-ink-200 bg-white text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`
                   }`}
                 >
                   {p}
@@ -744,15 +750,16 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             })}
             {page < totalPages && (
               <a
-                href={getPageUrl(page + 1)}
-                className="rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100"
+                href={pending ? '#' : getPageUrl(page + 1)}
+                aria-disabled={pending}
+                className={`rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`}
               >
                 Suivant →
               </a>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <OrderDrawer
         open={drawerOpen}

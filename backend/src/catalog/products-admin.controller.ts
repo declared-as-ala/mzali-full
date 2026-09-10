@@ -30,6 +30,14 @@ export class ProductsAdminController {
     return this.products.picker();
   }
 
+  /** Returns only non-POS-only products for the Orders page product filter
+   *  dropdown. Using product IDs (not names) for reliable historical matching. */
+  @Get('admin/products/orders-filter-picker')
+  @RequirePermissions('products.read')
+  ordersFilterPicker() {
+    return this.products.onlinePicker();
+  }
+
   @Get('admin/products/:id')
   @RequirePermissions('products.read')
   get(@Param('id') id: string) {
@@ -114,6 +122,14 @@ export class ProductsEmployeeController {
   @RequirePermissions('products.read')
   picker() {
     return this.products.picker();
+  }
+
+  /** Returns only non-POS-only products for the Orders page product filter
+   *  dropdown. Using product IDs (not names) for reliable historical matching. */
+  @Get('orders-filter-picker')
+  @RequirePermissions('products.read')
+  ordersFilterPicker() {
+    return this.products.onlinePicker();
   }
 
   @Get(':id')

@@ -8,6 +8,9 @@ export type OrderListQuery = {
   after?: string;
   before?: string;
   sortOrder?: 'asc' | 'desc';
+  /** Filter to orders containing this product ID in their line items.
+   *  Matched at the DB level — pagination and total reflect the filtered set. */
+  productId?: string;
 };
 
 export type OrderCountsQuery = {

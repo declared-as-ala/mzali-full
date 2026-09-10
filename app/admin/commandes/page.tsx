@@ -15,6 +15,7 @@ export default async function Commandes(props: {
     startDate?: string;
     endDate?: string;
     sortOrder?: string;
+    product?: string;
   }>;
 }) {
   const session = await getSession();
@@ -28,6 +29,7 @@ export default async function Commandes(props: {
   const datePreset = sp?.datePreset || undefined;
   const startDate = sp?.startDate || undefined;
   const endDate = sp?.endDate || undefined;
+  const productId = sp?.product?.trim() || undefined;
 
   // Determine date boundaries
   let after: string | undefined = undefined;
@@ -103,6 +105,7 @@ export default async function Commandes(props: {
       after,
       before,
       sortOrder,
+      productId,
     }).catch(() => ({ items: [] as any[], total: 0, totalPages: 0, page })),
     orderService.counts({ search: q, after, before }).catch(() => ({
       total: 0, pending: 0, confirmed: 0,
@@ -132,6 +135,7 @@ export default async function Commandes(props: {
       repeatCounts={repeatCounts}
       counts={statusCounts}
       apiBase={apiBase}
+      initialProductId={productId}
     />
   );
 }

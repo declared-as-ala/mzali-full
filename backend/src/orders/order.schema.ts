@@ -143,3 +143,7 @@ OrderSchema.index({ status: 1, confirmedAt: -1, createdAt: -1 });
 OrderSchema.index({ status: 1, confirmedAt: 1, createdAt: 1 });
 OrderSchema.index({ 'customer.phone': 1, createdAt: -1 });
 OrderSchema.index({ createdAt: -1 });
+// Supports the backend product filter: db.orders.find({ 'items.productId': <id> })
+// Combined with status and createdAt so the planner can use it for the most
+// common filtered+sorted queries without a separate collection scan.
+OrderSchema.index({ 'items.productId': 1, status: 1, createdAt: -1 });
