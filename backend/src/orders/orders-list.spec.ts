@@ -40,7 +40,6 @@ const mockDoc = {
 
 describe('OrdersService.list() — pagination', () => {
   it('default page size is 100', async () => {
-    const { findChain } = serviceWithModel([mockDoc], 1);
     const svc = serviceWithModel([mockDoc], 1);
     await svc.service.list({});
     expect(svc.findChain.limit).toHaveBeenCalledWith(100);
