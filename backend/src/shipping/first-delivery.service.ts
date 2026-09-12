@@ -92,7 +92,12 @@ export class FirstDeliveryService {
     try {
       const res = await fetch(`${this.base()}/localities`, { headers: this.authHeaders() });
       const data = (await readBody(res)) as { result?: FDLocality[] };
-      const list = Array.isArray(data?.result) ? data.result : [];
+      const list = res.ok && data && Array.isArray(data.result)
+        ? data.result.filter((l) => l && Number.isInteger(l.locality_id) && l.locality_id > 0
+          && typeof l.locality_name === 'string' && !!l.locality_name.trim()
+          && typeof l.delegation_name === 'string' && !!l.delegation_name.trim()
+          && typeof l.governorate_name === 'string' && !!l.governorate_name.trim())
+        : [];
       if (list.length > 0) { this.localitiesCache = list; this.localitiesCachedAt = now; }
       return list.length > 0 ? list : (this.localitiesCache ?? []);
     } catch {
@@ -100,33 +105,25 @@ export class FirstDeliveryService {
     }
   }
 
-  private async resolveLocalityId(gov: string, city = '', address = ''): Promise<number> {
+  private async resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
     const localities = await this.getLocalities();
-    if (!localities.length) return 1534; // Ain Zaghouen Nord fallback
-
     const g = normalizeCarrierString(gov);
     const c = normalizeCarrierString(city);
     const addr = normalizeCarrierString(address);
-
-    let hit = localities.find((l) => normalizeCarrierString(l.governorate_name) === g);
-    if (hit) return hit.locality_id;
-    hit = localities.find((l) => normalizeCarrierString(l.governorate_name).includes(g) || g.includes(normalizeCarrierString(l.governorate_name)));
-    if (hit) return hit.locality_id;
-    for (const l of localities) {
-      const govNorm = normalizeCarrierString(l.governorate_name);
-      if (govNorm.length > 3 && (c.includes(govNorm) || addr.includes(govNorm))) return l.locality_id;
-    }
-    hit = localities.find((l) => normalizeCarrierString(l.delegation_name) === g || normalizeCarrierString(l.delegation_name) === c);
-    if (hit) return hit.locality_id;
-    hit = localities.find((l) => normalizeCarrierString(l.delegation_name).includes(g) || g.includes(normalizeCarrierString(l.delegation_name)));
-    if (hit) return hit.locality_id;
-    hit = localities.find((l) => normalizeCarrierString(l.locality_name) === g || normalizeCarrierString(l.locality_name) === c);
-    if (hit) return hit.locality_id;
-    hit = localities.find((l) => normalizeCarrierString(l.locality_name).includes(g) || g.includes(normalizeCarrierString(l.locality_name)));
-    if (hit) return hit.locality_id;
-
-    const defaultHit = localities.find((l) => normalizeCarrierString(l.governorate_name) === 'tunis' || normalizeCarrierString(l.governorate_name) === 'ariana') || localities[0];
-    return defaultHit ? defaultHit.locality_id : 1534;
+    const sameGov = localities.filter((l) => g && normalizeCarrierString(l.governorate_name) === g);
+    const candidates = sameGov.length ? sameGov : localities;
+    // Prefer the actual locality/delegation over the first row in a governorate.
+    const hit = candidates.find((l) => c && normalizeCarrierString(l.locality_name) === c)
+      ?? candidates.find((l) => {
+        const name = normalizeCarrierString(l.locality_name);
+        return name.length > 3 && (` ${addr} `).includes(` ${name} `);
+      })
+      ?? candidates.find((l) => c && normalizeCarrierString(l.delegation_name) === c)
+      ?? candidates.find((l) => g && normalizeCarrierString(l.locality_name) === g)
+      ?? candidates.find((l) => g && normalizeCarrierString(l.delegation_name) === g)
+      ?? sameGov[0];
+    // Never fabricate an ID or route an unknown destination to Tunis/Ariana.
+    return hit ?? null;
   }
 
   async createShipment(s: FirstDeliveryShipmentInput): Promise<CarrierResult> {
@@ -135,14 +132,16 @@ export class FirstDeliveryService {
     const gov = (s.receiverGov ?? '').trim();
     const ville = (s.receiverCity ?? s.receiverGov ?? '').trim();
     const adresse = (s.receiverAddress ?? '').trim() || gov;
-    const locality_id = await this.resolveLocalityId(gov, ville, adresse);
+    if (!gov && !ville) return { ok: false, raw: null, error: 'First Delivery : sélectionnez une ville et enregistrez la commande avant de renvoyer.' };
+    const locality = await this.resolveLocality(gov, ville, adresse);
+    if (!locality) return { ok: false, raw: null, error: 'First Delivery : localité introuvable ou indisponible. Vérifiez la ville et le gouvernorat de la commande.' };
 
     const body = {
       Client: {
         nom: s.receiverName.trim(),
-        locality_id,
-        gouvernerat: gov,
-        ville,
+        locality_id: locality.locality_id,
+        gouvernerat: locality.governorate_name,
+        ville: locality.delegation_name,
         adresse,
         telephone: sanitizeCarrierPhone(s.receiverPhone),
         telephone2: s.receiverPhone2 ? sanitizeCarrierPhone(s.receiverPhone2) : '',

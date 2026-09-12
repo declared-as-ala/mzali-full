@@ -53,7 +53,12 @@ async function getLocalities(): Promise<FDLocality[]> {
   try {
     const res = await fetch(`${BASE}/localities`, { headers: authHeaders(), cache: 'no-store' });
     const data = await readBody(res) as { result?: FDLocality[] };
-    const list = Array.isArray(data?.result) ? (data.result as FDLocality[]) : [];
+    const list = res.ok && data && Array.isArray(data.result)
+        ? data.result.filter((l) => l && Number.isInteger(l.locality_id) && l.locality_id > 0
+          && typeof l.locality_name === 'string' && !!l.locality_name.trim()
+          && typeof l.delegation_name === 'string' && !!l.delegation_name.trim()
+          && typeof l.governorate_name === 'string' && !!l.governorate_name.trim())
+        : [];
     if (list.length > 0) { _localitiesCache = list; _localitiesCachedAt = now; }
     return list.length > 0 ? list : (_localitiesCache ?? []);
   } catch {
@@ -66,48 +71,26 @@ function normStr(s: string | undefined | null): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
-async function resolveLocalityId(gov: string, city: string = '', address: string = ''): Promise<number> {
-  const localities = await getLocalities();
-  if (!localities.length) return 1534; // Ain Zaghouen Nord fallback
-
-  const g = normStr(gov);
-  const c = normStr(city);
-  const addr = normStr(address);
-
-  // 1. Try exact governorate match
-  let hit = localities.find((l) => normStr(l.governorate_name) === g);
-  if (hit) return hit.locality_id;
-
-  // 2. Try partial governorate match
-  hit = localities.find((l) => normStr(l.governorate_name).includes(g) || g.includes(normStr(l.governorate_name)));
-  if (hit) return hit.locality_id;
-
-  // 3. Try finding a governorate name within the city or address fields
-  for (const l of localities) {
-    const govNorm = normStr(l.governorate_name);
-    if (govNorm.length > 3 && (c.includes(govNorm) || addr.includes(govNorm))) {
-      return l.locality_id;
-    }
+async function resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
+    const localities = await getLocalities();
+    const g = normStr(gov);
+    const c = normStr(city);
+    const addr = normStr(address);
+    const sameGov = localities.filter((l) => g && normStr(l.governorate_name) === g);
+    const candidates = sameGov.length ? sameGov : localities;
+    // Prefer the actual locality/delegation over the first row in a governorate.
+    const hit = candidates.find((l) => c && normStr(l.locality_name) === c)
+      ?? candidates.find((l) => {
+        const name = normStr(l.locality_name);
+        return name.length > 3 && (` ${addr} `).includes(` ${name} `);
+      })
+      ?? candidates.find((l) => c && normStr(l.delegation_name) === c)
+      ?? candidates.find((l) => g && normStr(l.locality_name) === g)
+      ?? candidates.find((l) => g && normStr(l.delegation_name) === g)
+      ?? sameGov[0];
+    // Never fabricate an ID or route an unknown destination to Tunis/Ariana.
+    return hit ?? null;
   }
-
-  // 4. Try matching input against delegation names
-  hit = localities.find((l) => normStr(l.delegation_name) === g || normStr(l.delegation_name) === c);
-  if (hit) return hit.locality_id;
-
-  hit = localities.find((l) => normStr(l.delegation_name).includes(g) || g.includes(normStr(l.delegation_name)));
-  if (hit) return hit.locality_id;
-
-  // 5. Try matching input against locality names
-  hit = localities.find((l) => normStr(l.locality_name) === g || normStr(l.locality_name) === c);
-  if (hit) return hit.locality_id;
-
-  hit = localities.find((l) => normStr(l.locality_name).includes(g) || g.includes(normStr(l.locality_name)));
-  if (hit) return hit.locality_id;
-
-  // 6. Fallback to first available Tunis/Ariana locality or the absolute first item
-  const defaultHit = localities.find((l) => normStr(l.governorate_name) === 'tunis' || normStr(l.governorate_name) === 'ariana') || localities[0];
-  return defaultHit ? defaultHit.locality_id : 1534;
-}
 
 export type FirstDeliveryResult = {
   ok: boolean;
@@ -184,16 +167,18 @@ export const firstDelivery = {
     const gov = (s.receiverGov ?? '').trim();
     const ville = (s.receiverCity ?? s.receiverGov ?? '').trim();
     const adresse = (s.receiverAddress ?? '').trim() || gov;
+    if (!gov && !ville) return { ok: false, raw: null, error: 'First Delivery : sélectionnez une ville et enregistrez la commande avant de renvoyer.' };
 
     // locality_id is mandatory since 2026-06-01
-    const locality_id = await resolveLocalityId(gov, ville, adresse);
+    const locality = await resolveLocality(gov, ville, adresse);
+    if (!locality) return { ok: false, raw: null, error: 'First Delivery : localité introuvable ou indisponible. Vérifiez la ville et le gouvernorat de la commande.' };
 
     const body = {
       Client: {
         nom: s.receiverName.trim(),
-        locality_id,
-        gouvernerat: gov,
-        ville: ville,
+        locality_id: locality.locality_id,
+        gouvernerat: locality.governorate_name,
+        ville: locality.delegation_name,
         adresse: adresse,
         telephone: sanitizePhone(s.receiverPhone),
         telephone2: s.receiverPhone2 ? sanitizePhone(s.receiverPhone2) : '',
