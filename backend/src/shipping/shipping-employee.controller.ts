@@ -17,12 +17,12 @@ export class ShippingEmployeeController {
   @Post('navex')
   @RequirePermissions('shipping.push')
   pushNavex(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
-    return this.shipping.push('navex', dto.orderId, { type: 'employee', id: user.userId, name: user.name });
+    return this.shipping.push('navex', dto.orderId, { type: 'employee', id: user.userId, name: user.name }, dto.force);
   }
 
   @Post('firstdelivery')
   @RequirePermissions('shipping.push')
   pushFirstDelivery(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
-    return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name });
+    return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name }, dto.force);
   }
 }

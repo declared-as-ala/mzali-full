@@ -8,12 +8,13 @@ export async function pushCarrier(
   carrier: 'navex' | 'firstdelivery' | 'axess',
   orderId: string,
   bearer: string,
+  force?: boolean,
 ): Promise<{ status: number; body: CarrierPushResult | { error: string } }> {
   try {
     const result = await apiRequest<{ skipped: boolean; result: CarrierPushResult }>(`/${scope}/shipping/${carrier}`, {
       method: 'POST',
       bearer,
-      body: { orderId },
+      body: { orderId, ...(force ? { force: true } : {}) },
     });
     return { status: result.result.ok ? 200 : 502, body: result.result };
   } catch (e) {

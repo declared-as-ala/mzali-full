@@ -39,10 +39,11 @@ export class ShippingService {
    * against duplicate pushes from retries or concurrent requests, replacing
    * the legacy in-memory-only lock in lib/delivery-idempotency.ts).
    */
-  async push(carrier: CarrierName, orderId: string, actor: AuditActor): Promise<{ skipped: boolean; result: CarrierResult }> {
+  async push(carrier: CarrierName, orderId: string, actor: AuditActor, force = false): Promise<{ skipped: boolean; result: CarrierResult }> {
     const existing = await this.orders.findById(orderId);
     if (!existing) throw new NotFoundException('Commande introuvable');
-    if (existing.carrier[carrier]) {
+    // Skip idempotency check only when force=false AND the existing result succeeded
+    if (!force && existing.carrier[carrier] && existing.carrier[carrier]!.status === 'sent') {
       return { skipped: true, result: this.toCarrierResult(existing.carrier[carrier]!) };
     }
 
@@ -51,7 +52,10 @@ export class ShippingService {
     try {
       const order = await this.orders.findById(orderId);
       if (!order) throw new NotFoundException('Commande introuvable');
-      if (order.carrier[carrier]) return { skipped: true, result: this.toCarrierResult(order.carrier[carrier]!) };
+      // After lock: also skip if already successfully sent (unless force)
+      if (!force && order.carrier[carrier] && order.carrier[carrier]!.status === 'sent') {
+        return { skipped: true, result: this.toCarrierResult(order.carrier[carrier]!) };
+      }
 
       const result = await this.dispatch(carrier, order);
       order.carrier[carrier] = {

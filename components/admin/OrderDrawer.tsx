@@ -741,6 +741,32 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     }
   }
 
+  async function sendToFirstDelivery(force = false) {
+    if (!orderId) return;
+    setFdStatus('idle');
+    setFdMsg('');
+    try {
+      const r = await fetch(`${apiBase}/firstdelivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, force }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d?.ok) {
+        setFdTracking(d.barcode ?? '');
+        setFdStatus('sent');
+        setFdMsg('');
+        toast.success('Envoyé à First Delivery avec succès.');
+      } else {
+        setFdStatus('failed');
+        setFdMsg(d?.error ?? `HTTP ${r.status}`);
+        toast.error(`Échec d'envoi First Delivery: ${d?.error ?? `HTTP ${r.status}`}`);
+      }
+    } catch (e) {
+      toast.error(`Erreur réseau: ${e instanceof Error ? e.message : 'inconnu'}`);
+    }
+  }
+
   return (
     <Drawer
       open={open}
@@ -823,14 +849,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 </Field>
               )}
             </div>
-            <Field label="Société de livraison" className="mt-4">
-              <select className="input" value={deliveryCompany} onChange={(e) => setDeliveryCompany(e.target.value)}>
-                <option value="">-</option>
-                <option value="Navex">Navex</option>
-                <option value="First Delivery">First Delivery</option>
-                <option value="Axess Logistique">Axess Logistique</option>
-              </select>
-            </Field>
+
             <Field label="Ajouter une note privée…" className="mt-4">
               <textarea rows={3} className="input" value={privateNote} onChange={(e) => setPrivateNote(e.target.value)} placeholder="Ajouter une note privée…" />
             </Field>
@@ -914,6 +933,16 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                     <span className="text-xs text-ink-700">Pas encore envoyé à First Delivery.</span>
                   )}
                 </div>
+                {/* Resend button — shown when previous attempt failed */}
+                {!fdTracking && fdStatus === 'failed' && (
+                  <button
+                    type="button"
+                    onClick={() => sendToFirstDelivery(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-100 px-3 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-200 transition-colors"
+                  >
+                    Renvoyer
+                  </button>
+                )}
               </div>
             </div>
           )}

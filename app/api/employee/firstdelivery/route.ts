@@ -17,13 +17,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  const { orderId } = await req.json();
+  const { orderId, force } = await req.json();
   if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
 
   if (PROVIDER === 'mzali-api') {
     const bearer = await getValidAccessToken();
     if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    const { status, body } = await pushCarrier('employee', 'firstdelivery', String(orderId), bearer);
+    const { status, body } = await pushCarrier('employee', 'firstdelivery', String(orderId), bearer, force);
     return NextResponse.json(body, { status });
   }
 
