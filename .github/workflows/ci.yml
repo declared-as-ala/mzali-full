@@ -122,11 +122,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate production compose (base + prod overlay)
+      - name: Validate production compose and MinIO image availability
         env:
-          # Dummy values only — this step never starts anything, it just
-          # confirms the merged compose file is well-formed and every
-          # required variable resolves.
+          # Dummy values only — this step never starts anything. It validates
+          # the merged config and checks MinIO manifests before deployment.
           GHCR_OWNER: ci
           IMAGE_TAG: ci
           STOREFRONT_DOMAIN: shop.example.com
@@ -151,6 +150,12 @@ jobs:
           MINIO_ROOT_PASSWORD: ci-placeholder-password
         run: |
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml config -q
+          # CI uses a different MinIO service image; validate the production
+          # server/client too, so a removed image fails before reaching the VPS.
+          images=$(docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml config --images minio minio-init)
+          while IFS= read -r image; do
+            docker buildx imagetools inspect "$image" >/dev/null
+          done <<< "$images"
 
   docker:
     needs: [frontend, pos, backend, compose-validate]
