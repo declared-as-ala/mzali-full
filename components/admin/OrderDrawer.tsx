@@ -850,6 +850,13 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               )}
             </div>
 
+            <Field label="Société de livraison" className="mt-4">
+              <select className="input" value={deliveryCompany} onChange={(e) => setDeliveryCompany(e.target.value)}>
+                <option value="">-</option>
+                <option value="Navex">Navex</option>
+                <option value="First Delivery">First Delivery</option>
+              </select>
+            </Field>
             <Field label="Ajouter une note privée…" className="mt-4">
               <textarea rows={3} className="input" value={privateNote} onChange={(e) => setPrivateNote(e.target.value)} placeholder="Ajouter une note privée…" />
             </Field>
