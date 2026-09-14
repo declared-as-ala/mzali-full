@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, Edit, Trash2, Plus, Search, X, ShoppingBag } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
@@ -80,7 +80,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   useEffect(() => { setStartDate(startDateParam); }, [startDateParam]);
   useEffect(() => { setEndDate(endDateParam); }, [endDateParam]);
 
-  const updateFilters = (newParams: Record<string, string | null>) => {
+  const updateFilters = useCallback((newParams: Record<string, string | null>) => {
     const params = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(newParams)) {
       if (v === null || v === '') {
@@ -93,7 +93,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       params.delete('page');
     }
     router.push(`?${params.toString()}`);
-  };
+  }, [router]);
 
   // Debounce search query updates to URL
   useEffect(() => {
@@ -104,7 +104,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       }
     }, 450);
     return () => clearTimeout(timer);
-  }, [query, searchParams]);
+  }, [query, searchParams, updateFilters]);
 
   const handleTabChange = (tab: 'normal' | 'abandoned' | 'trash') => {
     updateFilters({ tab, status: null });
@@ -152,11 +152,15 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   // from `orders` (that's only ever the current page's rows, which is
   // exactly the mismatch that made the header and the filter counts look
   // inconsistent with each other before).
-  const tabCounts = { normal: counts.total, abandoned: counts.abandoned, trash: counts.trash };
+  const tabCounts = useMemo(() => ({
+    normal: counts.total,
+    abandoned: counts.abandoned,
+    trash: counts.trash,
+  }), [counts.total, counts.abandoned, counts.trash]);
 
   // The one-level "Tentative" bucket in the main filter maps to the sum of
   // all 5 attempts; the nested filter (see the JSX below) breaks it down.
-  const statusFilterCounts: Record<string, number> = {
+  const statusFilterCounts: Record<string, number> = useMemo(() => ({
     'en-attente': counts.pending,
     confirme: counts.confirmed,
     tentative: counts.attempts.total,
@@ -166,7 +170,17 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     'tentative-4': counts.attempts.attempt4,
     'tentative-5': counts.attempts.attempt5,
     annule: counts.cancelled,
-  };
+  }), [
+    counts.pending,
+    counts.confirmed,
+    counts.attempts.total,
+    counts.attempts.attempt1,
+    counts.attempts.attempt2,
+    counts.attempts.attempt3,
+    counts.attempts.attempt4,
+    counts.attempts.attempt5,
+    counts.cancelled,
+  ]);
 
   // Product filter dropdown: product name displayed, ID stored in URL.
   // This is intentionally separate from the OrderDrawer's products-picker
@@ -314,69 +328,28 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     }
   };
 
+  const loadNextChunkRef = useRef(loadNextChunk);
+  loadNextChunkRef.current = loadNextChunk;
+
   useEffect(() => {
     if (!isFilterActive || !hasMore || loadingMore) return;
     const el = sentinelRef.current;
     if (!el) return;
 
+    const scrollContainer = el.closest('main');
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          void loadNextChunk();
+          void loadNextChunkRef.current();
         }
       },
-      { rootMargin: '350px' },
+      { root: scrollContainer, rootMargin: '400px' },
     );
 
     observer.observe(el);
     return () => observer.disconnect();
   }, [isFilterActive, hasMore, loadingMore, orders.length]);
-
-  // Windowed table rendering when loaded orders exceed 100
-  const [scrollY, setScrollY] = useState(0);
-  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 800);
-  const tableBodyRef = useRef<HTMLTableSectionElement | null>(null);
-
-  useEffect(() => {
-    if (!isFilterActive || orders.length <= 100) return;
-    const handleScroll = () => setScrollY(window.scrollY);
-    const handleResize = () => setWindowHeight(window.innerHeight);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    window.addEventListener('resize', handleResize, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [isFilterActive, orders.length]);
-
-  const ROW_HEIGHT = 53;
-  const OVERSCAN = 20;
-
-  const { startIndex, endIndex, topPadding, bottomPadding, visibleOrders } = useMemo(() => {
-    if (!isFilterActive || orders.length <= 100 || !tableBodyRef.current) {
-      return {
-        startIndex: 0,
-        endIndex: orders.length,
-        topPadding: 0,
-        bottomPadding: 0,
-        visibleOrders: orders,
-      };
-    }
-
-    const tableTop = tableBodyRef.current.getBoundingClientRect().top + window.scrollY;
-    const relativeScrollTop = Math.max(0, scrollY - tableTop);
-    const start = Math.max(0, Math.floor(relativeScrollTop / ROW_HEIGHT) - OVERSCAN);
-    const visibleCount = Math.ceil(windowHeight / ROW_HEIGHT) + OVERSCAN * 2;
-    const end = Math.min(orders.length, start + visibleCount);
-
-    return {
-      startIndex: start,
-      endIndex: end,
-      topPadding: start * ROW_HEIGHT,
-      bottomPadding: Math.max(0, (orders.length - end) * ROW_HEIGHT),
-      visibleOrders: orders.slice(start, end),
-    };
-  }, [isFilterActive, orders, scrollY, windowHeight]);
 
   const activeFilterParts = useMemo(() => {
     const parts: string[] = [];
@@ -765,13 +738,8 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody ref={tableBodyRef}>
-            {topPadding > 0 && (
-              <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
-                <td colSpan={10} className="p-0 border-0 pointer-events-none" />
-              </tr>
-            )}
-            {visibleOrders.map((o) => {
+          <tbody>
+            {orders.map((o) => {
               const phoneKey = (o.customer?.phone || '').replace(/\s/g, '');
               const repeats = phoneKey ? (repeatCounts[phoneKey] ?? 0) : 0;
               const isRegular = repeats > 1;
@@ -893,11 +861,6 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                 </tr>
               );
             })}
-            {bottomPadding > 0 && (
-              <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
-                <td colSpan={10} className="p-0 border-0 pointer-events-none" />
-              </tr>
-            )}
             {!orders.length && (
               <tr>
                 <td colSpan={10} className="p-8 text-center text-ink-700">
@@ -970,13 +933,21 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
 
       {/* Case B: Single continuous filtered view with chunk status and sentinel */}
       {isFilterActive && (
-        <div className="mt-4 flex flex-col items-center justify-center gap-2 p-4 text-sm text-ink-600">
+        <div className="mt-4 flex flex-col items-center justify-center gap-3 p-4 text-sm text-ink-600">
           <div ref={sentinelRef} className="h-4 w-full pointer-events-none" />
           {loadingMore && (
             <div className="flex items-center gap-2 font-semibold text-brand-600 animate-pulse">
               <span className="h-2.5 w-2.5 rounded-full bg-brand-500 animate-ping" />
               Chargement des commandes suivantes ({orders.length} sur {formatCount(total)})…
             </div>
+          )}
+          {hasMore && !loadingMore && (
+            <button
+              onClick={() => void loadNextChunk()}
+              className="rounded-xl border border-brand-200 bg-white px-5 py-2.5 text-sm font-bold text-brand-600 shadow-sm hover:bg-brand-50 hover:border-brand-300 transition"
+            >
+              Charger 100 commandes suivantes ({orders.length} sur {formatCount(total)})
+            </button>
           )}
           {!hasMore && orders.length > 0 && (
             <p className="font-semibold text-ink-500">
