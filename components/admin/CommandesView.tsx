@@ -440,7 +440,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     });
   }
   function toggleAll(checked: boolean) {
-    setSelected(checked ? new Set(filteredOrders.map((o) => o.id)) : new Set());
+    setSelected(checked ? new Set(orders.map((o) => o.id)) : new Set());
   }
 
   async function remove(id: string) {
@@ -518,8 +518,8 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     startTransition(() => router.refresh());
   }
 
-  const allChecked = filteredOrders.length > 0 && filteredOrders.every((o) => selected.has(o.id));
-  const someChecked = filteredOrders.some((o) => selected.has(o.id)) && !allChecked;
+  const allChecked = orders.length > 0 && orders.every((o) => selected.has(o.id));
+  const someChecked = orders.some((o) => selected.has(o.id)) && !allChecked;
 
   return (
     <div className="p-8">
