@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { describeFetchError } from '@/common/fetch-error';
-import { normalizeCarrierString, sanitizeCarrierPhone } from './carrier-phone';
+import { sanitizeCarrierPhone } from './carrier-phone';
 import type { CarrierResult } from './navex.service';
 
 export type FirstDeliveryShipmentInput = {
