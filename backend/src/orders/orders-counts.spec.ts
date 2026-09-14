@@ -2,7 +2,9 @@ import { OrdersService } from './orders.service';
 
 /** counts() only touches this.model.aggregate() — every other constructor
  *  dependency is padded with {} as never, same pattern as pos-printer.spec.ts. */
-function serviceWithAggregateResult(facets: Record<string, { n: number }[]>) {
+function serviceWithAggregateResult(
+  facets: Record<string, { n?: number; _id?: string; orderCount?: number }[]>,
+) {
   const model = { aggregate: jest.fn().mockResolvedValue([facets]) };
   const service = new OrdersService(
     model as never, {} as never, {} as never, {} as never, {} as never,
@@ -85,9 +87,9 @@ describe('OrdersService.counts', () => {
       pending: [{ n: 10 }],
       confirmed: [{ n: 20 }],
       products: [
-        { _id: 'prod-dg', orderCount: 325 } as any,
-        { _id: 'prod-pull', orderCount: 181 } as any,
-      ] as any,
+        { _id: 'prod-dg', orderCount: 325 },
+        { _id: 'prod-pull', orderCount: 181 },
+      ],
     });
 
     const result = await service.counts({ status: 'en-attente' });
