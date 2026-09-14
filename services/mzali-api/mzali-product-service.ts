@@ -64,6 +64,7 @@ export class MzaliApiProductService implements ProductService {
           order: query.order,
           onSale: query.onSale,
           featured: query.featured,
+          excludePosOnly: query.excludePosOnly,
         },
       }),
     );

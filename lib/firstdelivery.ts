@@ -12,7 +12,8 @@ import 'server-only';
 export { buildNavexDesignation as buildFirstDeliveryDesignation } from './navex';
 
 const BASE = (process.env.FIRST_DELIVERY_API_BASE ?? 'https://www.firstdeliverygroup.com/api/v2').replace(/\/+$/, '');
-const TOKEN = process.env.FIRST_DELIVERY_TOKEN ?? 'f56f557e-2dda-472d-8bb9-a1768257c308';
+// Hardcoded token per requirement — do NOT use any other API key from .env
+const TOKEN = 'f56f557e-2dda-472d-8bb9-a1768257c308';
 
 export const firstDeliveryConfigured = Boolean(TOKEN);
 

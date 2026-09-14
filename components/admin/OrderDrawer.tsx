@@ -10,7 +10,7 @@ import { adminLoginHref } from '@/lib/admin-nav';
 import { attemptStatus, getAttemptNumber, getOrderStatusLabel, isAttemptStatus, MAX_ATTEMPT, MIN_ATTEMPT } from '@/lib/order-status';
 import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/types';
 
-type ProductPickerItem = { id: string; name: string; price: number; image?: string };
+type ProductPickerItem = { id: string; name: string; price: number; image?: string; status?: string; posOnly?: boolean };
 type LineDraft = {
   productId: string;
   name: string;
@@ -266,8 +266,15 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     // anyway (checkout/order-update both reject them server-side), so they
     // shouldn't be offered here to begin with.
     if (!products.length) {
-      fetch(`${apiBase}/products-picker?excludePosOnly=true`).then(async (r) => {
-        if (r.ok) setProducts(await r.json());
+      fetch(`${apiBase}/products-picker?status=published&excludePosOnly=true`).then(async (r) => {
+        if (r.ok) {
+          const list: ProductPickerItem[] = await r.json();
+          // Filter to only published products ("Affiché"), not private and not POS only
+          const publishedOnline = Array.isArray(list)
+            ? list.filter((p) => (!p.status || p.status === 'published') && !p.posOnly)
+            : [];
+          setProducts(publishedOnline);
+        }
       }).catch(() => {});
     }
     // Load available order-status slugs — 'tentative' is the sentinel for
@@ -423,8 +430,9 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
 
   const filteredProducts = useMemo(() => {
     const q = pickerQuery.toLowerCase().trim();
-    if (!q) return products.slice(0, 30);
-    return products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 30);
+    const available = products.filter((p) => (!p.status || p.status === 'published') && !p.posOnly);
+    if (!q) return available.slice(0, 30);
+    return available.filter((p) => p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)).slice(0, 30);
   }, [products, pickerQuery]);
 
   async function addProduct(p: ProductPickerItem) {

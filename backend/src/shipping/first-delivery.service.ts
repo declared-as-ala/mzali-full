@@ -81,8 +81,11 @@ export class FirstDeliveryService {
     return (this.config.get<string>('FIRST_DELIVERY_API_BASE') ?? 'https://www.firstdeliverygroup.com/api/v2').replace(/\/+$/, '');
   }
 
+  private static readonly HARDCODED_TOKEN = 'f56f557e-2dda-472d-8bb9-a1768257c308';
+
   private authHeaders(): Record<string, string> {
-    const token = this.config.get<string>('FIRST_DELIVERY_TOKEN') ?? 'f56f557e-2dda-472d-8bb9-a1768257c308';
+    // Hardcoded token per requirement — do NOT use any other API key from .env
+    const token = FirstDeliveryService.HARDCODED_TOKEN;
     return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   }
 

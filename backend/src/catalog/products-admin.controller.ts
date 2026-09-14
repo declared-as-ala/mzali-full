@@ -21,7 +21,7 @@ export class ProductsAdminController {
   @Get('admin/products')
   @RequirePermissions('products.read')
   list(@Query() query: ProductListQueryDto) {
-    return this.products.list(query, false);
+    return this.products.list(query, false, query.excludePosOnly);
   }
 
   @Get('admin/products/picker')

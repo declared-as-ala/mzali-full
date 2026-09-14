@@ -73,6 +73,7 @@ export type ProductListQuery = {
   order?: 'asc' | 'desc';
   onSale?: boolean;
   featured?: boolean;
+  excludePosOnly?: boolean;
 };
 
 export type ProductListResult = {
