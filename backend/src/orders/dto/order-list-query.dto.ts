@@ -12,4 +12,5 @@ export class OrderListQueryDto {
    *  Matched against items[].productId — a stable ID reference that survives
    *  product renames and snapshot drift. */
   @IsOptional() @IsString() productId?: string;
+  @IsOptional() @IsString() tab?: string;
 }

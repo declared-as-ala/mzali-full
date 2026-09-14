@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, Edit, Trash2, Plus, Search, X, ShoppingBag } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
@@ -7,7 +7,7 @@ import CustomerBadge from './CustomerBadge';
 import { useToast } from './Toast';
 import { formatPrice, formatDate, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
-import { getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, TENTATIVE_STATUSES } from '@/lib/order-status';
+import { getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, NORMAL_STATUSES, TENTATIVE_STATUSES } from '@/lib/order-status';
 import type { OrderResponse, OrderStatusCounts } from '@/types';
 
 const EMPTY_COUNTS: OrderStatusCounts = {
@@ -183,76 +183,251 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   // narrows to one specific attempt, or stays on every attempt.
   const isTentativeFilterActive = statusFilter === 'tentative' || isAttemptStatus(statusFilter);
 
-  const filteredOrders = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return orders.filter((o) => {
-      // Tab filter: separate normal, abandoned, and trash orders
-      const isTrash = o.status === 'trash';
-      const isAbandoned = o.status === 'checkout-draft' || o.status === 'abandoned' || o.status === 'abondonne';
-      if (activeTab === 'trash' && !isTrash) return false;
-      if (activeTab === 'abandoned' && !isAbandoned) return false;
-      if (activeTab === 'normal' && (isTrash || isAbandoned)) return false;
+  // Active filter detection: switches between Case A (numbered pagination) and Case B (continuous view)
+  const isFilterActive = Boolean(
+    statusFilter ||
+    activeProductId ||
+    datePreset ||
+    query.trim() ||
+    activeTab !== 'normal'
+  );
 
-      // 1. Status Filter
+  // Map product counts from backend aggregation prop
+  const productCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    if (counts?.products) {
+      for (const p of counts.products) {
+        map.set(p.productId, p.orderCount);
+      }
+    }
+    return map;
+  }, [counts?.products]);
+
+  // Current scope total for "Tous les produits"
+  const scopeTotal = useMemo(() => {
+    if (activeTab === 'trash') return tabCounts.trash;
+    if (activeTab === 'abandoned') return tabCounts.abandoned;
+    if (statusFilter && statusFilterCounts[statusFilter] !== undefined) {
+      return statusFilterCounts[statusFilter];
+    }
+    return tabCounts.normal;
+  }, [activeTab, statusFilter, statusFilterCounts, tabCounts]);
+
+  // Sort products for dropdown: products with matching order count first (descending), then 0-count products alphabetically
+  const sortedProducts = useMemo(() => {
+    return [...allProducts].sort((a, b) => {
+      const countA = productCountMap.get(a.id) ?? 0;
+      const countB = productCountMap.get(b.id) ?? 0;
+      if (countA !== countB) return countB - countA;
+      return a.name.localeCompare(b.name, 'fr');
+    });
+  }, [allProducts, productCountMap]);
+
+  const formatCount = (n: number) => (n ?? 0).toLocaleString('fr-FR');
+
+  // Background / infinite chunk loading for Case B
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(initialOrders.length < total);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setHasMore(orders.length < total);
+  }, [orders.length, total]);
+
+  const loadNextChunk = async () => {
+    if (loadingMore || !hasMore || !isFilterActive) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = Math.floor(orders.length / 100) + 1;
+      const params = new URLSearchParams();
+      params.set('page', String(nextPage));
+      params.set('perPage', '100');
+      if (query.trim()) params.set('q', query.trim());
+      if (activeProductId) params.set('productId', activeProductId);
       if (statusFilter) {
-        if (statusFilter === 'abandoned') {
-          // Strictly match abandoned/draft orders and exclude tentative call attempts
-          const isAbandoned = o.status === 'checkout-draft' || o.status === 'abandoned' || o.status === 'abondonne';
-          if (!isAbandoned) return false;
-        } else if (statusFilter === 'tentative') {
-          // Sentinel: "any attempt", not the retired flat status itself.
-          if (!isAttemptStatus(String(o.status))) return false;
-        } else if (String(o.status) !== statusFilter) {
-          return false;
+        params.set('status', statusFilter === 'tentative' ? TENTATIVE_STATUSES.join(',') : statusFilter);
+      } else if (activeTab === 'normal') {
+        params.set('status', NORMAL_STATUSES.join(','));
+      } else if (activeTab === 'trash') {
+        params.set('status', 'trash');
+      } else if (activeTab === 'abandoned') {
+        params.set('status', 'checkout-draft');
+      }
+
+      if (datePreset) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (datePreset === 'today') {
+          params.set('after', today.toISOString());
+        } else if (datePreset === 'yesterday') {
+          const yesterday = new Date(today);
+          yesterday.setDate(yesterday.getDate() - 1);
+          params.set('after', yesterday.toISOString());
+          params.set('before', today.toISOString());
+        } else if (datePreset === '7days') {
+          const sevenDaysAgo = new Date(today);
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          params.set('after', sevenDaysAgo.toISOString());
+        } else if (datePreset === 'month') {
+          const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+          params.set('after', firstOfMonth.toISOString());
+        } else if (datePreset === 'custom') {
+          if (startDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            params.set('after', start.toISOString());
+          }
+          if (endDate) {
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            params.set('before', end.toISOString());
+          }
         }
       }
 
-      // NOTE: Product filter is now handled backend-side (items.productId query)
-      // and is NOT applied here. The server returns only matching orders and the
-      // total/totalPages already reflect the filtered set. Applying it again here
-      // would cause count/row mismatches.
+      if (sortOrder) params.set('sortOrder', sortOrder);
 
-      // Date range is deliberately NOT re-applied here — `orders` already
-      // comes pre-scoped by the server's after/before query (the same
-      // values the counts aggregation uses), which is what keeps the visible
-      // rows and the header/filter counts in agreement. Redoing it here with
-      // the browser's local clock against each order's UTC createdAt used to
-      // silently drop rows the server (and the count) had already correctly
-      // included whenever the browser and server disagreed on what "today"
-      // is — e.g. "Hier" showing a count of 16 but only 4 visible rows.
-
-      // 2. Search Query Filter
-      if (!q) return true;
-
-      const normQ = q.replace(/\D/g, '');
-      const matchPhone = (phone: string) => {
-        if (!normQ) return false;
-        let cleanPhone = phone.replace(/\D/g, '');
-        if (cleanPhone.startsWith('216') && cleanPhone.length > 8 && normQ.length <= 8) {
-          cleanPhone = cleanPhone.substring(3);
+      const res = await fetch(`${apiBase}/orders?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        const newItems: OrderResponse[] = data.items || [];
+        if (newItems.length > 0) {
+          setOrders((prev) => {
+            const existingIds = new Set(prev.map((o) => o.id));
+            const uniqueNew = newItems.filter((o) => !existingIds.has(o.id));
+            const merged = [...prev, ...uniqueNew];
+            if (merged.length >= (data.total || total) || newItems.length < 100) {
+              setHasMore(false);
+            }
+            return merged;
+          });
+        } else {
+          setHasMore(false);
         }
-        let cleanQ = normQ;
-        if (cleanQ.startsWith('216') && cleanQ.length > 8 && cleanPhone.length <= 8) {
-          cleanQ = cleanQ.substring(3);
+      } else {
+        setHasMore(false);
+      }
+    } catch {
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isFilterActive || !hasMore || loadingMore) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          void loadNextChunk();
         }
-        return cleanPhone.includes(cleanQ);
+      },
+      { rootMargin: '350px' },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isFilterActive, hasMore, loadingMore, orders.length]);
+
+  // Windowed table rendering when loaded orders exceed 100
+  const [scrollY, setScrollY] = useState(0);
+  const [windowHeight, setWindowHeight] = useState(typeof window !== 'undefined' ? window.innerHeight : 800);
+  const tableBodyRef = useRef<HTMLTableSectionElement | null>(null);
+
+  useEffect(() => {
+    if (!isFilterActive || orders.length <= 100) return;
+    const handleScroll = () => setScrollY(window.scrollY);
+    const handleResize = () => setWindowHeight(window.innerHeight);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleResize, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isFilterActive, orders.length]);
+
+  const ROW_HEIGHT = 53;
+  const OVERSCAN = 20;
+
+  const { startIndex, endIndex, topPadding, bottomPadding, visibleOrders } = useMemo(() => {
+    if (!isFilterActive || orders.length <= 100 || !tableBodyRef.current) {
+      return {
+        startIndex: 0,
+        endIndex: orders.length,
+        topPadding: 0,
+        bottomPadding: 0,
+        visibleOrders: orders,
       };
+    }
 
-      const matchesPhone = (o.customer?.phone && matchPhone(o.customer.phone)) ||
-                           (o.meta?._mzem_phone_2 && typeof o.meta._mzem_phone_2 === 'string' && matchPhone(o.meta._mzem_phone_2));
-      if (matchesPhone) return true;
+    const tableTop = tableBodyRef.current.getBoundingClientRect().top + window.scrollY;
+    const relativeScrollTop = Math.max(0, scrollY - tableTop);
+    const start = Math.max(0, Math.floor(relativeScrollTop / ROW_HEIGHT) - OVERSCAN);
+    const visibleCount = Math.ceil(windowHeight / ROW_HEIGHT) + OVERSCAN * 2;
+    const end = Math.min(orders.length, start + visibleCount);
 
-      const hay = [
-        o.number,
-        o.customer?.firstName,
-        o.customer?.lastName,
-        o.customer?.phone,
-        o.customer?.city,
-        o.customer?.email,
-      ].filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
+    return {
+      startIndex: start,
+      endIndex: end,
+      topPadding: start * ROW_HEIGHT,
+      bottomPadding: Math.max(0, (orders.length - end) * ROW_HEIGHT),
+      visibleOrders: orders.slice(start, end),
+    };
+  }, [isFilterActive, orders, scrollY, windowHeight]);
+
+  const activeFilterParts = useMemo(() => {
+    const parts: string[] = [];
+    if (activeTab !== 'normal') {
+      parts.push(activeTab === 'abandoned' ? 'Abandonnées' : 'Supprimées');
+    }
+    if (statusFilter) {
+      if (statusFilter === 'tentative') {
+        parts.push('Tentative (Toutes)');
+      } else {
+        parts.push(getOrderStatusLabel(statusFilter));
+      }
+    }
+    if (activeProductId) {
+      const matchedProd = allProducts.find((p) => p.id === activeProductId);
+      parts.push(matchedProd ? matchedProd.name : `Produit: ${activeProductId}`);
+    }
+    if (datePreset) {
+      const dateMap: Record<string, string> = {
+        today: "Aujourd'hui",
+        yesterday: 'Hier',
+        '7days': '7 derniers jours',
+        month: 'Ce mois',
+        custom: `Du ${startDate || '...'} au ${endDate || '...'}`,
+      };
+      parts.push(dateMap[datePreset] || datePreset);
+    }
+    if (query.trim()) {
+      parts.push(`"${query.trim()}"`);
+    }
+    return parts;
+  }, [statusFilter, activeProductId, allProducts, datePreset, startDate, endDate, query, activeTab]);
+
+  const handleReset = () => {
+    setQuery('');
+    setStatusFilter('');
+    setDatePreset('');
+    setStartDate('');
+    setEndDate('');
+    setSortOrder('desc');
+    updateFilters({
+      q: null,
+      status: null,
+      product: null,
+      datePreset: null,
+      startDate: null,
+      endDate: null,
+      sortOrder: null,
+      page: '1',
     });
-  }, [orders, query, statusFilter, activeTab]);
+  };
 
   function openCreate() { setEditingId(null); setDrawerOpen(true); }
   function openEdit(id: string) { setEditingId(id); setDrawerOpen(true); }
@@ -354,18 +529,36 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             <ShoppingBag size={22} aria-hidden="true" />
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-ink-900">Commandes</h1>
-            <p className="text-sm font-semibold text-ink-500">
-              {activeTab === 'normal'
-                ? `${tabCounts.normal} commande${tabCounts.normal > 1 ? 's' : ''}`
-                : activeTab === 'abandoned'
-                ? `${tabCounts.abandoned} commande${tabCounts.abandoned > 1 ? 's' : ''} abandonnée${tabCounts.abandoned > 1 ? 's' : ''}`
-                : `${tabCounts.trash} commande${tabCounts.trash > 1 ? 's' : ''} supprimée${tabCounts.trash > 1 ? 's' : ''}`}
-            </p>
-            {activeTab === 'normal' && (
-              <p className="mt-0.5 text-xs text-ink-400">
-                = En attente ({counts.pending}) + Confirmée ({counts.confirmed}) + Tentative ({counts.attempts.total}) + Annulée ({counts.cancelled})
-              </p>
+            {isFilterActive ? (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-3xl font-black tracking-tight text-ink-900">
+                    {activeFilterParts.length > 0 ? activeFilterParts.join(' + ') : 'Commandes filtrées'}
+                  </h1>
+                  <span className="rounded-full bg-brand-100 px-3 py-0.5 text-xs font-bold text-brand-700">
+                    Filtre actif
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-ink-600 mt-1">
+                  <span className="text-ink-900 font-bold text-base">{formatCount(total)}</span> commande{total > 1 ? 's' : ''}
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-3xl font-black tracking-tight text-ink-900">Commandes</h1>
+                <p className="text-sm font-semibold text-ink-500">
+                  {activeTab === 'normal'
+                    ? `${formatCount(tabCounts.normal)} commande${tabCounts.normal > 1 ? 's' : ''}`
+                    : activeTab === 'abandoned'
+                    ? `${formatCount(tabCounts.abandoned)} commande${tabCounts.abandoned > 1 ? 's' : ''} abandonnée${tabCounts.abandoned > 1 ? 's' : ''}`
+                    : `${formatCount(tabCounts.trash)} commande${tabCounts.trash > 1 ? 's' : ''} supprimée${tabCounts.trash > 1 ? 's' : ''}`}
+                </p>
+                {activeTab === 'normal' && (
+                  <p className="mt-0.5 text-xs text-ink-400">
+                    = En attente ({formatCount(counts.pending)}) + Confirmée ({formatCount(counts.confirmed)}) + Tentative ({formatCount(counts.attempts.total)}) + Annulée ({formatCount(counts.cancelled)})
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -432,12 +625,12 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             <select
               value={isTentativeFilterActive ? 'tentative' : statusFilter}
               onChange={(e) => handleStatusChange(e.target.value)}
-              className="input w-44"
+              className="input w-48"
             >
-              <option value="">Toutes ({tabCounts.normal})</option>
+              <option value="">Toutes ({formatCount(tabCounts.normal)})</option>
               {NORMAL_STATUS_FILTERS.map((s) => (
                 <option key={s} value={s}>
-                  {getOrderStatusLabel(s)} ({statusFilterCounts[s] ?? 0})
+                  {getOrderStatusLabel(s)} ({formatCount(statusFilterCounts[s] ?? 0)})
                 </option>
               ))}
             </select>
@@ -448,12 +641,12 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
               <select
                 value={isAttemptStatus(statusFilter) ? statusFilter : ''}
                 onChange={(e) => handleStatusChange(e.target.value || 'tentative')}
-                className="input w-48"
+                className="input w-52"
               >
-                <option value="">Toutes les tentatives ({statusFilterCounts.tentative ?? 0})</option>
+                <option value="">Toutes les tentatives ({formatCount(statusFilterCounts.tentative ?? 0)})</option>
                 {TENTATIVE_STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {getOrderStatusLabel(s)} ({statusFilterCounts[s] ?? 0})
+                    {getOrderStatusLabel(s)} ({formatCount(statusFilterCounts[s] ?? 0)})
                   </option>
                 ))}
               </select>
@@ -475,14 +668,19 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         <select
           value={activeProductId}
           onChange={(e) => handleProductChange(e.target.value)}
-          className="input w-44"
+          className="input w-52 font-medium"
           disabled={pending}
           aria-label="Filtrer par produit"
         >
-          <option value="">Tous les produits</option>
-          {allProducts.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}{p.sku ? ` — ${p.sku}` : ''}</option>
-          ))}
+          <option value="">Tous les produits ({formatCount(scopeTotal)})</option>
+          {sortedProducts.map((p) => {
+            const count = productCountMap.get(p.id) ?? 0;
+            return (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.sku ? ` — ${p.sku}` : ''} ({formatCount(count)})
+              </option>
+            );
+          })}
         </select>
 
         <select
@@ -518,13 +716,10 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
           </div>
         )}
 
-        {(query || statusFilter || activeProductId || datePreset) && (
+        {isFilterActive && (
           <button 
-            onClick={() => { 
-              setQuery(''); 
-              updateFilters({ q: null, status: null, product: null, datePreset: null, startDate: null, endDate: null, sortOrder: null });
-            }} 
-            className="btn-ghost"
+            onClick={handleReset} 
+            className="btn-ghost text-sm font-semibold"
           >
             Réinitialiser
           </button>
@@ -570,8 +765,13 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {filteredOrders.map((o) => {
+          <tbody ref={tableBodyRef}>
+            {topPadding > 0 && (
+              <tr style={{ height: `${topPadding}px` }} aria-hidden="true">
+                <td colSpan={10} className="p-0 border-0 pointer-events-none" />
+              </tr>
+            )}
+            {visibleOrders.map((o) => {
               const phoneKey = (o.customer?.phone || '').replace(/\s/g, '');
               const repeats = phoneKey ? (repeatCounts[phoneKey] ?? 0) : 0;
               const isRegular = repeats > 1;
@@ -693,10 +893,15 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                 </tr>
               );
             })}
-             {!filteredOrders.length && (
+            {bottomPadding > 0 && (
+              <tr style={{ height: `${bottomPadding}px` }} aria-hidden="true">
+                <td colSpan={10} className="p-0 border-0 pointer-events-none" />
+              </tr>
+            )}
+            {!orders.length && (
               <tr>
-                <td colSpan={11} className="p-8 text-center text-ink-700">
-                  {orders.length === 0 ? 'Aucune commande pour le moment.' : 'Aucun résultat.'}
+                <td colSpan={10} className="p-8 text-center text-ink-700">
+                  Aucune commande trouvée.
                 </td>
               </tr>
             )}
@@ -704,62 +909,82 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         </table>
       </div>
 
-      {/* Pagination — always shown so the filtered total is always visible */}
-      <div className="mt-4 flex items-center justify-between">
-        <p className="text-sm text-ink-700">
-          {totalPages > 1
-            ? `Page ${page} sur ${totalPages} (${total} commande${total > 1 ? 's' : ''})`
-            : `${total} commande${total > 1 ? 's' : ''}`}
-        </p>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-1">
-            {page > 1 && (
-              <a
-                href={pending ? '#' : getPageUrl(page - 1)}
-                aria-disabled={pending}
-                className={`rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`}
-              >
-                ← Précédent
-              </a>
-            )}
-            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-              let p: number;
-              if (totalPages <= 7) {
-                p = i + 1;
-              } else if (page <= 4) {
-                p = i + 1;
-              } else if (page >= totalPages - 3) {
-                p = totalPages - 6 + i;
-              } else {
-                p = page - 3 + i;
-              }
-              return (
+      {/* Case A: Classic numbered pagination when no filters are active */}
+      {!isFilterActive && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-ink-700">
+            {totalPages > 1
+              ? `Page ${page} sur ${totalPages} (${formatCount(total)} commande${total > 1 ? 's' : ''})`
+              : `${formatCount(total)} commande${total > 1 ? 's' : ''}`}
+          </p>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              {page > 1 && (
                 <a
-                  key={p}
-                  href={pending ? '#' : getPageUrl(p)}
+                  href={pending ? '#' : getPageUrl(page - 1)}
                   aria-disabled={pending}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${
-                    p === page
-                      ? 'bg-brand-500 text-white'
-                      : `border border-ink-200 bg-white text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`
-                  }`}
+                  className={`rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`}
                 >
-                  {p}
+                  ← Précédent
                 </a>
-              );
-            })}
-            {page < totalPages && (
-              <a
-                href={pending ? '#' : getPageUrl(page + 1)}
-                aria-disabled={pending}
-                className={`rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`}
-              >
-                Suivant →
-              </a>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+              {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                let p: number;
+                if (totalPages <= 7) {
+                  p = i + 1;
+                } else if (page <= 4) {
+                  p = i + 1;
+                } else if (page >= totalPages - 3) {
+                  p = totalPages - 6 + i;
+                } else {
+                  p = page - 3 + i;
+                }
+                return (
+                  <a
+                    key={p}
+                    href={pending ? '#' : getPageUrl(p)}
+                    aria-disabled={pending}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-bold transition ${
+                      p === page
+                        ? 'bg-brand-500 text-white'
+                        : `border border-ink-200 bg-white text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`
+                    }`}
+                  >
+                    {p}
+                  </a>
+                );
+              })}
+              {page < totalPages && (
+                <a
+                  href={pending ? '#' : getPageUrl(page + 1)}
+                  aria-disabled={pending}
+                  className={`rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-sm font-bold text-ink-900 hover:bg-ink-100 ${pending ? 'pointer-events-none opacity-50' : ''}`}
+                >
+                  Suivant →
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Case B: Single continuous filtered view with chunk status and sentinel */}
+      {isFilterActive && (
+        <div className="mt-4 flex flex-col items-center justify-center gap-2 p-4 text-sm text-ink-600">
+          <div ref={sentinelRef} className="h-4 w-full pointer-events-none" />
+          {loadingMore && (
+            <div className="flex items-center gap-2 font-semibold text-brand-600 animate-pulse">
+              <span className="h-2.5 w-2.5 rounded-full bg-brand-500 animate-ping" />
+              Chargement des commandes suivantes ({orders.length} sur {formatCount(total)})…
+            </div>
+          )}
+          {!hasMore && orders.length > 0 && (
+            <p className="font-semibold text-ink-500">
+              Toutes les {formatCount(total)} commandes filtrées sont affichées ({orders.length} commandes chargées).
+            </p>
+          )}
+        </div>
+      )}
 
       <OrderDrawer
         open={drawerOpen}

@@ -66,6 +66,11 @@ export type OrderResponse = {
   meta?: Record<string, unknown>;
 };
 
+export type OrderProductCount = {
+  productId: string;
+  orderCount: number;
+};
+
 /**
  * Single-round-trip status breakdown for the admin/employee orders list —
  * see OrdersService.counts(). `total` is the "Normal" tab total (pending +
@@ -87,4 +92,5 @@ export type OrderStatusCounts = {
   cancelled: number;
   abandoned: number;
   trash: number;
+  products?: OrderProductCount[];
 };

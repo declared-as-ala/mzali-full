@@ -26,8 +26,8 @@ export class ProductsAdminController {
 
   @Get('admin/products/picker')
   @RequirePermissions('products.read')
-  picker() {
-    return this.products.picker();
+  picker(@Query('onlineOnly') onlineOnly?: string) {
+    return this.products.picker(onlineOnly === 'true');
   }
 
   /** Returns only non-POS-only products for the Orders page product filter
@@ -120,8 +120,8 @@ export class ProductsEmployeeController {
 
   @Get('picker')
   @RequirePermissions('products.read')
-  picker() {
-    return this.products.picker();
+  picker(@Query('onlineOnly') onlineOnly?: string) {
+    return this.products.picker(onlineOnly === 'true');
   }
 
   /** Returns only non-POS-only products for the Orders page product filter

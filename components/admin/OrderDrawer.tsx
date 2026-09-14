@@ -271,7 +271,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           const list: ProductPickerItem[] = await r.json();
           // Filter to only published products ("Affiché"), not private and not POS only
           const publishedOnline = Array.isArray(list)
-            ? list.filter((p) => (!p.status || p.status === 'published') && !p.posOnly)
+            ? list.filter((p) => p.status === 'published' && !p.posOnly)
             : [];
           setProducts(publishedOnline);
         }

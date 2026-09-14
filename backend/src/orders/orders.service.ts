@@ -390,7 +390,9 @@ export class OrdersService {
    * intentionally-excluded buckets, exactly like the tab split already
    * works; see OrderStatusCounts in contracts/order.ts for the exact shape.
    */
-  async counts(query: Pick<OrderListQueryDto, 'search' | 'after' | 'before'>): Promise<OrderStatusCounts> {
+  async counts(
+    query: Pick<OrderListQueryDto, 'search' | 'after' | 'before' | 'productId' | 'status' | 'tab'> = {},
+  ): Promise<OrderStatusCounts> {
     const searchCondition = query.search
       ? {
           $or: [
@@ -411,6 +413,7 @@ export class OrdersService {
 
     const countBranch = (status: string) => {
       const ands: Record<string, unknown>[] = [{ status }];
+      if (query.productId) ands.push({ 'items.productId': query.productId });
       if (searchCondition) ands.push(searchCondition);
       if (dateRange) {
         if (status === 'confirme') {
@@ -427,7 +430,74 @@ export class OrdersService {
       return [{ $match: { $and: ands } }, { $count: 'n' }];
     };
 
-    const [facets] = await this.model.aggregate<Record<string, { n: number }[]>>([
+    // Scope conditions for product order count aggregation:
+    // Respects current tab, active status, date range, and search query.
+    const productScopeAnds: Record<string, unknown>[] = [];
+    const activeTab = query.tab || 'normal';
+    if (activeTab === 'trash') {
+      productScopeAnds.push({ status: 'trash' });
+    } else if (activeTab === 'abandoned') {
+      productScopeAnds.push({ status: { $in: ['checkout-draft', 'abandoned', 'abondonne'] } });
+    } else {
+      // Normal tab
+      if (query.status) {
+        if (query.status === 'tentative') {
+          productScopeAnds.push({
+            status: { $in: ['tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5'] },
+          });
+        } else {
+          productScopeAnds.push({ status: query.status });
+        }
+      } else {
+        productScopeAnds.push({
+          status: { $in: ['en-attente', 'confirme', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5', 'annule'] },
+        });
+      }
+    }
+
+    if (searchCondition) productScopeAnds.push(searchCondition);
+    if (dateRange) {
+      if (query.status === 'confirme') {
+        productScopeAnds.push({
+          $or: [
+            { confirmedAt: dateRange },
+            { confirmedAt: null, createdAt: dateRange },
+          ],
+        });
+      } else {
+        productScopeAnds.push({ createdAt: dateRange });
+      }
+    }
+
+    const productBranch: unknown[] = [
+      { $match: productScopeAnds.length > 0 ? { $and: productScopeAnds } : {} },
+      {
+        $project: {
+          productIds: {
+            $setUnion: [
+              {
+                $map: {
+                  input: { $ifNull: ['$items', []] },
+                  as: 'item',
+                  in: '$$item.productId',
+                },
+              },
+              [],
+            ],
+          },
+        },
+      },
+      { $unwind: '$productIds' },
+      {
+        $group: {
+          _id: '$productIds',
+          orderCount: { $sum: 1 },
+        },
+      },
+      { $sort: { orderCount: -1 } },
+    ];
+
+    const [facets] = await this.model.aggregate<Record<string, { n?: number; _id?: string; orderCount?: number }[]>>([
       {
         $facet: {
           pending: countBranch('en-attente'),
@@ -440,11 +510,12 @@ export class OrdersService {
           cancelled: countBranch('annule'),
           abandoned: countBranch('checkout-draft'),
           trash: countBranch('trash'),
+          products: productBranch as never,
         },
       },
     ]);
 
-    const n = (key: string): number => facets?.[key]?.[0]?.n ?? 0;
+    const n = (key: string): number => (facets?.[key]?.[0] as { n?: number } | undefined)?.n ?? 0;
     const attempt1 = n('attempt1');
     const attempt2 = n('attempt2');
     const attempt3 = n('attempt3');
@@ -455,6 +526,13 @@ export class OrdersService {
     const confirmed = n('confirmed');
     const cancelled = n('cancelled');
 
+    const products = Array.isArray(facets?.products)
+      ? facets.products.map((p) => ({
+          productId: String(p._id),
+          orderCount: Number(p.orderCount) || 0,
+        }))
+      : [];
+
     return {
       total: pending + confirmed + attemptsTotal + cancelled,
       pending,
@@ -463,6 +541,7 @@ export class OrdersService {
       cancelled,
       abandoned: n('abandoned'),
       trash: n('trash'),
+      products,
     };
   }
 

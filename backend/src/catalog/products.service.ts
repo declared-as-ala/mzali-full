@@ -257,10 +257,15 @@ export class ProductsService {
     );
   }
 
-  async picker(): Promise<{ id: string; name: string; price: number; image: string | null }[]> {
+  async picker(onlineOnly = false): Promise<{ id: string; name: string; price: number; image: string | null; status?: string; posOnly?: boolean }[]> {
+    const filter: Record<string, unknown> = { deletedAt: null };
+    if (onlineOnly) {
+      filter.status = 'published';
+      filter.posOnly = { $ne: true };
+    }
     const docs = await this.model
-      .find({ deletedAt: null })
-      .select({ name: 1, regularPriceMinor: 1, salePriceMinor: 1, images: 1 })
+      .find(filter)
+      .select({ name: 1, regularPriceMinor: 1, salePriceMinor: 1, images: 1, status: 1, posOnly: 1 })
       .sort({ name: 1 });
     return docs.map((d) => {
       const price = d.salePriceMinor ?? d.regularPriceMinor;
@@ -269,19 +274,21 @@ export class ProductsService {
         name: d.name,
         price: price / 1000,
         image: normalizePublicMediaUrl(primaryProductImage(d.images)?.url ?? null),
+        status: d.status,
+        posOnly: Boolean(d.posOnly),
       };
     });
   }
 
   /**
    * Lightweight product list for the Orders filter dropdown.
-   * Returns ONLY online products (posOnly=false/unset, not deleted) to avoid
-   * surfacing POS-exclusive items in a filter that targets e-commerce orders.
+   * Returns ONLY active online storefront products (status='published', posOnly=false/unset, deletedAt=null)
+   * to avoid surfacing draft, private, or POS-exclusive items.
    * Sorted alphabetically; returns id + name + sku for stable ID matching.
    */
   async onlinePicker(): Promise<{ id: string; name: string; sku: string | null }[]> {
     const docs = await this.model
-      .find({ deletedAt: null, posOnly: { $ne: true } })
+      .find({ deletedAt: null, status: 'published', posOnly: { $ne: true } })
       .select({ name: 1, sku: 1 })
       .sort({ name: 1 });
     return docs.map((d) => ({ id: d.id, name: d.name, sku: d.sku ?? null }));

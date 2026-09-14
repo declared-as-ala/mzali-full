@@ -39,6 +39,12 @@ export class OrdersEmployeeController {
     return this.orders.list(query);
   }
 
+  @Get('counts')
+  @RequirePermissions('orders.read')
+  counts(@Query() query: OrderListQueryDto) {
+    return this.orders.counts(query);
+  }
+
   @Get('statuses')
   @RequirePermissions('orders.read')
   statuses() {

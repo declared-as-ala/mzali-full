@@ -107,10 +107,18 @@ export default async function Commandes(props: {
       sortOrder,
       productId,
     }).catch(() => ({ items: [] as any[], total: 0, totalPages: 0, page })),
-    orderService.counts({ search: q, after, before }).catch(() => ({
+    orderService.counts({
+      search: q,
+      after,
+      before,
+      productId,
+      status: resolvedStatus || status,
+      tab,
+    }).catch(() => ({
       total: 0, pending: 0, confirmed: 0,
       attempts: { total: 0, attempt1: 0, attempt2: 0, attempt3: 0, attempt4: 0, attempt5: 0 },
       cancelled: 0, abandoned: 0, trash: 0,
+      products: [],
     })),
   ]);
 

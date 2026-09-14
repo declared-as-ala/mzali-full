@@ -66,4 +66,49 @@ describe('OrdersService.counts', () => {
     expect(dateClause.createdAt.$gte).toEqual(new Date('2026-08-01T00:00:00.000Z'));
     expect(dateClause.createdAt.$lte).toEqual(new Date('2026-08-07T23:59:59.999Z'));
   });
+
+  it('scopes status count branches to items.productId when productId is specified', async () => {
+    const { service, model } = serviceWithAggregateResult({});
+
+    await service.counts({ productId: 'prod-123' });
+
+    const pipeline = model.aggregate.mock.calls[0][0];
+    const facet = pipeline[0].$facet;
+    const pendingMatch = facet.pending[0].$match;
+    expect(pendingMatch.$and).toBeDefined();
+    const productClause = pendingMatch.$and.find((c: Record<string, unknown>) => c['items.productId'] === 'prod-123');
+    expect(productClause).toBeDefined();
+  });
+
+  it('returns aggregated product order counts from the products facet branch', async () => {
+    const { service } = serviceWithAggregateResult({
+      pending: [{ n: 10 }],
+      confirmed: [{ n: 20 }],
+      products: [
+        { _id: 'prod-dg', orderCount: 325 } as any,
+        { _id: 'prod-pull', orderCount: 181 } as any,
+      ] as any,
+    });
+
+    const result = await service.counts({ status: 'en-attente' });
+
+    expect(result.products).toEqual([
+      { productId: 'prod-dg', orderCount: 325 },
+      { productId: 'prod-pull', orderCount: 181 },
+    ]);
+  });
+
+  it('scopes the products facet branch by selected status', async () => {
+    const { service, model } = serviceWithAggregateResult({});
+
+    await service.counts({ status: 'en-attente' });
+
+    const pipeline = model.aggregate.mock.calls[0][0];
+    const facet = pipeline[0].$facet;
+    const productsBranch = facet.products;
+    const matchStage = productsBranch[0].$match;
+    expect(matchStage.$and).toBeDefined();
+    const statusClause = matchStage.$and.find((c: Record<string, unknown>) => c.status === 'en-attente');
+    expect(statusClause).toBeDefined();
+  });
 });

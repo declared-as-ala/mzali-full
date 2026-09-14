@@ -17,6 +17,9 @@ export type OrderCountsQuery = {
   search?: string;
   after?: string;
   before?: string;
+  productId?: string;
+  status?: string;
+  tab?: string;
 };
 
 export type OrderListResult = {

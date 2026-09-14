@@ -52,7 +52,14 @@ export class MzaliApiOrderService implements OrderService {
     return withAuthRetry((bearer) =>
       apiRequest<OrderStatusCounts>('/admin/orders/counts', {
         bearer,
-        query: { search: query.search, after: query.after, before: query.before },
+        query: {
+          search: query.search,
+          after: query.after,
+          before: query.before,
+          productId: query.productId,
+          status: query.status,
+          tab: query.tab,
+        },
       }),
     );
   }
