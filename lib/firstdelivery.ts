@@ -67,31 +67,105 @@ async function getLocalities(): Promise<FDLocality[]> {
   }
 }
 
+const ARABIC_LOCALITIES: Record<string, string> = {
+  'بجاوة': 'bjeoua',
+  'بجاوه': 'bjeoua',
+  'منوبة': 'manouba',
+  'المنوبة': 'manouba',
+  'تونس': 'tunis',
+  'سوسة': 'sousse',
+  'صفاقس': 'sfax',
+  'اريانة': 'ariana',
+  'أريانة': 'ariana',
+  'بن عروس': 'ben arous',
+  'بنزرت': 'bizerte',
+  'نابل': 'nabeul',
+  'المنستير': 'monastir',
+  'منستير': 'monastir',
+  'المهدية': 'mahdia',
+  'مهدية': 'mahdia',
+  'القيروان': 'kairouan',
+  'قيروان': 'kairouan',
+  'القصرين': 'kasserine',
+  'قصرين': 'kasserine',
+  'سيدي بوزيد': 'sidi bouzid',
+  'قفصة': 'gafsa',
+  'توزر': 'tozeur',
+  'قبلي': 'kebili',
+  'تطاوين': 'tataouine',
+  'مدنين': 'medenine',
+  'قابس': 'gabes',
+  'جندوبة': 'jendouba',
+  'باجة': 'beja',
+  'الكاف': 'kef',
+  'كاف': 'kef',
+  'سليانة': 'siliana',
+  'زغوان': 'zaghouan',
+  'وادي الليل': 'oued ellil',
+  'الدندان': 'denden',
+  'دندان': 'denden',
+  'طبربة': 'tebourba',
+  'المرناقية': 'mornaguia',
+  'مرناقية': 'mornaguia',
+  'دوار هيشر': 'douar hicher',
+  'الجديدة': 'jedaida',
+  'جديدة': 'jedaida',
+  'برج العامري': 'borj el amri',
+  'البطان': 'el battan',
+};
+
+function normGov(s: string | undefined | null): string {
+  if (!s) return '';
+  let str = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  for (const [ar, fr] of Object.entries(ARABIC_LOCALITIES)) {
+    if (str.includes(ar)) str = str.replaceAll(ar, ' ' + fr + ' ');
+  }
+  const clean = str
+    .replace(/^(la|le|les|el)\s+/, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+  if (clean === 'manouba' || clean === 'mannouba') return 'manouba';
+  if (clean === 'kef') return 'kef';
+  return clean;
+}
+
 function normStr(s: string | undefined | null): string {
   if (!s) return '';
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
 async function resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
-    const localities = await getLocalities();
-    const g = normStr(gov);
-    const c = normStr(city);
-    const addr = normStr(address);
-    const sameGov = localities.filter((l) => g && normStr(l.governorate_name) === g);
-    const candidates = sameGov.length ? sameGov : localities;
-    // Prefer the actual locality/delegation over the first row in a governorate.
-    const hit = candidates.find((l) => c && normStr(l.locality_name) === c)
-      ?? candidates.find((l) => {
-        const name = normStr(l.locality_name);
-        return name.length > 3 && (` ${addr} `).includes(` ${name} `);
-      })
-      ?? candidates.find((l) => c && normStr(l.delegation_name) === c)
-      ?? candidates.find((l) => g && normStr(l.locality_name) === g)
-      ?? candidates.find((l) => g && normStr(l.delegation_name) === g)
-      ?? sameGov[0];
-    // Never fabricate an ID or route an unknown destination to Tunis/Ariana.
-    return hit ?? null;
-  }
+  const localities = await getLocalities();
+  const g = normGov(gov);
+  const c = normGov(city);
+  const addr = normGov(address);
+
+  // Match all localities in the governorate (e.g. "Manouba" matches "La Manouba", "Kef" matches "Le Kef")
+  const sameGov = localities.filter((l) => g && normGov(l.governorate_name) === g);
+  const pool = sameGov.length > 0 ? sameGov : localities;
+
+  // 1. Try to match locality name from address (e.g. "بجاوة" -> "bjeoua" matches locality Bjeoua)
+  const hit =
+    pool.find((l) => {
+      const name = normGov(l.locality_name);
+      return name.length >= 3 && addr.includes(name);
+    })
+    // 2. Try to match delegation name from address (e.g. "Oued Ellil" in address)
+    ?? pool.find((l) => {
+      const del = normGov(l.delegation_name);
+      return del.length >= 3 && addr.includes(del);
+    })
+    // 3. Match city to locality name
+    ?? pool.find((l) => c && normGov(l.locality_name) === c)
+    // 4. Match city to delegation name (e.g. "Manouba" matches delegation "Mannouba")
+    ?? pool.find((l) => c && normGov(l.delegation_name) === c)
+    // 5. Match governorate to delegation name
+    ?? pool.find((l) => g && normGov(l.delegation_name) === g)
+    // 6. Safe fallback to the governorate's chief locality
+    ?? sameGov[0];
+
+  return hit ?? null;
+}
 
 export type FirstDeliveryResult = {
   ok: boolean;

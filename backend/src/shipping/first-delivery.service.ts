@@ -21,6 +21,53 @@ export type FirstDeliveryShipmentInput = {
 
 type FDLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
 
+const ARABIC_LOCALITIES: Record<string, string> = {
+  'بجاوة': 'bjeoua',
+  'بجاوه': 'bjeoua',
+  'منوبة': 'manouba',
+  'المنوبة': 'manouba',
+  'تونس': 'tunis',
+  'سوسة': 'sousse',
+  'صفاقس': 'sfax',
+  'اريانة': 'ariana',
+  'أريانة': 'ariana',
+  'بن عروس': 'ben arous',
+  'بنزرت': 'bizerte',
+  'نابل': 'nabeul',
+  'المنستير': 'monastir',
+  'منستير': 'monastir',
+  'المهدية': 'mahdia',
+  'مهدية': 'mahdia',
+  'القيروان': 'kairouan',
+  'قيروان': 'kairouan',
+  'القصرين': 'kasserine',
+  'قصرين': 'kasserine',
+  'سيدي بوزيد': 'sidi bouzid',
+  'قفصة': 'gafsa',
+  'توزر': 'tozeur',
+  'قبلي': 'kebili',
+  'تطاوين': 'tataouine',
+  'مدنين': 'medenine',
+  'قابس': 'gabes',
+  'جندوبة': 'jendouba',
+  'باجة': 'beja',
+  'الكاف': 'kef',
+  'كاف': 'kef',
+  'سليانة': 'siliana',
+  'زغوان': 'zaghouan',
+  'وادي الليل': 'oued ellil',
+  'الدندان': 'denden',
+  'دندان': 'denden',
+  'طبربة': 'tebourba',
+  'المرناقية': 'mornaguia',
+  'مرناقية': 'mornaguia',
+  'دوار هيشر': 'douar hicher',
+  'الجديدة': 'jedaida',
+  'جديدة': 'jedaida',
+  'برج العامري': 'borj el amri',
+  'البطان': 'el battan',
+};
+
 async function readBody(res: Response): Promise<unknown> {
   const text = await res.text();
   try { return JSON.parse(text); } catch { return text; }
@@ -108,24 +155,44 @@ export class FirstDeliveryService {
     }
   }
 
+  private normGov(s: string | undefined | null): string {
+    if (!s) return '';
+    let str = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    for (const [ar, fr] of Object.entries(ARABIC_LOCALITIES)) {
+      if (str.includes(ar)) str = str.replaceAll(ar, ' ' + fr + ' ');
+    }
+    const clean = str
+      .replace(/^(la|le|les|el)\s+/, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+    if (clean === 'manouba' || clean === 'mannouba') return 'manouba';
+    if (clean === 'kef') return 'kef';
+    return clean;
+  }
+
   private async resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
     const localities = await this.getLocalities();
-    const g = normalizeCarrierString(gov);
-    const c = normalizeCarrierString(city);
-    const addr = normalizeCarrierString(address);
-    const sameGov = localities.filter((l) => g && normalizeCarrierString(l.governorate_name) === g);
-    const candidates = sameGov.length ? sameGov : localities;
-    // Prefer the actual locality/delegation over the first row in a governorate.
-    const hit = candidates.find((l) => c && normalizeCarrierString(l.locality_name) === c)
-      ?? candidates.find((l) => {
-        const name = normalizeCarrierString(l.locality_name);
-        return name.length > 3 && (` ${addr} `).includes(` ${name} `);
+    const g = this.normGov(gov);
+    const c = this.normGov(city);
+    const addr = this.normGov(address);
+
+    const sameGov = localities.filter((l) => g && this.normGov(l.governorate_name) === g);
+    const pool = sameGov.length > 0 ? sameGov : localities;
+
+    const hit =
+      pool.find((l) => {
+        const name = this.normGov(l.locality_name);
+        return name.length >= 3 && addr.includes(name);
       })
-      ?? candidates.find((l) => c && normalizeCarrierString(l.delegation_name) === c)
-      ?? candidates.find((l) => g && normalizeCarrierString(l.locality_name) === g)
-      ?? candidates.find((l) => g && normalizeCarrierString(l.delegation_name) === g)
+      ?? pool.find((l) => {
+        const del = this.normGov(l.delegation_name);
+        return del.length >= 3 && addr.includes(del);
+      })
+      ?? pool.find((l) => c && this.normGov(l.locality_name) === c)
+      ?? pool.find((l) => c && this.normGov(l.delegation_name) === c)
+      ?? pool.find((l) => g && this.normGov(l.delegation_name) === g)
       ?? sameGov[0];
-    // Never fabricate an ID or route an unknown destination to Tunis/Ariana.
+
     return hit ?? null;
   }
 
