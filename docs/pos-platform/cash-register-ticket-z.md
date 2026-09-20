@@ -40,7 +40,11 @@ movement journal, and permission-protected manual cash additions/withdrawals
 with a mandatory reason. **Informations Caisse** shows live opening funds,
 cash sales and expected cash. **Tickets Z** is organized by business day, with
 date/period, terminal and cashier filters, session/sale drilldowns, finalization,
-PDF download and printing through the browser PDF viewer.
+PDF download and printing through the browser PDF viewer. Print/PDF actions
+are visible on every day, including provisional days. The A4 report uses a navy
+header, indigo section bands and an explicit status badge. Provisional exports
+use backend report data, display PROVISOIRE and never finalize the day; unfinished
+counts/discrepancies display En cours. Final exports use the saved archive.
 
 ## Business-day policy and immutable archives
 

@@ -1,5 +1,13 @@
 # Migration Progress
 
+## 2026-09-20 — Ticket Z color printing
+
+Made Print/PDF actions available on every daily report, including clearly marked
+provisional exports without closing the day. Redesigned the A4 PDF with navy and
+indigo styling, status badges and paginated footers. Final reports continue to
+use archived figures. Root/backend typechecks and targeted lint passed; rendered
+final, provisional and multiple-page PDFs were visually verified.
+
 ## 2026-09-20 — POS opening fund, cash ledger and daily Ticket Z
 
 Audited and extended the existing cashier sessions, payments, cash movements

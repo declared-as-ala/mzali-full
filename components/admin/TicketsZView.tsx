@@ -45,9 +45,9 @@ export default function TicketsZView() {
     } catch (e) { setError(e instanceof Error ? e.message : 'Erreur'); }
     finally { setBusy(false); }
   }
-  const actions = (day: Day) => day.status === 'CLOSED' && <>
+  const actions = (day: Day) => <>
     <a aria-label={`Télécharger le PDF du ${day.date}`} className="btn-ghost inline-flex items-center gap-1 text-xs" href={`/api/admin/pos/tickets-z/${day.date}/pdf?download=1`}><Download size={15} /> PDF</a>
-    <a aria-label={`Imprimer le Ticket Z du ${day.date}`} className="btn-ghost inline-flex items-center gap-1 text-xs" href={`/api/admin/pos/tickets-z/${day.date}/pdf`} target="_blank" rel="noreferrer"><Printer size={15} /> Imprimer</a>
+    <a aria-label={`Imprimer le Ticket Z du ${day.date}`} title={day.status === 'OPEN' ? 'Imprimer un état provisoire, sans clôturer la journée' : 'Imprimer le Ticket Z définitif'} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" href={`/api/admin/pos/tickets-z/${day.date}/pdf`} target="_blank" rel="noreferrer"><Printer size={15} /> Imprimer</a>
   </>;
   return <div className="p-4 sm:p-8">
     <header className="mb-6 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-black">Tickets Z</h1><p className="mt-1 text-sm text-ink-700">Une archive quotidienne consolidée, tous terminaux et caissiers confondus.</p></div><button className="btn-ghost flex items-center gap-2" onClick={load}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Actualiser</button></header>

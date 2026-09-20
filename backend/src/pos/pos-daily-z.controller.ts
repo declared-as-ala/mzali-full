@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '@/auth/current-user.decorator';
@@ -34,7 +34,6 @@ export class PosDailyZController {
   @RequirePermissions('pos.sessions.read')
   async pdf(@Param('date') date: string, @Res() res: Response) {
     const report = await this.reports.get(date);
-    if (report.status !== 'CLOSED') throw new BadRequestException('Clôturez la journée avant de télécharger le Ticket Z définitif');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="ticket-z-${date}.pdf"`);
     res.setHeader('Cache-Control', 'private, no-store');

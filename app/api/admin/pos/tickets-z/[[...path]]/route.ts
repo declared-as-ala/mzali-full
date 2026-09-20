@@ -11,7 +11,7 @@ async function proxy(req: Request, { params }: { params: { path?: string[] } }) 
     if (path.endsWith('/pdf')) {
       const base = (process.env.MZALI_API_URL ?? '').replace(/\/$/, '');
       const res = await fetch(`${base}/api/v1/admin/pos/tickets-z/${path}`, { headers: { Authorization: `Bearer ${bearer}` }, cache: 'no-store' });
-      if (!res.ok) return NextResponse.json({ error: 'PDF indisponible : vérifiez la clôture de la journée.' }, { status: res.status });
+      if (!res.ok) return NextResponse.json({ error: 'PDF indisponible. Veuillez réessayer.' }, { status: res.status });
       const date = path.slice(0, 10);
       const download = new URL(req.url).searchParams.get('download') === '1';
       return new Response(res.body, { headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename="ticket-z-${date}.pdf"`, 'Cache-Control': 'private, no-store' } });
