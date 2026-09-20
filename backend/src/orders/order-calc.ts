@@ -33,13 +33,13 @@ export function computeOrderTotals(items: OrderCalcItem[], shippingMinor: number
  * required to avoid double-counting stock already taken.
  */
 export function computeStockDeltas(
-  beforeItems: { productId: string; qty: number }[],
-  afterItems: { productId: string; qty: number }[],
+  beforeItems: { productId: string; variantId?: string | null; qty: number }[],
+  afterItems: { productId: string; variantId?: string | null; qty: number }[],
 ): Map<string, number> {
   const beforeQty = new Map<string, number>();
-  for (const item of beforeItems) beforeQty.set(item.productId, (beforeQty.get(item.productId) ?? 0) + item.qty);
+  for (const item of beforeItems) beforeQty.set(item.variantId ?? item.productId, (beforeQty.get(item.variantId ?? item.productId) ?? 0) + item.qty);
   const afterQty = new Map<string, number>();
-  for (const item of afterItems) afterQty.set(item.productId, (afterQty.get(item.productId) ?? 0) + item.qty);
+  for (const item of afterItems) afterQty.set(item.variantId ?? item.productId, (afterQty.get(item.variantId ?? item.productId) ?? 0) + item.qty);
 
   const deltas = new Map<string, number>();
   for (const productId of new Set([...beforeQty.keys(), ...afterQty.keys()])) {

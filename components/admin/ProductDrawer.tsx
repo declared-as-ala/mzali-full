@@ -1,4 +1,5 @@
 'use client';
+import VariantMatrix from './VariantMatrix';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Drawer from './Drawer';
 import MultiCheckSelect from './MultiCheckSelect';
@@ -380,7 +381,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
                 ['description', 'Description'],
                 ['options', 'Options'],
                 ['bundles', 'Bundles'],
-                ['variants', 'Variante'],
+                ['variants', 'Variantes & stock'],
                 ['related', 'Produits associés'],
                 ['reviews', 'Avis'],
               ] as [Tab, string][]).map(([k, lbl]) => (
@@ -407,7 +408,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
               )}
               {tab === 'variants' && (
                 isEdit && productId
-                  ? <VariantsTab productId={productId} />
+                  ? <VariantMatrix productId={productId} />
                   : <p className="text-sm text-ink-700">Enregistrez le produit pour gérer sa variante (SKU, code-barres, stock).</p>
               )}
               {tab === 'related' && (

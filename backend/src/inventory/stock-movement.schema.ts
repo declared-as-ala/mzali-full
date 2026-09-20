@@ -41,6 +41,10 @@ const MovementActorSchema = SchemaFactory.createForClass(MovementActor);
 /** Append-only stock ledger — no update/delete API exists for this collection. */
 @Schema({ collection: 'stock_movements', timestamps: { createdAt: true, updatedAt: false } })
 export class StockMovement {
+  @Prop({ type: String, default: null }) productId!: string | null;
+  @Prop({ type: Number, default: null }) onHandBefore!: number | null;
+  @Prop({ type: Number, default: null }) reservedBefore!: number | null;
+
   @Prop({ type: String, required: true, index: true })
   variantId!: string;
 

@@ -24,8 +24,9 @@ export class VariantsAdminController {
     // Every product needs exactly one variant (D7) but generation is lazy —
     // this is the product-form's lookup, so ensure it exists here rather
     // than surfacing "no variant yet" to the admin.
-    const doc = (await this.variants.findByProductId(productId)) ?? (await this.variants.generateDefaultVariant(productId));
-    return [toVariantContract(doc)];
+    let docs = await this.variants.allForProducts([productId]);
+    if (!docs.length) docs = [await this.variants.generateDefaultVariant(productId)];
+    return docs.map(toVariantContract);
   }
 
   @Get(':id')

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Product } from './product.schema';
@@ -56,14 +56,27 @@ export class ProductVariantsService {
     return { created, skipped, total: products.length };
   }
 
+  async allForProducts(productIds: string[]) {
+    return this.variants.find({ productId: { $in: productIds }, retired: { $ne: true } }).sort({ createdAt: 1 });
+  }
+
+  async resolveForSale(productId: string, variantId?: string | null) {
+    const product = await this.products.findById(productId);
+    if (!product || product.deletedAt) throw new BadRequestException('Produit introuvable');
+    if (!variantId && product.inventoryModel === 'MATRIX') throw new BadRequestException('Sélectionnez une variante exacte (taille / couleur).');
+    const variant = variantId ? await this.findById(variantId) : await this.generateDefaultVariant(productId);
+    if (!variant || variant.productId !== productId || !variant.active || variant.retired) throw new BadRequestException('Variante inactive ou indisponible.');
+    return variant;
+  }
+
   async findByProductId(productId: string): Promise<VariantDocument | null> {
-    return this.variants.findOne({ productId });
+    return this.variants.findOne({ productId, retired: { $ne: true } });
   }
 
   /** Bulk lookup, keyed by productId — avoids N+1 queries in list views. */
   async findManyByProductIds(productIds: string[]): Promise<Map<string, VariantDocument>> {
     if (!productIds.length) return new Map();
-    const docs = await this.variants.find({ productId: { $in: productIds } });
+    const docs = await this.variants.find({ productId: { $in: productIds }, retired: { $ne: true } });
     return new Map(docs.map((d) => [d.productId, d]));
   }
 
@@ -71,10 +84,16 @@ export class ProductVariantsService {
     return this.variants.findById(id).catch(() => null);
   }
 
-  async update(id: string, patch: Partial<Pick<Variant, 'sku' | 'barcode' | 'sellingPriceMinor' | 'compareAtPriceMinor' | 'active' | 'purchasePriceMinor'>>): Promise<VariantDocument | null> {
+  async update(id: string, patch: Partial<Pick<Variant, 'sku' | 'barcode' | 'sellingPriceMinor' | 'compareAtPriceMinor' | 'active' | 'purchasePriceMinor' | 'lowStockThreshold'>>): Promise<VariantDocument | null> {
     const doc = await this.variants.findById(id);
     if (!doc) return null;
-    if (patch.sku !== undefined && patch.sku.trim()) doc.sku = patch.sku.trim();
+    if (doc.retired) throw new ConflictException('La variante historique reste archivée.');
+    if (patch.sku !== undefined) {
+      if (!patch.sku.trim()) throw new BadRequestException('SKU obligatoire');
+      if (await this.variants.exists({ sku: patch.sku.trim(), _id: { $ne: id } })) throw new ConflictException('SKU déjà utilisé');
+      doc.sku = patch.sku.trim();
+    }
+    if (patch.lowStockThreshold !== undefined) doc.lowStockThreshold = patch.lowStockThreshold;
     if (patch.barcode !== undefined) doc.barcode = patch.barcode?.trim() || null;
     if (patch.sellingPriceMinor !== undefined) doc.sellingPriceMinor = patch.sellingPriceMinor;
     if (patch.compareAtPriceMinor !== undefined) doc.compareAtPriceMinor = patch.compareAtPriceMinor;

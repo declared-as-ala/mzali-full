@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Minus, Plus, ShoppingBag, Zap, Check } from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { getPrimaryProductImage, type Product } from '@/types';
+import VariantSelector from './VariantSelector';
 import { SITE } from '@/lib/site-config';
 import { useLanguage } from '@/components/site/LanguageProvider';
 
@@ -13,12 +14,14 @@ export default function AddToCart({ product }: { product: Product }) {
   const add = useCart((s) => s.add);
   const { t } = useLanguage();
 
-  // This catalog tracks stock per product, not per size/color combination
-  // (a product's options are customer-facing preference text, not
-  // independent SKUs) — so "sold out" is whole-product, not per-option.
   const soldOut = !product.inStock;
+  const matrix = product.inventoryModel === 'MATRIX';
+  const [variantId, setVariantId] = useState('');
+  const [bundleVariants, setBundleVariants] = useState<string[]>([]);
+  const selectedVariant = product.variants?.find(v => v.id === variantId);
+  const snapshot = (id: string) => { const v = product.variants?.find(v => v.id === id); return v ? { Taille: v.size, Couleur: v.color } : undefined; };
 
-  const variantAttrs = product.attributes.filter((a) => a.options.length);
+  const variantAttrs = (matrix ? [] : product.attributes).filter((a) => a.options.length);
 
   const [bundleId, setBundleId] = useState<string | undefined>(
     product.bundles.find((b) => b.isDefault)?.id ?? product.bundles[0]?.id,
@@ -46,22 +49,29 @@ export default function AddToCart({ product }: { product: Product }) {
 
   const [extra, setExtra] = useState(1);
 
-  const effectivePrice = selectedBundle ? selectedBundle.price : product.price;
+  const effectivePrice = selectedBundle ? selectedBundle.price : selectedVariant?.price ?? product.price;
   const cartUnitPrice = effectivePrice / Math.max(1, bundleQty);
   const cartQty = bundleQty * extra;
 
+  const chosenIds = bundleActive ? Array.from({ length: bundleQty }, (_, i) => bundleVariants[i]) : [variantId];
+  const validSelection = !matrix || chosenIds.every(id => {
+    const v = product.variants?.find(v => v.id === id && v.active);
+    const needed = chosenIds.filter(other => other === id).length * extra;
+    return v && (product.inventoryEnabled === false || v.available >= needed);
+  });
   const doAdd = (buyNow = false) => {
-    if (soldOut) return;
+    if (soldOut || !validSelection) return;
     if (bundleActive) {
       for (let mul = 0; mul < extra; mul++) {
         for (let slot = 0; slot < bundleQty; slot++) {
           add({
             productId: product.id,
+            variantId: matrix ? bundleVariants[slot] : product.variants?.find(v => v.active)?.id,
             name: selectedBundle ? `${product.name} — ${selectedBundle.name}` : product.name,
             price: cartUnitPrice,
             qty: 1,
             image: getPrimaryProductImage(product.images)?.url ?? '',
-            variation: bundleItems[slot] && Object.keys(bundleItems[slot]).length ? bundleItems[slot] : undefined,
+            variation: matrix ? snapshot(bundleVariants[slot]) : bundleItems[slot] && Object.keys(bundleItems[slot]).length ? bundleItems[slot] : undefined,
             bundleId,
             bundleName: selectedBundle?.name,
             bundleSlot: slot + 1,
@@ -71,11 +81,12 @@ export default function AddToCart({ product }: { product: Product }) {
     } else {
       add({
         productId: product.id,
+        variantId: matrix ? variantId : product.variants?.find(v => v.active)?.id,
         name: product.name,
         price: cartUnitPrice,
         qty: cartQty,
         image: getPrimaryProductImage(product.images)?.url ?? '',
-        variation: variantAttrs.length ? picked : undefined,
+        variation: matrix ? snapshot(variantId) : variantAttrs.length ? picked : undefined,
       });
     }
     if (buyNow) {
@@ -183,6 +194,8 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       )}
 
+      {matrix && (bundleActive ? Array.from({ length: bundleQty }, (_, i) => <div key={i} className="rounded-2xl border p-4"><p className="mb-3 font-bold">Article {i + 1}</p><VariantSelector variants={product.variants ?? []} stockEnabled={product.inventoryEnabled !== false} value={bundleVariants[i]} onChange={id => setBundleVariants(prev => { const next = [...prev]; next[i] = id; return next; })} /></div>) : <VariantSelector variants={product.variants ?? []} stockEnabled={product.inventoryEnabled !== false} value={variantId} onChange={setVariantId} />)}
+      {matrix && !validSelection && <p className="text-sm text-ink-500">Choisissez une taille et une couleur disponibles pour chaque article.</p>}
       {!bundleActive && variantAttrs.map((a) => (
         <div key={a.name}>
           <p className="mb-2 text-sm font-bold text-ink-700">{a.name}</p>
@@ -209,11 +222,11 @@ export default function AddToCart({ product }: { product: Product }) {
           <span className="w-12 text-center font-bold">{extra}</span>
           <button disabled={soldOut} onClick={() => setExtra(extra + 1)} className="grid h-12 w-12 place-items-center text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40" aria-label={t.product.increaseQty}><Plus size={16} /></button>
         </div>
-        <button disabled={soldOut} onClick={() => doAdd(false)} className="btn-ghost flex-1 disabled:cursor-not-allowed disabled:opacity-40">
+        <button disabled={soldOut || !validSelection} onClick={() => doAdd(false)} className="btn-ghost flex-1 disabled:cursor-not-allowed disabled:opacity-40">
           <ShoppingBag size={18} /> {t.product.addToCart}
         </button>
       </div>
-      <button disabled={soldOut} onClick={() => doAdd(true)} className="btn-cta w-full shake-cta disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">
+      <button disabled={soldOut || !validSelection} onClick={() => doAdd(true)} className="btn-cta w-full shake-cta disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">
         <Zap size={18} /> {t.common.buyNow}
       </button>
     </div>

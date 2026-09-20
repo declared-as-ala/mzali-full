@@ -74,39 +74,44 @@ export default function CloseSessionPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-ink-100 p-6">
-      <div className="w-full max-w-md">
-        <div className="mb-5 flex flex-col items-center text-center">
-          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-50 text-brand-600">
-            <Wallet size={26} />
+    <div className="min-h-dvh bg-ink-100 px-4 py-4 sm:px-6">
+      <div className={`mx-auto w-full ${zReport ? 'max-w-xl' : 'max-w-5xl'}`}>
+        <div className="mb-4 flex items-center gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-600">
+            <Wallet size={23} />
           </div>
-          <h1 className="mt-4 text-xl font-black text-ink-900">Fermeture de caisse</h1>
+          <h1 className="text-xl font-black text-ink-900">Fermeture de caisse</h1>
         </div>
 
-        {liveReport && !zReport && <SessionReport report={liveReport} />}
-
         {!zReport ? (
-          <div className="mt-5 rounded-3xl bg-white p-6 shadow-2xl">
-            <label className="mb-1.5 block text-xs font-bold uppercase text-ink-700">Espèces comptées en caisse</label>
-            <input
-              type="number"
-              className="input mb-2 text-center text-2xl font-black"
-              aria-label="Montant compté en caisse (DT)"
-              value={countedCash}
-              min={0}
-              step={0.001}
-              onChange={(e) => setCountedCash(e.target.value)}
-            />
-            <p className="mb-5 text-center text-sm text-ink-500">{countedCash !== '' && liveReport ? `Écart : ${formatMinor(Math.round(Number(countedCash) * 1000) - liveReport.expectedCashMinor)}` : 'Saisissez le montant réellement compté.'}</p>
+          <div className="grid items-start gap-4 md:grid-cols-2 lg:gap-6">
+            {liveReport && <div className="order-2 min-w-0 md:order-1"><SessionReport report={liveReport} /></div>}
+            <div className="order-1 min-w-0 rounded-2xl border border-ink-200 bg-white p-4 shadow-sm sm:p-5 md:order-2">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50 px-4 py-3 text-brand-700">
+                <span className="text-sm font-bold">Espèces attendues</span>
+                <span className="text-xl font-black tabular-nums">{liveReport ? formatMinor(liveReport.expectedCashMinor) : 'Chargement…'}</span>
+              </div>
+              <label className="mb-1.5 block text-xs font-bold uppercase text-ink-700">Espèces comptées en caisse</label>
+              <input
+                type="number"
+                className="input mb-2 text-center text-2xl font-black"
+                aria-label="Montant compté en caisse (DT)"
+                value={countedCash}
+                min={0}
+                step={0.001}
+                onChange={(e) => setCountedCash(e.target.value)}
+              />
+              <p className="mb-4 text-center text-sm text-ink-500">{countedCash !== '' && liveReport ? `Écart : ${formatMinor(Math.round(Number(countedCash) * 1000) - liveReport.expectedCashMinor)}` : 'Saisissez le montant réellement compté.'}</p>
 
-            <label className="mb-4 block text-sm font-bold">Note de clôture (facultative)<textarea maxLength={1000} className="input mt-2" value={note} onChange={(e) => setNote(e.target.value)} /></label>
-            {error && (
-              <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-center text-sm font-bold text-red-700">{error}</p>
-            )}
+              <label className="mb-4 block text-sm font-bold">Note de clôture (facultative)<textarea rows={2} maxLength={1000} className="input mt-2" value={note} onChange={(e) => setNote(e.target.value)} /></label>
+              {error && (
+                <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-center text-sm font-bold text-red-700">{error}</p>
+              )}
 
-            <button type="button" disabled={busy || !liveReport || countedCash.trim() === '' || !Number.isFinite(Number(countedCash)) || Number(countedCash) < 0} onClick={handleClose} className="btn-primary min-h-16 w-full text-lg disabled:opacity-40">
-              {busy ? 'Fermeture…' : 'FERMER LA CAISSE'}
-            </button>
+              <button type="button" disabled={busy || !liveReport || countedCash.trim() === '' || !Number.isFinite(Number(countedCash)) || Number(countedCash) < 0} onClick={handleClose} className="btn-primary min-h-16 w-full text-lg disabled:opacity-40">
+                {busy ? 'Fermeture…' : 'FERMER LA CAISSE'}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="mt-5">

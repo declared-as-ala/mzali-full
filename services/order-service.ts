@@ -41,6 +41,7 @@ export type OrderUpdate = {
   attempts?: number;
   items?: {
     productId: string;
+    variantId?: string;
     qty: number;
     unitPrice?: number;
     variation?: Record<string, string>;

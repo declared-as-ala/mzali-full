@@ -1,5 +1,9 @@
 # Inventory Architecture
 
+> For the size/color inventory upgrade, migration and current channel rules, see
+> [Variant inventory upgrade](variant-inventory-upgrade.md). The default-variant
+> design below describes the legacy foundation.
+
 Covers master-prompt §5–§9, §17–§19. Extends the existing
 `backend/src/inventory/*` module rather than replacing it — see
 `current-state-audit.md` §3 for what's already there.

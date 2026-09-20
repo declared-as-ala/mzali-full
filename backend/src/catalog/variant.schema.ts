@@ -12,6 +12,11 @@ import { HydratedDocument } from 'mongoose';
  */
 @Schema({ collection: 'variants', timestamps: true })
 export class Variant {
+  @Prop({ type: String }) combinationKey?: string;
+  @Prop({ type: Boolean, default: false }) retired!: boolean;
+  @Prop({ type: Number, default: 0 }) inventoryRevision!: number;
+  @Prop({ type: Number, default: null }) lowStockThreshold!: number | null;
+
   @Prop({ type: String, required: true, index: true })
   productId!: string;
 
@@ -57,4 +62,5 @@ export class Variant {
 
 export type VariantDocument = HydratedDocument<Variant>;
 export const VariantSchema = SchemaFactory.createForClass(Variant);
+VariantSchema.index({ productId: 1, combinationKey: 1 }, { unique: true, partialFilterExpression: { combinationKey: { $type: 'string' } } });
 VariantSchema.index({ barcode: 1 }, { unique: true, partialFilterExpression: { barcode: { $type: 'string' } } });

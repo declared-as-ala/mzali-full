@@ -26,6 +26,7 @@ class CheckoutCustomerDto {
 class CartItemDto {
   @IsString() lineId!: string;
   @IsString() productId!: string;
+  @IsOptional() @IsString() variantId?: string;
   @IsString() name!: string;
   @IsNumber() price!: number;
   @IsInt() @Min(1) qty!: number;

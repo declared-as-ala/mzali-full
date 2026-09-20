@@ -35,8 +35,16 @@ const SECTIONS = [
     items: [
       { href: '/produits', label: 'Produits', icon: Package, exact: false },
       { href: '/categories', label: 'Catégories', icon: Tag, exact: false },
-      { href: '/stock', label: 'Stock', icon: Boxes, exact: false },
+    ],
+  },
+  {
+    label: 'Stock',
+    items: [
+      { href: '/stock-depot', label: 'Stock Dépôt', icon: Boxes, exact: false },
+      { href: '/stock-boutique', label: 'Stock Boutique', icon: Store, exact: false },
       { href: '/transfers', label: 'Transferts', icon: ArrowLeftRight, exact: false },
+      { href: '/stock-movements', label: 'Mouvements de stock', icon: ScrollText, exact: false },
+      { href: '/stocktakes', label: 'Inventaires', icon: ClipboardList, exact: false },
     ],
   },
   {

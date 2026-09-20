@@ -20,8 +20,7 @@ export class OnlineAvailabilityService {
 
   /** Available (onHand - reserved, floored at 0) quantity for a variant, under the current stock policy. */
   async resolve(variantId: string): Promise<number> {
-    const { stockPolicy } = await this.settings.getInventorySettings();
-    return this.resolveWithPolicy(variantId, stockPolicy);
+    return this.resolveWithPolicy(variantId, 'DEPOT_ONLY');
   }
 
   async resolveWithPolicy(variantId: string, policy: StockPolicy): Promise<number> {
@@ -54,6 +53,13 @@ export class OnlineAvailabilityService {
       }
     }
   }
+
+  async resolveMany(ids: string[]) {
+    const rows = await this.ledger.stockForVariants(ids, 'DEPOT');
+    return new Map(rows.map(r => [r.variantId, this.available(r)]));
+  }
+
+  async enabled() { return (await this.settings.getInventorySettings()).enabled !== false; }
 
   private available(item: { quantityOnHand: number; quantityReserved: number } | null): number {
     return item ? Math.max(0, item.quantityOnHand - item.quantityReserved) : 0;

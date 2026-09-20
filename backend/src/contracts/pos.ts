@@ -80,6 +80,9 @@ export type PosProductBundle = {
 };
 
 export type PosCatalogItem = {
+  size?: string;
+  color?: string;
+  stockTracked?: boolean;
   productId: string;
   variantId: string;
   name: string;

@@ -98,7 +98,7 @@ export class PosSuggestionsService {
   private async toSuggestions(variantIds: string[], reason: PosSuggestion['reason']): Promise<PosSuggestion[]> {
     if (!variantIds.length) return [];
     const variantDocs = await Promise.all(variantIds.map((id) => this.variants.findById(id)));
-    const validVariants = variantDocs.filter((v): v is NonNullable<typeof v> => Boolean(v));
+    const validVariants = variantDocs.filter((v): v is NonNullable<typeof v> => Boolean(v && v.active && !v.retired));
     const productIds = [...new Set(validVariants.map((v) => v.productId))];
     const productDocs = await this.products.find({ _id: { $in: productIds } }).select({ name: 1, images: 1, regularPriceMinor: 1, salePriceMinor: 1 });
     const productById = new Map(productDocs.map((p) => [p.id, p]));
@@ -109,7 +109,7 @@ export class PosSuggestionsService {
       return {
         productId: v.productId,
         variantId: v.id,
-        name: product.name,
+        name: [product.name, v.attributes.size, v.attributes.color].filter(Boolean).join(" / "),
         imageUrl: normalizePublicMediaUrl(primaryProductImage(product.images)?.url ?? null),
         priceMinor: v.sellingPriceMinor ?? product.salePriceMinor ?? product.regularPriceMinor,
         reason,

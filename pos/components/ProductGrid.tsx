@@ -20,7 +20,7 @@ export default function ProductGrid({ items, onSelect, onUnavailableAttempt }: {
   return (
     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 pb-4">
       {items.map((item) => {
-        const outOfStock = item.boutiqueAvailable <= 0;
+        const outOfStock = item.stockTracked !== false && item.boutiqueAvailable <= 0;
         return (
           <button
             key={item.productId}
@@ -49,7 +49,7 @@ export default function ProductGrid({ items, onSelect, onUnavailableAttempt }: {
                     : 'bg-white/95 text-emerald-700 border border-emerald-200'
                 }`}
               >
-                {outOfStock ? 'Épuisé' : item.boutiqueAvailable}
+                {item.stockTracked === false ? 'Disponible' : outOfStock ? 'Épuisé' : item.boutiqueAvailable}
               </span>
             </div>
             <div className="flex flex-1 flex-col justify-between gap-1 p-2">

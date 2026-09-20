@@ -20,7 +20,7 @@ function newId(): string {
 }
 
 function sameLine(a: CartItem, b: AddInput): boolean {
-  if (a.productId !== b.productId) return false;
+  if (a.productId !== b.productId || a.variantId !== b.variantId) return false;
   if ((a.bundleId ?? '') !== (b.bundleId ?? '')) return false;
   if ((a.bundleSlot ?? null) !== (b.bundleSlot ?? null)) return false;
   return JSON.stringify(a.variation ?? null) === JSON.stringify(b.variation ?? null);

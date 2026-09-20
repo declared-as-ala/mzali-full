@@ -29,17 +29,18 @@ export class PosCatalogService {
 
   async getCatalog(): Promise<PosCatalogResponse> {
     const [productList, categoryList, boutiqueCode, depotCode, posSettings] = await Promise.all([
-      this.products.list({ perPage: 200, status: 'published' }, true),
+      this.products.list({ perPage: 100, status: 'published' }, true),
       this.categories.list({ hideEmpty: true }),
       this.locations.getDefaultPosLocationCode(),
       this.locations.getDefaultOnlineLocationCode(),
       this.settings.getRaw('pos'),
     ]);
 
-    const products = productList.items;
+    const products = [...productList.items];
+    for (let page = 2; page <= productList.totalPages; page++) products.push(...(await this.products.list({ perPage: 100, page, status: 'published' }, true)).items);
     const productIds = products.map((p) => p.id);
-    const variantByProduct = await this.variants.findManyByProductIds(productIds);
-    const variantIds = Array.from(variantByProduct.values(), (v) => v.id);
+    const allVariants = await this.variants.allForProducts(productIds);
+    const variantIds = allVariants.map(v => v.id);
 
     const [boutiqueStock, depotStock] = await Promise.all([
       this.ledger.stockForVariants(variantIds, boutiqueCode),
@@ -54,8 +55,7 @@ export class PosCatalogService {
 
     const items: PosCatalogItem[] = [];
     for (const p of products) {
-      const variant = variantByProduct.get(p.id);
-      if (!variant) continue; // shouldn't happen post-migration; skip defensively rather than 500
+      for (const variant of allVariants.filter(v => v.productId === p.id && v.active)) {
       const b = boutiqueByVariant.get(variant.id);
       const d = depotByVariant.get(variant.id);
       items.push({
@@ -65,7 +65,10 @@ export class PosCatalogService {
         slug: p.slug,
         sku: variant.sku,
         barcode: variant.barcode,
-        priceMinor: toMinor(p.price),
+        priceMinor: variant.sellingPriceMinor ?? toMinor(p.price),
+        size: variant.attributes.size ?? '',
+        color: variant.attributes.color ?? '',
+        stockTracked: p.inventoryEnabled !== false,
         imageUrl: normalizePublicMediaUrl(primaryProductImage(p.images)?.url ?? null),
         categoryIds: p.categoryIds,
         boutiqueAvailable: b ? b.quantityOnHand - b.quantityReserved : 0,
@@ -80,6 +83,7 @@ export class PosCatalogService {
           quantity: bundle.quantity,
         })),
       });
+      }
     }
 
     return {

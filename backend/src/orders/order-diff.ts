@@ -10,6 +10,7 @@
 
 export type ItemSnapshot = {
   productId: string;
+  variantId?: string | null;
   qty: number;
   unitPriceMinor: number;
   variation: Record<string, string> | null;
@@ -88,6 +89,7 @@ function sameVariation(a: Record<string, string> | null, b: Record<string, strin
 export function itemsEqual(a: ItemSnapshot, b: ItemSnapshot): boolean {
   return (
     a.productId === b.productId &&
+    (a.variantId ?? null) === (b.variantId ?? null) &&
     a.qty === b.qty &&
     a.unitPriceMinor === b.unitPriceMinor &&
     (a.bundleName ?? null) === (b.bundleName ?? null) &&
@@ -97,10 +99,11 @@ export function itemsEqual(a: ItemSnapshot, b: ItemSnapshot): boolean {
 }
 
 export function snapshotItems(
-  items: { productId: string; qty: number; unitPriceMinor: number; variation?: Record<string, string> | null; bundleName?: string | null; bundleSlot?: number | null }[],
+  items: { productId: string; variantId?: string | null; qty: number; unitPriceMinor: number; variation?: Record<string, string> | null; bundleName?: string | null; bundleSlot?: number | null }[],
 ): ItemSnapshot[] {
   return items.map((i) => ({
     productId: i.productId,
+    variantId: i.variantId,
     qty: i.qty,
     unitPriceMinor: i.unitPriceMinor,
     variation: normalizedVariation(i.variation),

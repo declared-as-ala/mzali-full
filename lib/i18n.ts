@@ -53,7 +53,7 @@ export const dictionaries = {
       viewAllProducts: 'Voir tous les produits',
     },
     product: {
-      outOfStock: 'Rupture',
+      outOfStock: 'Épuisé',
       viewProduct: 'Voir le produit',
       product: 'Produit',
       offers: 'Offres',

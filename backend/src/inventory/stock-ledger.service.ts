@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type Redis from 'ioredis';
 import { ClientSession, Model } from 'mongoose';
@@ -38,6 +38,7 @@ export type ApplyMovementInput = {
   reason?: string | null;
   actor: AuditActor;
   session?: ClientSession;
+  migration?: boolean;
 };
 
 /**
@@ -58,10 +59,24 @@ export class StockLedgerService {
   ) {}
 
   async applyMovement(input: ApplyMovementInput): Promise<{ item: StockItemDocument; movement: StockMovementDocument }> {
+    if (!input.session) {
+      const session = await this.items.db.startSession();
+      try { return (await session.withTransaction(() => this.applyMovement({ ...input, session })))!; }
+      finally { await session.endSession(); }
+    }
     const onHandDelta = input.onHandDelta ?? 0;
     const reservedDelta = input.reservedDelta ?? 0;
     const locationId = input.locationId.toUpperCase();
 
+    if (![onHandDelta, reservedDelta].every(Number.isSafeInteger)) throw new BadRequestException('Quantité entière requise');
+    const variantModel = this.items.db.models.Variant;
+    const variant = variantModel ? await variantModel.findOneAndUpdate(
+      { _id: input.variantId, ...(input.migration ? {} : { retired: { $ne: true } }), ...(['pos_sale', 'order_commit'].includes(input.type) && onHandDelta < 0 ? { active: true } : {}) },
+      { $inc: { inventoryRevision: 1 } }, { new: true, session: input.session },
+    ) : null;
+    if (variantModel && !variant) throw new ConflictException('Variante historique ou introuvable : réconciliation requise.');
+    const before = await this.items.findOne({ variantId: input.variantId, locationId }).session(input.session);
+    if ((before?.quantityOnHand ?? 0) + onHandDelta < 0 || (before?.quantityReserved ?? 0) + reservedDelta < 0) throw new InsufficientStockError(input.variantId, locationId);
     let doc: StockItemDocument | null;
     if (input.requireAvailableAtLeast !== undefined) {
       doc = await this.items.findOneAndUpdate(
@@ -85,17 +100,13 @@ export class StockLedgerService {
       );
     }
 
-    // Never let a bookkeeping race (or a soft-mode oversell) drive either
-    // counter negative — same defensive clamp the pre-Sprint-1 code used.
-    let dirty = false;
-    if (doc!.quantityOnHand < 0) { doc!.quantityOnHand = 0; dirty = true; }
-    if (doc!.quantityReserved < 0) { doc!.quantityReserved = 0; dirty = true; }
-    if (dirty) await doc!.save({ session: input.session });
-
     const [movement] = await this.movements.create(
       [
         {
           variantId: input.variantId,
+          productId: variant?.productId ?? null,
+          onHandBefore: before?.quantityOnHand ?? 0,
+          reservedBefore: before?.quantityReserved ?? 0,
           locationId,
           type: input.type,
           qty: onHandDelta !== 0 ? onHandDelta : reservedDelta,
@@ -148,7 +159,7 @@ export class StockLedgerService {
     return this.items.find({ variantId: { $in: variantIds }, locationId: locationId.toUpperCase() });
   }
 
-  async stockAt(variantId: string, locationId: string): Promise<StockItemDocument | null> {
-    return this.items.findOne({ variantId, locationId: locationId.toUpperCase() });
+  async stockAt(variantId: string, locationId: string, session?: ClientSession): Promise<StockItemDocument | null> {
+    return await this.items.findOne({ variantId, locationId: locationId.toUpperCase() }).session(session ?? null) as StockItemDocument | null;
   }
 }

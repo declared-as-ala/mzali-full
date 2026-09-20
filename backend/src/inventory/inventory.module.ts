@@ -1,3 +1,5 @@
+import { VariantStockService } from './variant-stock.service';
+import { VariantStockController } from './variant-stock.controller';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CatalogModule } from '@/catalog/catalog.module';
@@ -17,8 +19,8 @@ import { InventoryService } from './inventory.service';
       { name: PurchaseOrder.name, schema: PurchaseOrderSchema },
     ]),
   ],
-  controllers: [InventoryAdminController],
-  providers: [InventoryService, AlertsService],
+  controllers: [InventoryAdminController, VariantStockController],
+  providers: [InventoryService, AlertsService, VariantStockService],
   exports: [InventoryService, InventoryCoreModule],
 })
 export class InventoryModule {}

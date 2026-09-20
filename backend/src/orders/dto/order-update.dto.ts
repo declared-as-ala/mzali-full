@@ -15,6 +15,7 @@ class OrderUpdateCustomerDto {
 
 class OrderUpdateItemDto {
   @IsString() productId!: string;
+  @IsOptional() @IsString() variantId?: string;
   @IsInt() qty!: number;
   @IsOptional() @IsNumber() unitPrice?: number;
   @IsOptional() @IsObject() variation?: Record<string, string>;

@@ -38,10 +38,10 @@ export class StocktakesService {
     const productDocs = await this.products.find(productFilter).select({ _id: 1, name: 1 });
     const productIds = productDocs.map((p) => p.id);
     const productNameById = new Map(productDocs.map((p) => [p.id, p.name]));
-    const variantByProduct = await this.variants.findManyByProductIds(productIds);
-    if (!variantByProduct.size) throw new BadRequestException('Aucune variante dans ce périmètre');
+    const allVariants = await this.variants.allForProducts(productIds);
+    if (!allVariants.length) throw new BadRequestException('Aucune variante dans ce périmètre');
 
-    const variantIds = Array.from(variantByProduct.values()).map((v) => v.id);
+    const variantIds = allVariants.map(v => v.id);
     const stockItems = await this.ledger.stockForVariants(variantIds, locationId);
     const onHandByVariant = new Map(stockItems.map((i) => [i.variantId, i.quantityOnHand]));
 
@@ -52,10 +52,10 @@ export class StocktakesService {
       status: 'IN_PROGRESS',
       scope: { kind: dto.scopeKind, categoryIds: dto.categoryIds ?? [] },
       blindCount: dto.blindCount ?? false,
-      lines: Array.from(variantByProduct.entries()).map(([productId, variant]) => ({
+      lines: allVariants.map(variant => ({
         variantId: variant.id,
-        productId,
-        productName: productNameById.get(productId) ?? productId,
+        productId: variant.productId,
+        productName: [productNameById.get(variant.productId) ?? variant.productId, variant.attributes.size, variant.attributes.color].filter(Boolean).join(' / '),
         expectedQuantity: onHandByVariant.get(variant.id) ?? 0,
         countedQuantity: null,
         difference: null,
@@ -80,61 +80,75 @@ export class StocktakesService {
   }
 
   async submitCount(id: string, dto: SubmitCountDto, _actor: AuditActor): Promise<StocktakeDocument> {
-    const doc = await this.getById(id);
-    if (doc.status !== 'IN_PROGRESS' && doc.status !== 'REVIEW_REQUIRED') {
-      throw new BadRequestException(`Impossible de compter un inventaire au statut ${doc.status}`);
-    }
-    const { stocktakeVarianceThreshold } = await this.settings.getInventorySettings();
-    const byVariant = new Map(dto.lines.map((l) => [l.variantId, l]));
+    const session = await this.connection.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const doc = await this.model.findById(id).session(session);
+        if (!doc) throw new NotFoundException('Inventaire introuvable');
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
+        if (doc.status !== 'IN_PROGRESS' && doc.status !== 'REVIEW_REQUIRED') {
+          throw new BadRequestException(`Impossible de compter un inventaire au statut ${doc.status}`);
+        }
+        const { stocktakeVarianceThreshold } = await this.settings.getInventorySettings();
+        const byVariant = new Map(dto.lines.map((l) => [l.variantId, l]));
 
-    let needsReview = false;
-    for (const line of doc.lines) {
-      const input = byVariant.get(line.variantId);
-      if (!input) continue;
-      line.countedQuantity = input.countedQuantity;
-      line.difference = input.countedQuantity - line.expectedQuantity;
-      line.reasonIfLarge = input.reasonIfLarge ?? line.reasonIfLarge;
-      const isLarge = Math.abs(line.difference) > stocktakeVarianceThreshold;
-      if (isLarge && !line.reasonIfLarge) needsReview = true;
-    }
+        let needsReview = false;
+        for (const line of doc.lines) {
+          const input = byVariant.get(line.variantId);
+          if (!input) continue;
+          line.countedQuantity = input.countedQuantity;
+          line.difference = input.countedQuantity - line.expectedQuantity;
+          line.reasonIfLarge = input.reasonIfLarge ?? line.reasonIfLarge;
+          const isLarge = Math.abs(line.difference) > stocktakeVarianceThreshold;
+          if (isLarge && !line.reasonIfLarge) needsReview = true;
+        }
 
-    const fullyCounted = doc.lines.every((line) => line.countedQuantity !== null);
-    if (fullyCounted) {
-      doc.status = needsReview ? 'REVIEW_REQUIRED' : 'COUNTED';
-    }
-    await doc.save();
-    return doc;
+        const fullyCounted = doc.lines.every((line) => line.countedQuantity !== null);
+        if (fullyCounted) {
+          doc.status = needsReview ? 'REVIEW_REQUIRED' : 'COUNTED';
+        }
+        await doc.save({ session });
+        return doc;
+      }) as StocktakeDocument;
+    } finally { await session.endSession(); }
   }
 
   async approve(id: string, actor: AuditActor): Promise<StocktakeDocument> {
-    const doc = await this.getById(id);
-    if (doc.status !== 'COUNTED' && doc.status !== 'REVIEW_REQUIRED') {
-      throw new BadRequestException(`Impossible d'approuver un inventaire au statut ${doc.status}`);
-    }
-    const { stocktakeVarianceThreshold } = await this.settings.getInventorySettings();
-    const missingReason = doc.lines.find(
-      (line) => line.difference !== null && Math.abs(line.difference) > stocktakeVarianceThreshold && !line.reasonIfLarge,
-    );
-    if (missingReason) {
-      throw new BadRequestException(`Un motif est requis pour l'écart important sur la variante ${missingReason.variantId}`);
-    }
-    if (doc.lines.some((line) => line.countedQuantity === null)) {
-      throw new BadRequestException('Toutes les lignes doivent être comptées avant approbation');
-    }
-    doc.status = 'APPROVED';
-    doc.approvedBy = actor;
-    await doc.save();
-    return doc;
+    const session = await this.connection.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const doc = await this.model.findById(id).session(session);
+        if (!doc) throw new NotFoundException('Inventaire introuvable');
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
+        if (doc.status !== 'COUNTED' && doc.status !== 'REVIEW_REQUIRED') {
+          throw new BadRequestException(`Impossible d'approuver un inventaire au statut ${doc.status}`);
+        }
+        const { stocktakeVarianceThreshold } = await this.settings.getInventorySettings();
+        const missingReason = doc.lines.find(
+          (line) => line.difference !== null && Math.abs(line.difference) > stocktakeVarianceThreshold && !line.reasonIfLarge,
+        );
+        if (missingReason) {
+          throw new BadRequestException(`Un motif est requis pour l'écart important sur la variante ${missingReason.variantId}`);
+        }
+        if (doc.lines.some((line) => line.countedQuantity === null)) {
+          throw new BadRequestException('Toutes les lignes doivent être comptées avant approbation');
+        }
+        doc.status = 'APPROVED';
+        doc.approvedBy = actor;
+        await doc.save({ session });
+        return doc;
+      }) as StocktakeDocument;
+    } finally { await session.endSession(); }
   }
 
   /**
    * The one place in the codebase a movement's delta is derived from a
    * target (countedQuantity) rather than a signed input — re-reads live
-   * onHand inside the transaction so the correction always lands exactly
-   * on countedQuantity even if something else moved stock since the count.
+   * onHand inside the transaction and refuses stale counts if another operation changed the stock.
    */
   async post(id: string, actor: AuditActor): Promise<StocktakeDocument> {
-    const doc = await this.getById(id);
+    let doc = await this.getById(id);
+    if (doc.status === 'POSTED') return doc;
     if (doc.status !== 'APPROVED') {
       throw new BadRequestException(`Impossible de valider un inventaire au statut ${doc.status}`);
     }
@@ -142,10 +156,15 @@ export class StocktakesService {
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        doc = await this.model.findById(id).session(session) as StocktakeDocument;
+        if (doc.status === 'POSTED') return;
+        if (doc.status !== 'APPROVED') throw new BadRequestException('Inventaire non approuvé');
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
         for (const line of doc.lines) {
           if (line.countedQuantity === null) continue;
-          const current = await this.ledger.stockAt(line.variantId, doc.locationId);
+          const current = await this.ledger.stockAt(line.variantId, doc.locationId, session);
           const currentOnHand = current?.quantityOnHand ?? 0;
+          if (currentOnHand !== line.expectedQuantity) throw new BadRequestException('Le stock a changé depuis le comptage. Annulez cet inventaire et créez un nouveau comptage.');
           const delta = line.countedQuantity - currentOnHand;
           if (delta === 0) continue;
           await this.ledger.applyMovement({
@@ -170,12 +189,18 @@ export class StocktakesService {
   }
 
   async cancel(id: string, _actor: AuditActor): Promise<StocktakeDocument> {
-    const doc = await this.getById(id);
-    if (doc.status === 'POSTED' || doc.status === 'CANCELLED') {
-      throw new BadRequestException(`Impossible d'annuler un inventaire au statut ${doc.status}`);
-    }
-    doc.status = 'CANCELLED';
-    await doc.save();
-    return doc;
+    const session = await this.connection.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const doc = await this.model.findById(id).session(session);
+        if (!doc) throw new NotFoundException('Inventaire introuvable');
+        if (doc.status === 'POSTED' || doc.status === 'CANCELLED') throw new BadRequestException(`Impossible d'annuler un inventaire au statut ${doc.status}`);
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
+        doc.status = 'CANCELLED';
+        await doc.save({ session });
+        return doc;
+      }) as StocktakeDocument;
+    } finally { await session.endSession(); }
   }
+
 }

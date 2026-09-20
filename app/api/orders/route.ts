@@ -58,6 +58,7 @@ export async function POST(req: Request) {
         attempts: payload.attempts,
         items: payload.items.map((i) => ({
           productId: i.productId,
+          variantId: i.variantId,
           qty: i.qty,
           unitPrice: i.price,
           variation: i.variation,

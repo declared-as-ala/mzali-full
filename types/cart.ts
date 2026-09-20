@@ -1,6 +1,7 @@
 export type CartItem = {
   lineId: string;     // unique per cart line — required so bundle slots stay separate
   productId: string;
+  variantId?: string;
   name: string;
   price: number;      // unit price actually paid (may include bundle discount)
   qty: number;

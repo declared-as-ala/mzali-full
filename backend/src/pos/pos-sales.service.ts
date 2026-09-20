@@ -58,6 +58,7 @@ export class PosSalesService {
         return { doc: existing, wasExisting: true };
       }
     }
+    if (ctx.locationId !== 'BOUTIQUE') throw new BadRequestException('Le POS doit utiliser le stock Boutique.');
     if (!input.lines.length) throw new BadRequestException('Le panier est vide');
     if (!input.payments?.length) throw new BadRequestException('Au moins un mode de paiement est requis');
 
@@ -69,9 +70,10 @@ export class PosSalesService {
     // amount (same principle as online checkout).
     const { lines: resolved, categoryIdsByProductId } = await this.resolveSaleLines(input.lines);
 
+    const stockTracked = (await this.settings.getInventorySettings()).enabled !== false;
     const saleId = new Types.ObjectId();
     const run = async (session?: ClientSession) => {
-      for (const line of resolved) {
+      for (const line of stockTracked ? resolved : []) {
         try {
           await this.ledger.applyMovement({
             variantId: line.variantId,
@@ -157,6 +159,7 @@ export class PosSalesService {
         [
           {
             _id: saleId,
+          stockTracked,
             saleNumber,
             terminalId: ctx.terminalId,
             cashierId: ctx.cashierId,
@@ -273,7 +276,7 @@ export class PosSalesService {
     const resolvedInputs = await Promise.all(
       inputLines.map(async (line) => {
         const variant = await this.variants.findById(line.variantId);
-        if (!variant) throw new NotFoundException(`Variante introuvable: ${line.variantId}`);
+        if (!variant || !variant.active || variant.retired) throw new NotFoundException(`Variante introuvable: ${line.variantId}`);
         const product = await this.products.getById(variant.productId);
         if (!product) throw new NotFoundException(`Produit introuvable pour la variante ${line.variantId}`);
         categoryIdsByProductId.set(variant.productId, product.categoryIds ?? []);
@@ -289,7 +292,7 @@ export class PosSalesService {
     const groups = new Map<string, ResolvedInput[]>();
     const ungrouped: ResolvedInput[] = [];
     for (const r of resolvedInputs) {
-      if (!r.line.bundleGroupId) {
+      if (!r.line.bundleGroupId || r.variant.sellingPriceMinor != null) {
         ungrouped.push(r);
         continue;
       }
@@ -420,12 +423,16 @@ export class PosSalesService {
 
     const stockDeltas = dto.lines ? computeSaleStockDeltas(beforeSnapshot.lines, resolvedLines) : new Map<string, number>();
 
+    if (beforeSnapshot.stockTracked !== false && [...stockDeltas.values()].some(delta => delta !== 0) && (await this.settings.getInventorySettings()).enabled === false) {
+      throw new BadRequestException('Réactivez le mode avec stock pour modifier les articles de cette vente déjà déduite.');
+    }
+
     const run = async (txnSession?: ClientSession) => {
       // Reload on every transaction retry; an aborted save must not leave a
       // reused Mongoose document with cleared dirty fields.
       const doc = await this.sales.findOne({ _id: id, updatedAt: beforeSnapshot.updatedAt, status: 'COMPLETED' }).session(txnSession ?? null);
       if (!doc) throw new ConflictException('Cette vente a changé, rechargez-la');
-      for (const [variantId, delta] of stockDeltas) {
+      for (const [variantId, delta] of beforeSnapshot.stockTracked === false ? [] : stockDeltas) {
         try {
           await this.ledger.applyMovement({
             variantId,
@@ -656,7 +663,7 @@ export class PosSalesService {
         $inc: { refundsMinor: doc.totalMinor, cashRefundsMinor: cash, cardRefundsMinor: card, otherRefundsMinor: other },
       }, { session: txn });
       if (!result.matchedCount) throw new ConflictException('Cette session est fermée');
-      for (const line of doc.lines) {
+      for (const line of doc.stockTracked === false ? [] : doc.lines) {
         await this.ledger.applyMovement({ variantId: line.variantId, locationId: doc.locationId, type: 'correction', onHandDelta: line.qty, reference: doc.id, reason: `Annulation vente #${doc.saleNumber}`, actor, session: txn });
       }
       if (cash) await this.sessions.recordMovement(cashSession, 'CASH_REFUND', cash, actor.id, `Annulation vente #${doc.saleNumber}`, txn, doc.id, `refund:${doc.id}`);

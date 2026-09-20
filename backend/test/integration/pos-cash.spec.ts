@@ -31,7 +31,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
   let ctx: PosSaleContext;
   const variantId = new Types.ObjectId().toString();
   const productId = new Types.ObjectId().toString();
-  const settings = { getRaw: jest.fn(async () => ({ cashToleranceMinor: 1000 })), getCompany: jest.fn(async () => ({ legalName: 'Ahmed Mzali Boutique', address: 'Tunis', phone: '', matriculeFiscal: '', rcNumber: '' })) };
+  const settings = { getInventorySettings: jest.fn(async () => ({ enabled: true })), getRaw: jest.fn(async () => ({ cashToleranceMinor: 1000 })), getCompany: jest.fn(async () => ({ legalName: 'Ahmed Mzali Boutique', address: 'Tunis', phone: '', matriculeFiscal: '', rcNumber: '' })) };
   beforeAll(async () => {
     if (!uri?.includes('mzali_cash_test')) throw new Error('Use an isolated mzali_cash_test database');
     db = await createConnection(uri).asPromise();
@@ -51,7 +51,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
     sales = new PosSalesService(
       db.model<PosSale>(PosSale.name), db.model<PosPayment>(PosPayment.name), db.model<Employee>(Employee.name), {} as never, {} as never,
       { getById: async () => ({ name: 'Chemise', price: 1, categoryIds: [] }) } as never,
-      { findById: async () => ({ id: variantId, productId, sku: 'TEST', attributes: {}, sellingPriceMinor: 1000 }) } as never,
+      { findById: async () => ({ id: variantId, productId, active: true, sku: 'TEST', attributes: {}, sellingPriceMinor: 1000 }) } as never,
       stock, new CountersService(db.model<Counter>(Counter.name)), sessions,
       {} as never, {} as never, {} as never, settings as never, db,
     );
@@ -59,6 +59,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
   });
   afterAll(async () => { if (db) await db.close(); });
   beforeEach(async () => {
+    settings.getInventorySettings.mockResolvedValue({ enabled: true });
     await Promise.all(Object.values(db.models).map((m) => m.deleteMany({})));
     const cashier = await db.model<Employee>(Employee.name).create({ email: 'cash@test.invalid', name: 'Caissier Test', role: 'cashier', passwordHash: { algo: 'argon2id', hash: 'unused-test' } });
     const terminal = await db.model<PosTerminal>(PosTerminal.name).create({ terminalCode: 'T1', name: 'Terminal 1', locationId: 'BOUTIQUE', deviceFingerprint: 'test' });
@@ -236,4 +237,24 @@ suite('Cash sessions with real MongoDB transactions', () => {
     expect(pdf.length).toBeGreaterThan(2000);
     if (process.env.POS_CASH_PDF_QA) { mkdirSync('../tmp/pdfs', { recursive: true }); writeFileSync('../tmp/pdfs/ticket-z-qa.pdf', pdf); }
   });
+  it('deducts only Boutique and restores tracked POS cancellations after a mode switch', async () => {
+    await open(); const sold = await sale(2000);
+    expect((await db.model(StockItem.name).findOne({ variantId, locationId: 'BOUTIQUE' }))!.quantityOnHand).toBe(9998);
+    expect((await db.model(StockItem.name).findOne({ variantId, locationId: 'DEPOT' }))!.quantityOnHand).toBe(10000);
+    settings.getInventorySettings.mockResolvedValue({ enabled: false });
+    await sales.cancel(sold.doc.id, { type: 'employee', id: ctx.cashierId, name: ctx.cashierName });
+    expect((await db.model(StockItem.name).findOne({ variantId, locationId: 'BOUTIQUE' }))!.quantityOnHand).toBe(10000);
+  });
+  it('sells at zero stock in POS mode sans stock without later phantom returns', async () => {
+    await open();
+    await db.model(StockItem.name).updateOne({ variantId, locationId: 'BOUTIQUE' }, { $set: { quantityOnHand: 0 } });
+    settings.getInventorySettings.mockResolvedValue({ enabled: false });
+    const sold = await sale(2000);
+    expect(sold.doc.stockTracked).toBe(false);
+    settings.getInventorySettings.mockResolvedValue({ enabled: true });
+    await sales.cancel(sold.doc.id, { type: 'employee', id: ctx.cashierId, name: ctx.cashierName });
+    expect((await db.model(StockItem.name).findOne({ variantId, locationId: 'BOUTIQUE' }))!.quantityOnHand).toBe(0);
+    expect(await db.model(StockMovement.name).countDocuments()).toBe(0);
+  });
+
 });

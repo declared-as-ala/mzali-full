@@ -39,6 +39,7 @@ export type OrderStatus = StandardOrderStatus | (string & {});
 
 export type OrderLineItem = {
   productId: string;
+  variantId?: string | null;
   name: string;
   quantity: number;
   price: number;
@@ -68,6 +69,7 @@ export type OrderResponse = {
 
 export type OrderProductCount = {
   productId: string;
+  variantId?: string | null;
   orderCount: number;
 };
 

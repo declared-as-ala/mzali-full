@@ -19,6 +19,7 @@
     "test:integration": "jest --config jest.integration.config.cjs --runInBand",
     "seed:dev": "ts-node -r tsconfig-paths/register scripts/seed-dev.ts",
     "check:contracts": "node scripts/check-contracts.mjs",
+    "inventory:audit": "node scripts/audit-variant-inventory.cjs",
     "migration:dry-run": "node dist/cli.js migrate:all --dry-run",
     "migration:run": "node dist/cli.js migrate:all",
     "migration:verify": "node dist/cli.js migrate:verify"

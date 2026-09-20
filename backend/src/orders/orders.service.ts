@@ -35,6 +35,7 @@ const SYSTEM_ACTOR: AuditActor = { type: 'system', id: null, name: 'checkout' };
 
 type ResolvedLine = {
   productId: string;
+  variantId?: string | null;
   name: string;
   slug: string;
   imageUrl: string | null;
@@ -81,9 +82,15 @@ export class OrdersService {
 
     const commerce = await this.settings.getCommerce();
     const status = dto.status === DRAFT_STATUS ? DRAFT_STATUS : (dto.status || commerce.defaultOrderStatus);
-    const strict = this.isStrictStock;
+    const strict = true;
 
     const lines = await this.resolveLines(dto);
+    if ((await this.settings.getInventorySettings()).enabled !== false && dto.status !== DRAFT_STATUS) {
+      const quantities = new Map<string, { productId: string; qty: number }>();
+      for (const l of lines) quantities.set(l.variantId!, { productId: l.productId, qty: (quantities.get(l.variantId!)?.qty ?? 0) + l.qty });
+      for (const [id, l] of quantities) await this.inventory.validateAvailable(l.productId, id, l.qty);
+    }
+    const inventoryEnabled = (await this.settings.getInventorySettings()).enabled !== false;
     const shippingMinor = status === DRAFT_STATUS ? toMinor(dto.shipping ?? 0) : toMinor(commerce.shippingFlat);
 
     const orderId = new Types.ObjectId();
@@ -126,10 +133,10 @@ export class OrdersService {
         // this store confirms COD orders by phone before stock ever moves
         // (see order-status.ts). Only a rare direct-to-confirmed creation
         // (e.g. an admin backdating an already-confirmed sale) commits here.
-        if (stockEffectForStatus(status) === 'commit') {
+        if (inventoryEnabled && stockEffectForStatus(status) === 'commit') {
           for (const line of lines) {
             try {
-              await this.inventory.commit(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, session, strict);
+              await this.inventory.commit(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, session, strict, line.variantId);
             } catch (err) {
               if (err instanceof InsufficientStockError) {
                 throw new BadRequestException(`Stock insuffisant pour ${line.name}`);
@@ -147,6 +154,7 @@ export class OrdersService {
               _id: orderId,
               orderNumber,
               status,
+              stockCommitted: inventoryEnabled && stockEffectForStatus(status) === 'commit',
               statusHistory: [{ from: null, to: status, by: SYSTEM_ACTOR, at: now, note: null }],
               customer: {
                 firstName: dto.customer.firstName ?? '',
@@ -161,6 +169,7 @@ export class OrdersService {
               customerId: customerDoc?.id ?? null,
               items: lines.map((l) => ({
                 productId: l.productId,
+                variantId: l.variantId,
                 legacyProductId: null,
                 name: l.name,
                 slug: l.slug,
@@ -198,6 +207,12 @@ export class OrdersService {
       // (matches the legacy try/catch-and-swallow behavior).
       if (saved.status !== DRAFT_STATUS) await this.maybeEnqueueAutoPush(saved);
       return toOrderContract(await this.model.findById(saved._id) as OrderDocument);
+    } catch (error) {
+      if (idempotencyKey && (error as { code?: number }).code === 11000) {
+        const existing = await this.model.findOne({ idempotencyKey });
+        if (existing) return toOrderContract(existing);
+      }
+      throw error;
     } finally {
       await session.endSession();
     }
@@ -205,7 +220,7 @@ export class OrdersService {
 
   /** Matches app/api/orders/route.ts's `{orderId}` upsert semantics for checkout drafts. */
   async updateDraft(id: string, dto: CheckoutDto): Promise<OrderResponse> {
-    const doc = await this.findDoc(id);
+    let doc = await this.findDoc(id);
     const nextStatus = dto.status || doc.status;
 
     // Idempotency / race guard: if already finalized into a real order and caller tries to confirm again, return safely
@@ -214,12 +229,22 @@ export class OrdersService {
     }
 
     const lines = await this.resolveLines(dto);
+    if ((await this.settings.getInventorySettings()).enabled !== false && dto.status !== DRAFT_STATUS) {
+      const quantities = new Map<string, { productId: string; qty: number }>();
+      for (const l of lines) quantities.set(l.variantId!, { productId: l.productId, qty: (quantities.get(l.variantId!)?.qty ?? 0) + l.qty });
+      for (const [id, l] of quantities) await this.inventory.validateAvailable(l.productId, id, l.qty);
+    }
     const commerce = await this.settings.getCommerce();
     const shippingMinor = nextStatus === DRAFT_STATUS ? toMinor(dto.shipping ?? 0) : toMinor(commerce.shippingFlat);
 
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        doc = await this.model.findById(id).session(session) as OrderDocument;
+        if (!doc) throw new NotFoundException('Commande introuvable');
+        if (doc.status !== DRAFT_STATUS) return;
+        await this.model.updateOne({ _id: id }, { $inc: { version: 1 } }, { session });
+        doc.version = (doc.version ?? 0) + 1;
         let discountMinor = 0;
         let couponSnapshot: Order['coupon'] = doc.coupon ?? null;
         if (dto.couponCode && nextStatus !== DRAFT_STATUS) {
@@ -264,6 +289,7 @@ export class OrdersService {
         } as Order['customer'];
         doc.items = lines.map((l) => ({
           productId: l.productId,
+          variantId: l.variantId,
           legacyProductId: null,
           name: l.name,
           slug: l.slug,
@@ -574,7 +600,7 @@ export class OrdersService {
    * when present), never the real computed totals.
    */
   async update(id: string, patch: UpdateOrderDto, actor: AuditActor): Promise<OrderResponse> {
-    const doc = await this.findDoc(id);
+    let doc = await this.findDoc(id);
 
     // Optimistic concurrency: the editor must write against the version it
     // loaded. Any other write since (another employee's edit, a status
@@ -589,6 +615,7 @@ export class OrdersService {
     const resolved = patch.items ? await this.resolveUpdateItems(patch.items) : null;
     const afterItems: ItemSnapshot[] = resolved ? resolved.map((l) => ({
       productId: l.productId,
+      variantId: l.variantId,
       qty: l.qty,
       unitPriceMinor: l.unitPriceMinor,
       variation: l.variation,
@@ -620,7 +647,7 @@ export class OrdersService {
     }
 
     // ── 4. Reason gate for already-committed orders ──────────────────────
-    const wasCommitted = stockEffectForStatus(doc.status) === 'commit';
+    const wasCommitted = doc.stockCommitted ?? (stockEffectForStatus(doc.status) === 'commit');
     if (wasCommitted && !patch.reason?.trim()) {
       throw new BadRequestException('Motif de modification requis.');
     }
@@ -641,19 +668,27 @@ export class OrdersService {
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
-        // ── 5. Inventory deltas for committed orders ─────────────────────
-        // Only the per-product DELTA moves (never a full re-deduct/restore),
-        // so a repeated/retried save of the same state deduces nothing twice.
-        // Variation-only edits produce delta 0 and move nothing. Skipped
-        // entirely in "mode sans stock" (settings.inventory.enabled=false).
-        const inventorySettings = await this.settings.getInventorySettings();
-        if (wasCommitted && inventorySettings.enabled !== false && itemDiff.added.length + itemDiff.removed.length + itemDiff.changed.length > 0) {
-          const deltas = computeStockDeltas(beforeItems, afterItems);
-          const strict = this.isStrictStock;
-          for (const [productId, delta] of deltas) {
+        doc = await this.model.findById(id).session(session) as OrderDocument;
+        if ((doc.version ?? 0) !== currentVersion) throw new ConflictException('Commande modifiée, rechargez-la.');
+        await this.model.updateOne({ _id: id }, { $inc: { version: 1 } }, { session });
+        // Edit only the exact-variant delta. A tracked order must remain
+        // accounted for even if the global setting changed after its sale.
+        const itemsChanged = itemDiff.added.length + itemDiff.removed.length + itemDiff.changed.length > 0;
+        if (wasCommitted && itemsChanged && (await this.settings.getInventorySettings()).enabled === false) {
+          throw new BadRequestException('Réactivez le mode avec stock pour modifier les articles de cette commande déjà déduite.');
+        }
+        if (wasCommitted && itemsChanged) {
+          const exactBefore = await Promise.all(beforeItems.map(async line => ({ ...line, variantId: await this.inventory.resolveHistoricalVariant(line.productId, line.variantId, line.variation) })));
+          const exactAfter = await Promise.all(afterItems.map(async line => ({ ...line, variantId: await this.inventory.resolveHistoricalVariant(line.productId, line.variantId, line.variation) })));
+          const deltas = computeStockDeltas(exactBefore, exactAfter);
+          const strict = true;
+          for (const [identity, delta] of deltas) {
+            const stockLine = [...exactAfter, ...exactBefore].find(l => (l.variantId ?? l.productId) === identity)!;
+            const productId = stockLine.productId;
+            const variantId = stockLine.variantId;
             if (delta > 0) {
               try {
-                await this.inventory.commit(productId, delta, id, actor, session, strict);
+                await this.inventory.commit(productId, delta, id, actor, session, strict, variantId);
               } catch (err) {
                 if (err instanceof InsufficientStockError) {
                   throw new BadRequestException('Stock insuffisant pour augmenter la quantité.');
@@ -661,7 +696,7 @@ export class OrdersService {
                 throw err;
               }
             } else {
-              await this.inventory.adjust(productId, -delta, `Modification de commande #${doc.orderNumber}`, actor, session);
+              await this.inventory.adjust(productId, -delta, `Modification de commande #${doc.orderNumber}`, actor, session, undefined, variantId, { type: 'correction', orderId: id });
             }
           }
         }
@@ -746,38 +781,42 @@ export class OrdersService {
   /** Resolves admin-edited order lines against the current catalog —
    *  same field shape as resolveLines() but driven by OrderUpdateItemDto
    *  (productId/qty/unitPrice override/variation), used only from update(). */
-  private async resolveUpdateItems(items: { productId: string; qty: number; unitPrice?: number; variation?: Record<string, string>; bundleName?: string; bundleSlot?: number }[]): Promise<ResolvedLine[]> {
+  private async resolveUpdateItems(items: { productId: string; variantId?: string; qty: number; unitPrice?: number; variation?: Record<string, string>; bundleName?: string; bundleSlot?: number }[]): Promise<ResolvedLine[]> {
     if (items.some((i) => i.qty <= 0)) throw new BadRequestException('La quantité doit être supérieure à zéro');
     const productIds = [...new Set(items.map((i) => i.productId))];
     const productDocs = await this.products.find({ _id: { $in: productIds } });
     const byId = new Map(productDocs.map((p) => [p.id, p]));
 
-    return items.map((item) => {
+    return Promise.all(items.map(async (item) => {
       const product = byId.get(item.productId);
       if (!product) throw new BadRequestException(`Produit introuvable: ${item.productId}`);
-      const unitPriceMinor = item.unitPrice != null ? toMinor(item.unitPrice) : (product.salePriceMinor ?? product.regularPriceMinor);
+      const variant = await this.inventory.resolveSaleVariant(product.id, item.variantId);
+      const unitPriceMinor = item.unitPrice != null ? toMinor(item.unitPrice) : (variant.sellingPriceMinor ?? product.salePriceMinor ?? product.regularPriceMinor);
       return {
         productId: product.id,
+        variantId: variant.id,
         name: product.name,
         slug: product.slug,
         imageUrl: normalizePublicMediaUrl(primaryProductImage(product.images)?.url ?? null),
         qty: item.qty,
         unitPriceMinor,
         totalMinor: unitPriceMinor * item.qty,
-        variation: item.variation ?? null,
+        variation: product.inventoryModel === 'MATRIX' ? { Taille: variant.attributes.size, Couleur: variant.attributes.color } : item.variation ?? null,
         bundleName: item.bundleName ?? null,
         bundleSlot: item.bundleSlot ?? null,
         costMinor: product.costMinor ?? 0,
         categoryIds: product.categoryIds ?? [],
       };
-    });
+    }));
   }
 
   async changeStatus(id: string, status: string, actor: AuditActor): Promise<OrderResponse> {
-    const doc = await this.findDoc(id);
+    let doc = await this.findDoc(id);
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        doc = await this.model.findById(id).session(session) as OrderDocument;
+        await this.model.updateOne({ _id: id }, { $inc: { version: 1 } }, { session });
         await this.applyStatusTransition(doc, status, actor, null, session);
         doc.version = (doc.version ?? 0) + 1;
         await doc.save({ session });
@@ -823,34 +862,36 @@ export class OrdersService {
     const products = await this.products.find({ _id: { $in: productIds } });
     const byId = new Map(products.map((p) => [p.id, p]));
 
-    return dto.items.map((item) => {
+    return Promise.all(dto.items.map(async (item) => {
       const product = byId.get(item.productId);
       if (!product) throw new BadRequestException(`Produit introuvable: ${item.productId}`);
       if (product.posOnly) throw new BadRequestException(`Produit non disponible à la vente en ligne: ${product.name}`);
 
+      const variant = await this.inventory.resolveSaleVariant(product.id, item.variantId);
       let unitPriceMinor: number;
       const bundle = item.bundleId ? product.bundles.find((b) => b.id === item.bundleId) : undefined;
       if (bundle) {
         unitPriceMinor = Math.round(priceExplicitBundle(bundle).totalMinor / Math.max(1, bundle.quantity));
       } else {
-        unitPriceMinor = product.salePriceMinor ?? product.regularPriceMinor;
+        unitPriceMinor = variant.sellingPriceMinor ?? product.salePriceMinor ?? product.regularPriceMinor;
       }
 
       return {
         productId: product.id,
+        variantId: variant.id,
         name: product.name,
         slug: product.slug,
         imageUrl: normalizePublicMediaUrl(primaryProductImage(product.images)?.url ?? null),
         qty: item.qty,
         unitPriceMinor,
         totalMinor: unitPriceMinor * item.qty,
-        variation: item.variation ?? null,
+        variation: product.inventoryModel === 'MATRIX' ? { Taille: variant.attributes.size, Couleur: variant.attributes.color } : item.variation ?? null,
         bundleName: item.bundleName ?? null,
         bundleSlot: item.bundleSlot ?? null,
         costMinor: product.costMinor ?? 0,
         categoryIds: product.categoryIds ?? [],
       };
-    });
+    }));
   }
 
   private eligibleSubtotalForCoupon(lines: ResolvedLine[], _appliesTo: null): number {
@@ -881,12 +922,17 @@ export class OrdersService {
     // order was already in untouched (moving to/from trash never reserves,
     // commits, or releases anything).
     const isTrashTransition = from === 'trash' || nextStatus === 'trash';
-    const fromEffect = stockEffectForStatus(from);
+    const fromEffect = (doc.stockCommitted ?? (stockEffectForStatus(from) === 'commit')) ? 'commit' : 'none';
     const toEffect = stockEffectForStatus(nextStatus);
-    const action = isTrashTransition ? 'none' : planStockTransition(fromEffect, toEffect);
-    const strict = this.isStrictStock;
+    const remainsUntracked = doc.stockCommitted === false && stockEffectForStatus(from) === 'commit' && toEffect === 'commit';
+    const action = isTrashTransition || remainsUntracked ? 'none' : planStockTransition(fromEffect, toEffect);
+    const strict = true;
 
-    for (const item of doc.items) {
+    const inventoryEnabled = (await this.settings.getInventorySettings()).enabled !== false;
+    // Reversing an earlier tracked sale restores its actual deduction even
+    // when new sales currently run without stock tracking.
+    for (const item of inventoryEnabled || action === 'restock' ? doc.items : []) {
+      const variantId = action === 'commit' || action === 'restock' ? await this.inventory.resolveHistoricalVariant(item.productId, item.variantId, item.variation) : item.variantId;
       if (action === 'reserve') {
         await this.inventory.reserve(item.productId, item.qty, doc.id, actor, false, session);
       } else if (action === 'commit') {
@@ -894,7 +940,7 @@ export class OrdersService {
         // Nothing was reserved earlier, so this single commit() call is
         // both the availability check (in strict mode) and the deduction.
         try {
-          await this.inventory.commit(item.productId, item.qty, doc.id, actor, session, strict);
+          await this.inventory.commit(item.productId, item.qty, doc.id, actor, session, strict, variantId);
         } catch (err) {
           if (err instanceof InsufficientStockError) {
             throw new BadRequestException(`Stock insuffisant pour ${item.name}`);
@@ -904,10 +950,12 @@ export class OrdersService {
       } else if (action === 'release') {
         await this.inventory.release(item.productId, item.qty, doc.id, actor, session);
       } else if (action === 'restock') {
-        await this.inventory.adjust(item.productId, item.qty, `Annulation commande #${doc.orderNumber}`, actor, session);
+        await this.inventory.adjust(item.productId, item.qty, `Annulation commande #${doc.orderNumber}`, actor, session, undefined, variantId, { type: 'refund_restock', orderId: doc.id });
       }
     }
 
+    if (action === 'commit') doc.stockCommitted = inventoryEnabled;
+    if (action === 'restock') doc.stockCommitted = false;
     if (!isTrashTransition && toEffect === 'release' && doc.coupon) {
       await this.coupons.releaseRedemption(doc.coupon.couponId, doc.id, session);
     }

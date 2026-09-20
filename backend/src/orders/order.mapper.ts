@@ -20,6 +20,7 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     }
     return {
       productId: i.productId,
+      variantId: i.variantId,
       name: i.name,
       quantity: i.qty,
       price: toDinars(i.unitPriceMinor),

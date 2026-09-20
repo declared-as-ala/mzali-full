@@ -34,6 +34,7 @@ const PosSaleLineSchema = SchemaFactory.createForClass(PosSaleLine);
  */
 @Schema({ collection: 'pos_sales', timestamps: true })
 export class PosSale {
+  @Prop({ type: Boolean, default: null }) stockTracked!: boolean | null;
   @Prop({ type: Number, required: true, unique: true })
   saleNumber!: number;
 

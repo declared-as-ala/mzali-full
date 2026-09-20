@@ -87,7 +87,7 @@ export class ProductsService {
       this.model.find(filter).sort(sort).skip(skip).limit(perPage),
       this.model.countDocuments(filter),
     ]);
-    const result = paginate(docs.map((d) => toProductContract(d)), total, page, perPage);
+    const result = paginate(await this.withLiveAvailabilities(docs), total, page, perPage);
     return result;
   }
 
@@ -126,7 +126,7 @@ export class ProductsService {
         })
         .limit(limit);
     }
-    return docs.map((d) => toProductContract(d));
+    return this.withLiveAvailabilities(docs);
   }
 
   async create(input: CreateProductDto): Promise<ProductContract> {
@@ -172,6 +172,7 @@ export class ProductsService {
       supplierId: input.supplierId ?? null,
       posOnly: input.posOnly ?? false,
     });
+    await this.variants.generateDefaultVariant(doc.id);
     await this.finalizeMedia([], images.map((image) => image.mediaId).filter((id): id is string => Boolean(id)));
     return toProductContract(doc);
   }
@@ -299,15 +300,20 @@ export class ProductsService {
    * availability live from stock_items rather than trusting the product's
    * denormalized `stockQuantity` — see docs/pos-platform/
    * stock-business-rules.md §"Sold-out propagation to the storefront".
-   * The listing path deliberately keeps using the cached field (cheap,
-   * batched, kept fresh by the revalidation mechanism instead).
+   * Listings use the same availability logic through batched stock reads.
    */
   private async withLiveAvailability(contract: ProductContract, doc: ProductDocument): Promise<ProductContract> {
-    if (!doc.manageStock) return contract;
-    const variant = await this.variants.findByProductId(doc.id);
-    if (!variant) return contract;
-    const available = await this.availability.resolve(variant.id);
-    return { ...contract, stockQuantity: available, inStock: available > 0 };
+    return (await this.withLiveAvailabilities([doc], [contract]))[0];
+  }
+
+  private async withLiveAvailabilities(docs: ProductDocument[], contracts?: ProductContract[]): Promise<ProductContract[]> {
+    const [enabled, variants] = await Promise.all([this.availability.enabled(), this.variants.allForProducts(docs.map(d => d.id))]);
+    const stock = await this.availability.resolveMany(variants.map(v => v.id));
+    return docs.map((doc, index) => {
+      const rows = variants.filter(v => v.productId === doc.id).map(v => ({ id: v.id, sku: v.sku, size: v.attributes.size ?? '', color: v.attributes.color ?? '', active: v.active, available: stock.get(v.id) ?? 0, price: (v.sellingPriceMinor ?? doc.salePriceMinor ?? doc.regularPriceMinor) / 1000 }));
+      const available = rows.filter(v => v.active).reduce((sum, v) => sum + v.available, 0);
+      return { ...(contracts?.[index] ?? toProductContract(doc)), inventoryModel: doc.inventoryModel ?? 'LEGACY', inventoryEnabled: enabled, variants: rows, stockQuantity: enabled ? available : null, inStock: rows.some(v => v.active && (!enabled || v.available > 0)) };
+    });
   }
 
   private async findDoc(id: string): Promise<ProductDocument> {

@@ -71,6 +71,9 @@ export type ProductStatus = 'published' | 'draft' | 'private';
 
 @Schema({ collection: 'products', timestamps: true })
 export class Product {
+  @Prop({ type: String, enum: ['LEGACY', 'MATRIX'], default: 'LEGACY' })
+  inventoryModel!: 'LEGACY' | 'MATRIX';
+
   @Prop({ type: String, required: true, unique: true, index: true })
   slug!: string;
 

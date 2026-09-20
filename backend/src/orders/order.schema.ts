@@ -73,6 +73,7 @@ const CarrierSchema = SchemaFactory.createForClass(Carrier);
 
 @Schema({ collection: 'orders', timestamps: true })
 export class Order {
+  @Prop({ type: Boolean, default: null }) stockCommitted!: boolean | null;
   @Prop({ type: Number, required: true, unique: true, index: true })
   orderNumber!: number;
 

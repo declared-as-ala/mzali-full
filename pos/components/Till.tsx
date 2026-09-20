@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import { getTerminalCode, posFetch } from '@/lib/device';
@@ -9,6 +9,7 @@ import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
 import CashSummary from './CashSummary';
 import { DUPLICATE_CART_KEY } from './RecentSalesPanel';
+import VariantPicker from './VariantPicker';
 import ProductGrid from './ProductGrid';
 import ProductOfferModal from './ProductOfferModal';
 import QuickPickRail from './QuickPickRail';
@@ -105,19 +106,25 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   }, [saleFeedback]);
 
 
-  async function loadCatalog() {
+  const loadCatalog = useCallback(async () => {
     try {
       const res = await posFetch('/api/catalog', { cache: 'no-store' });
       if (res.status === 401) { router.replace('/login'); return; }
       if (!res.ok) throw new Error();
       const data: PosCatalogResponse = await res.json();
-      setCatalog(data);
+      setCatalog({ ...data, items: data.items.map(i => i.stockTracked === false ? { ...i, boutiqueAvailable: Number.MAX_SAFE_INTEGER } : i) });
       setLoadError(null);
     } catch {
       setLoadError('Impossible de charger le catalogue.');
     }
-  }
-  useEffect(() => { loadCatalog(); }, []);
+  }, [router]);
+  useEffect(() => {
+    void loadCatalog();
+    const refresh = () => { if (document.visibilityState === 'visible') void loadCatalog(); };
+    window.addEventListener('focus', refresh);
+    const timer = window.setInterval(refresh, 30000);
+    return () => { window.removeEventListener('focus', refresh); window.clearInterval(timer); };
+  }, [loadCatalog]);
 
   // Loads a sale edit request from History / Dashboard and populates cart
   useEffect(() => {
@@ -135,7 +142,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           nextCart.push({
             variantId: item.variantId,
             productId: item.productId,
-            name: item.name,
+            name: `${item.name}${item.size || item.color ? ` · ${item.size} / ${item.color}` : ''}`,
             sku: item.sku,
             imageUrl: item.imageUrl,
             unitPriceMinor: item.priceMinor,
@@ -165,7 +172,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         nextCart.push({
           variantId: item.variantId,
           productId: item.productId,
-          name: item.name,
+          name: `${item.name}${item.size || item.color ? ` · ${item.size} / ${item.color}` : ''}`,
           sku: item.sku,
           imageUrl: item.imageUrl,
           unitPriceMinor: item.priceMinor,
@@ -185,7 +192,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       if (!field) return prev;
       let changed = false;
       const items = prev.items.map((item) => {
-        if (item.variantId !== event.variantId || item[field] === event.quantityAvailable) return item;
+        if (item.stockTracked === false || item.variantId !== event.variantId || item[field] === event.quantityAvailable) return item;
         changed = true;
         return { ...item, [field]: event.quantityAvailable };
       });
@@ -213,12 +220,14 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     if (activeCategory) items = items.filter((i) => i.categoryIds.includes(activeCategory));
     const q = query.trim().toLowerCase();
     if (q) items = items.filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q));
-    return items;
+    return [...new Map(items.map(i => [i.productId, { ...i, boutiqueAvailable: items.filter(v => v.productId === i.productId).reduce((n, v) => n + v.boutiqueAvailable, 0) }])).values()];
   }, [catalog, activeCategory, query]);
 
-  const favoriteItems = useMemo(() => catalog?.items.filter((i) => i.favorite) ?? [], [catalog]);
+  const favoriteItems = useMemo(() => [...new Map((catalog?.items.filter(i => i.favorite) ?? []).map(i => [i.productId, { ...i, boutiqueAvailable: (catalog?.items.filter(v => v.productId === i.productId) ?? []).reduce((n, v) => n + v.boutiqueAvailable, 0) }])).values()], [catalog]);
 
   function addToCart(item: PosCatalogItem, qty = 1) {
+    if (item.stockTracked === false) item = { ...item, boutiqueAvailable: Number.MAX_SAFE_INTEGER };
+    if (item.boutiqueAvailable <= 0) return;
     setCart((prev) => {
       const existing = prev.find((l) => l.variantId === item.variantId);
       if (existing) {
@@ -230,7 +239,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         {
           variantId: item.variantId,
           productId: item.productId,
-          name: item.name,
+          name: `${item.name}${item.size || item.color ? ` · ${item.size} / ${item.color}` : ''}`,
           sku: item.sku,
           imageUrl: item.imageUrl,
           unitPriceMinor: item.priceMinor,
@@ -253,8 +262,11 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   // it. The offer picker only ever opens when the cashier explicitly asks
   // to adjust an existing cart line (see openLineEditor below), never on
   // the first add.
+  const [variantPicker, setVariantPicker] = useState<string | null>(null);
   function handleProductSelect(item: PosCatalogItem) {
-    addToCart(item);
+    const variants = catalog?.items.filter(v => v.productId === item.productId) ?? [];
+    if (variants.length > 1 || variants[0]?.size || variants[0]?.color) setVariantPicker(item.productId);
+    else if (variants[0]) addToCart(variants[0]);
   }
 
   const [offerModalItem, setOfferModalItem] = useState<PosCatalogItem | null>(null);
@@ -841,6 +853,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         />
       </div>
 
+      {variantPicker && <VariantPicker items={catalog?.items.filter(i => i.productId === variantPicker) ?? []} onClose={() => setVariantPicker(null)} onSelect={item => { addToCart(item); setVariantPicker(null); }} />}
       {offerModalItem && (
         <ProductOfferModal
           item={offerModalItem}

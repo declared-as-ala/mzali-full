@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model } from 'mongoose';
-import type { AuditActor, InventoryItem as InventoryItemContract, StockMovement as StockMovementContract } from '@contracts';
+import type { StockMovementType, AuditActor, InventoryItem as InventoryItemContract, StockMovement as StockMovementContract } from '@contracts';
 import { clampPagination, paginate } from '@/common/pagination';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { LocationsService } from '@/catalog/locations.service';
@@ -96,15 +96,15 @@ export class InventoryService {
     orderId: string,
     actor: AuditActor,
     session?: ClientSession,
-    strict = false,
+    strict = true,
+    exactVariantId?: string | null,
   ): Promise<void> {
-    const variantId = await this.resolveVariantId(productId);
+    const variantId = await this.resolveExact(productId, exactVariantId);
     const { item } = await this.ledger.applyMovement({
       variantId,
       locationId: await this.locations.getDefaultOnlineLocationCode(),
       type: 'order_commit',
       onHandDelta: -qty,
-      reservedDelta: -qty,
       requireAvailableAtLeast: strict ? qty : undefined,
       orderId,
       actor,
@@ -120,8 +120,10 @@ export class InventoryService {
     actor: AuditActor,
     session?: ClientSession,
     locationId?: string,
+    exactVariantId?: string | null,
+    movement?: { type: StockMovementType; orderId: string },
   ): Promise<void> {
-    const variantId = await this.resolveVariantId(productId);
+    const variantId = await this.resolveExact(productId, exactVariantId);
     const targetLocation = locationId === 'BOUTIQUE'
       ? (await this.locations.getDefaultPosLocationCode())
       : (await this.locations.getDefaultOnlineLocationCode());
@@ -129,8 +131,11 @@ export class InventoryService {
       const { item } = await this.ledger.applyMovement({
         variantId,
         locationId: targetLocation,
-        type: 'manual_adjust',
+        type: movement?.type ?? 'manual_adjust',
+        orderId: movement?.orderId,
+        reference: movement?.orderId,
         onHandDelta: qtyDelta,
+        requireAvailableAtLeast: qtyDelta < 0 ? -qtyDelta : undefined,
         reason,
         actor,
         session: s,
@@ -223,6 +228,44 @@ export class InventoryService {
     return paginate(pageItems.map((d) => this.movementToContract(d, productId)), total, p, pp);
   }
 
+  async resolveExact(productId: string, variantId?: string | null) {
+    if (variantId) {
+      const v = await this.variants.findById(variantId);
+      if (!v || v.productId !== productId || v.retired) throw new BadRequestException('Variante historique : réconciliation requise.');
+      return v.id;
+    }
+    return (await this.variants.resolveForSale(productId)).id;
+  }
+
+  /** Historical snapshots may resolve only through a unique exact size/color match. */
+  async resolveHistoricalVariant(productId: string, variantId: string | null | undefined, variation: Record<string, string> | null | undefined): Promise<string> {
+    if (variantId) {
+      const existing = await this.variants.findById(variantId);
+      if (existing && existing.productId === productId && !existing.retired) return existing.id;
+      if (existing && existing.productId !== productId) throw new BadRequestException('Variante et produit incompatibles.');
+    }
+    const product = await this.products.findById(productId);
+    if (product?.inventoryModel !== 'MATRIX') return this.resolveExact(productId, variantId);
+    const normalized = (value: string) => value.trim().normalize('NFC').toLocaleLowerCase('fr');
+    const entries = Object.entries(variation ?? {});
+    const sizes = entries.filter(([k]) => /^(taille|tallie|taile|size|pointure)s?$/.test(normalized(k))).map(([, v]) => normalized(v));
+    const colors = entries.filter(([k]) => /^(couleur|color|colour)s?$/.test(normalized(k))).map(([, v]) => normalized(v));
+    const matches = sizes.length === 1 && colors.length === 1 ? (await this.variants.allForProducts([productId])).filter(v => normalized(v.attributes.size ?? '') === sizes[0] && normalized(v.attributes.color ?? '') === colors[0]) : [];
+    if (matches.length !== 1) throw new BadRequestException('Commande historique : aucune correspondance exacte taille/couleur. Réconciliation manuelle requise avant mouvement de stock.');
+    return matches[0].id;
+  }
+
+  async resolveSaleVariant(productId: string, variantId?: string | null) {
+    return this.variants.resolveForSale(productId, variantId);
+  }
+
+  async validateAvailable(productId: string, variantId: string, qty: number) {
+    const product = await this.products.findById(productId);
+    if (!product) throw new BadRequestException('Produit introuvable');
+    const stock = await this.ledger.stockAt(variantId, 'DEPOT');
+    if ((stock?.quantityOnHand ?? 0) - (stock?.quantityReserved ?? 0) < qty) throw new BadRequestException('La variante sélectionnée n’est plus disponible.');
+  }
+
   private async resolveVariantId(productId: string): Promise<string> {
     const existing = await this.variants.findByProductId(productId);
     if (existing) return existing.id;
@@ -234,7 +277,10 @@ export class InventoryService {
   }
 
   private async syncProductStock(productId: string, item: StockItemDocument, session?: ClientSession): Promise<void> {
-    const available = Math.max(0, item.quantityOnHand - item.quantityReserved);
+    if (item.locationId !== 'DEPOT') return;
+    const variants = await this.variants.allForProducts([productId]);
+    const rows = await this.ledger.stockForVariants(variants.filter(v => v.active).map(v => v.id), 'DEPOT');
+    const available = rows.reduce((sum, row) => sum + Math.max(0, row.variantId === item.variantId ? item.quantityOnHand - item.quantityReserved : row.quantityOnHand - row.quantityReserved), 0);
     await this.products.updateOne({ _id: productId }, { $set: { stockQuantity: available } }, { session });
   }
 

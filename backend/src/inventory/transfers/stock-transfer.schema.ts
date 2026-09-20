@@ -51,6 +51,7 @@ const TransferStatusHistoryEntrySchema = SchemaFactory.createForClass(TransferSt
  */
 @Schema({ collection: 'stock_transfers', timestamps: true })
 export class StockTransfer {
+  @Prop({ type: [String], default: [] }) receiptKeys!: string[];
   @Prop({ type: Number, required: true, unique: true })
   transferNumber!: number;
 

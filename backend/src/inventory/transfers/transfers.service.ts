@@ -35,12 +35,11 @@ export class TransfersService {
       dto.lines.map(async (l) => {
         const product = await this.products.findOne({ _id: l.productId, deletedAt: null });
         if (!product) throw new BadRequestException(`Produit introuvable: ${l.productId}`);
-        let variant = await this.variants.findByProductId(l.productId);
-        if (!variant) variant = await this.variants.generateDefaultVariant(l.productId);
+        const variant = await this.variants.resolveForSale(l.productId, l.variantId);
         return {
           variantId: variant.id,
           productId: product.id,
-          productName: product.name,
+          productName: [product.name, variant.attributes.size, variant.attributes.color].filter(Boolean).join(' / '),
           requestedQuantity: l.requestedQuantity,
           approvedQuantity: null,
           shippedQuantity: null,
@@ -51,6 +50,7 @@ export class TransfersService {
       }),
     );
 
+    if (new Set(lines.map(l => l.variantId)).size !== lines.length) throw new BadRequestException('Regroupez les quantités de la même variante.');
     const status = dto.draft ? 'DRAFT' : 'REQUESTED';
     const now = new Date();
     const transferNumber = await this.counters.next(SEQUENCE_NAME);
@@ -81,34 +81,45 @@ export class TransfersService {
 
   /** Approving a still-DRAFT transfer submits and approves it in one step — this sprint has no separate submit endpoint. */
   async approve(id: string, dto: ApproveTransferDto, approvedBy: AuditActor): Promise<StockTransferDocument> {
-    const doc = await this.getById(id);
-    if (doc.status !== 'REQUESTED' && doc.status !== 'DRAFT') {
-      throw new BadRequestException(`Impossible d'approuver un transfert au statut ${doc.status}`);
-    }
-    const byVariant = new Map(dto.lines.map((l) => [l.variantId, l.approvedQuantity]));
-    for (const line of doc.lines) {
-      const approvedQuantity = byVariant.get(line.variantId);
-      if (approvedQuantity === undefined) {
-        throw new BadRequestException(`Quantité approuvée manquante pour la variante ${line.variantId}`);
-      }
-      line.approvedQuantity = approvedQuantity;
-    }
-    this.transition(doc, 'APPROVED', approvedBy);
-    doc.approvedBy = approvedBy;
-    await doc.save();
-    return doc;
+    const session = await this.connection.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const doc = await this.model.findById(id).session(session);
+        if (!doc) throw new NotFoundException('Transfert introuvable');
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
+        if (doc.status !== 'REQUESTED' && doc.status !== 'DRAFT') {
+          throw new BadRequestException(`Impossible d'approuver un transfert au statut ${doc.status}`);
+        }
+        const byVariant = new Map(dto.lines.map((l) => [l.variantId, l.approvedQuantity]));
+        for (const line of doc.lines) {
+          const approvedQuantity = byVariant.get(line.variantId);
+          if (approvedQuantity === undefined) {
+            throw new BadRequestException(`Quantité approuvée manquante pour la variante ${line.variantId}`);
+          }
+          line.approvedQuantity = approvedQuantity;
+        }
+        this.transition(doc, 'APPROVED', approvedBy);
+        doc.approvedBy = approvedBy;
+        await doc.save({ session });
+        return doc;
+      }) as StockTransferDocument;
+    } finally { await session.endSession(); }
   }
 
   async ship(id: string, actor: AuditActor): Promise<StockTransferDocument> {
-    const doc = await this.getById(id);
+    let doc = await this.getById(id);
+    if (['SHIPPED', 'PARTIALLY_RECEIVED', 'RECEIVED'].includes(doc.status)) return doc;
     if (doc.status !== 'APPROVED') {
       throw new BadRequestException(`Impossible d'expédier un transfert au statut ${doc.status}`);
     }
-    const source = await this.locations.requireByCode(doc.sourceLocationId);
+    await this.locations.requireByCode(doc.sourceLocationId);
 
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        doc = await this.model.findById(id).session(session) as StockTransferDocument;
+        if (doc.status !== 'APPROVED') { if (['SHIPPED','PARTIALLY_RECEIVED','RECEIVED'].includes(doc.status)) return; throw new BadRequestException('Transfert non approuvé'); }
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
         for (const line of doc.lines) {
           const qty = line.approvedQuantity ?? 0;
           if (qty <= 0) continue;
@@ -118,7 +129,7 @@ export class TransfersService {
               locationId: doc.sourceLocationId,
               type: 'transfer_out',
               onHandDelta: -qty,
-              requireAvailableAtLeast: source.allowNegativeStock ? undefined : qty,
+              requireAvailableAtLeast: qty,
               reference: doc.id,
               actor,
               session,
@@ -142,7 +153,10 @@ export class TransfersService {
 
   /** Incremental — safe to call more than once for a partial receipt. */
   async receive(id: string, dto: ReceiveTransferDto, actor: AuditActor): Promise<StockTransferDocument> {
-    const doc = await this.getById(id);
+    let doc = await this.getById(id);
+    if (!dto.operationKey) throw new BadRequestException('Clé de réception obligatoire');
+    if (doc.receiptKeys.includes(dto.operationKey)) return doc;
+    if (new Set(dto.lines.map(l => l.variantId)).size !== dto.lines.length || dto.lines.some(l => !doc.lines.some(v => v.variantId === l.variantId))) throw new BadRequestException('Lignes de réception invalides');
     if (doc.status !== 'SHIPPED' && doc.status !== 'PARTIALLY_RECEIVED') {
       throw new BadRequestException(`Impossible de réceptionner un transfert au statut ${doc.status}`);
     }
@@ -151,6 +165,10 @@ export class TransfersService {
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
+        doc = await this.model.findById(id).session(session) as StockTransferDocument;
+        if (dto.operationKey && doc.receiptKeys.includes(dto.operationKey)) return;
+        if (!['SHIPPED','PARTIALLY_RECEIVED'].includes(doc.status)) throw new BadRequestException('Transfert non réceptionnable');
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
         for (const line of doc.lines) {
           const input = byVariant.get(line.variantId);
           if (!input) continue;
@@ -182,6 +200,7 @@ export class TransfersService {
           (line: TransferLine) => line.receivedQuantity + line.damagedQuantity + line.missingQuantity >= (line.shippedQuantity ?? 0),
         );
         this.transition(doc, fullyAccounted ? 'RECEIVED' : 'PARTIALLY_RECEIVED', actor);
+        doc.receiptKeys.push(dto.operationKey!);
         await doc.save({ session });
       });
     } finally {
@@ -192,14 +211,21 @@ export class TransfersService {
 
   /** Before shipping: cancels (or rejects, if never approved) with zero stock effect — nothing was ever shipped. */
   async cancel(id: string, actor: AuditActor, note?: string): Promise<StockTransferDocument> {
-    const doc = await this.getById(id);
-    if (!['DRAFT', 'REQUESTED', 'APPROVED', 'PREPARING'].includes(doc.status)) {
-      throw new BadRequestException(`Impossible d'annuler un transfert au statut ${doc.status}`);
-    }
-    const nextStatus = doc.status === 'REQUESTED' || doc.status === 'DRAFT' ? 'REJECTED' : 'CANCELLED';
-    this.transition(doc, nextStatus, actor, note ?? null);
-    await doc.save();
-    return doc;
+    const session = await this.connection.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const doc = await this.model.findById(id).session(session);
+        if (!doc) throw new NotFoundException('Transfert introuvable');
+        await this.model.updateOne({ _id: id }, { $currentDate: { updatedAt: true } }, { session });
+        if (!['DRAFT', 'REQUESTED', 'APPROVED', 'PREPARING'].includes(doc.status)) {
+          throw new BadRequestException(`Impossible d'annuler un transfert au statut ${doc.status}`);
+        }
+        const nextStatus = doc.status === 'REQUESTED' || doc.status === 'DRAFT' ? 'REJECTED' : 'CANCELLED';
+        this.transition(doc, nextStatus, actor, note ?? null);
+        await doc.save({ session });
+        return doc;
+      }) as StockTransferDocument;
+    } finally { await session.endSession(); }
   }
 
   private transition(doc: StockTransferDocument, to: StockTransfer['status'], by: AuditActor, note: string | null = null): void {

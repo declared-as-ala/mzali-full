@@ -35,6 +35,9 @@ export type ProductBundle = {
 export type ProductStatus = 'published' | 'draft' | 'private';
 
 export type Product = {
+  inventoryModel?: 'LEGACY' | 'MATRIX';
+  inventoryEnabled?: boolean;
+  variants?: { id: string; sku: string; size: string; color: string; active: boolean; available: number; price: number }[];
   id: string;
   slug: string;
   name: string;

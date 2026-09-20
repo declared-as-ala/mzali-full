@@ -27,7 +27,7 @@ type Transfer = {
   createdAt: string;
 };
 
-type PickerProduct = { id: string; name: string; price: number; image: string | null };
+type PickerProduct = { variantId: string; productId: string; id: string; name: string; price: number; image: string | null };
 
 const LOCATIONS = [
   { code: 'DEPOT', label: 'Dépôt' },
@@ -148,18 +148,20 @@ function CreateTransferDrawer({ onClose, onCreated }: { onClose: () => void; onC
   const [destination, setDestination] = useState('BOUTIQUE');
   const [products, setProducts] = useState<PickerProduct[]>([]);
   const [search, setSearch] = useState('');
-  const [lines, setLines] = useState<{ productId: string; name: string; requestedQuantity: number }[]>([]);
+  const [lines, setLines] = useState<{ productId: string; variantId: string; name: string; requestedQuantity: number }[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    fetch('/api/admin/products-picker').then((r) => r.json()).then((data) => setProducts(Array.isArray(data) ? data : [])).catch(() => {});
-  }, []);
+    const c = new AbortController();
+    fetch(`/api/admin/variant-stock?${new URLSearchParams({ locationId: source, search })}`, { signal: c.signal }).then((r) => r.json()).then((data) => setProducts((data.items ?? []).map((v: { variantId: string; productId: string; productName: string; size: string; color: string }) => ({ ...v, id: v.variantId, name: [v.productName, v.size, v.color].filter(Boolean).join(' / '), price: 0, image: null })))).catch(() => {});
+    return () => c.abort();
+  }, [source, search]);
 
   const filtered = products.filter((p) => p.name.toLowerCase().includes(search.toLowerCase())).slice(0, 8);
 
   function addLine(p: PickerProduct) {
-    if (lines.some((l) => l.productId === p.id)) return;
-    setLines((prev) => [...prev, { productId: p.id, name: p.name, requestedQuantity: 1 }]);
+    if (lines.some((l) => l.variantId === p.id)) return;
+    setLines((prev) => [...prev, { productId: p.productId, variantId: p.variantId, name: p.name, requestedQuantity: 1 }]);
     setSearch('');
   }
 
@@ -174,7 +176,7 @@ function CreateTransferDrawer({ onClose, onCreated }: { onClose: () => void; onC
         body: JSON.stringify({
           sourceLocationId: source,
           destinationLocationId: destination,
-          lines: lines.map((l) => ({ productId: l.productId, requestedQuantity: l.requestedQuantity })),
+          lines: lines.map((l) => ({ productId: l.productId, variantId: l.variantId, requestedQuantity: l.requestedQuantity })),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -223,14 +225,14 @@ function CreateTransferDrawer({ onClose, onCreated }: { onClose: () => void; onC
 
         <div className="mb-5 space-y-2">
           {lines.map((l) => (
-            <div key={l.productId} className="flex items-center gap-2 rounded-xl bg-ink-100 px-3 py-2">
+            <div key={l.variantId} className="flex items-center gap-2 rounded-xl bg-ink-100 px-3 py-2">
               <span className="min-w-0 flex-1 truncate text-sm font-bold">{l.name}</span>
               <input
                 type="number" min={1} className="input w-20 py-1 text-center"
                 value={l.requestedQuantity}
-                onChange={(e) => setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, requestedQuantity: Math.max(1, Number(e.target.value)) } : x)))}
+                onChange={(e) => setLines((prev) => prev.map((x) => (x.variantId === l.variantId ? { ...x, requestedQuantity: Math.max(1, Number(e.target.value)) } : x)))}
               />
-              <button onClick={() => setLines((prev) => prev.filter((x) => x.productId !== l.productId))} className="text-ink-500 hover:text-red-600"><X size={16} /></button>
+              <button onClick={() => setLines((prev) => prev.filter((x) => x.variantId !== l.variantId))} className="text-ink-500 hover:text-red-600"><X size={16} /></button>
             </div>
           ))}
           {!lines.length && <p className="text-sm text-ink-500">Aucun produit ajouté.</p>}
@@ -250,6 +252,7 @@ function TransferDetailDrawer({ transfer, onClose, onChanged }: { transfer: Tran
   const [approveQty, setApproveQty] = useState<Record<string, number>>(
     Object.fromEntries(transfer.lines.map((l) => [l.variantId, l.approvedQuantity ?? l.requestedQuantity])),
   );
+  const [receiptKey, setReceiptKey] = useState(() => crypto.randomUUID());
   const [receiveQty, setReceiveQty] = useState<Record<string, { received: number; damaged: number; missing: number }>>(
     Object.fromEntries(transfer.lines.map((l) => [l.variantId, { received: Math.max(0, (l.shippedQuantity ?? 0) - l.receivedQuantity - l.damagedQuantity - l.missingQuantity), damaged: 0, missing: 0 }])),
   );
@@ -260,10 +263,11 @@ function TransferDetailDrawer({ transfer, onClose, onChanged }: { transfer: Tran
       const res = await fetch(`/api/admin/inventory/transfers/${transfer.id}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body ?? {}),
+        body: JSON.stringify(path === '/receive' ? { ...(body as object), operationKey: receiptKey } : body ?? {}),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { toast.error(data?.error ?? 'Erreur'); return; }
+      if (path === '/receive') { setReceiptKey(crypto.randomUUID()); setReceiveQty(Object.fromEntries(transfer.lines.map(l => [l.variantId, { received: 0, damaged: 0, missing: 0 }]))); }
       toast.success('Transfert mis à jour');
       onChanged(data);
     } finally {

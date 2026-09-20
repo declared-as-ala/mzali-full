@@ -3,6 +3,7 @@ import { ArrayMinSize, IsArray, IsBoolean, IsInt, IsOptional, IsPositive, IsStri
 
 class TransferLineInputDto {
   @IsString() productId!: string;
+  @IsOptional() @IsString() variantId?: string;
   @IsInt() @IsPositive() requestedQuantity!: number;
 }
 
@@ -34,6 +35,7 @@ class ReceiveLineDto {
 }
 
 export class ReceiveTransferDto {
+  @IsOptional() @IsString() operationKey?: string;
   @IsArray() @ArrayMinSize(1) @ValidateNested({ each: true }) @Type(() => ReceiveLineDto)
   lines!: ReceiveLineDto[];
 }

@@ -1,5 +1,13 @@
 # Migration Progress
 
+## 2026-09-20 — Responsive register closure
+
+Placed the report and cash-count form side by side from tablet widths, with a
+compact header and the expected amount repeated beside the input. Small screens
+show the form before the report so the close action is easy to reach at normal
+zoom. Report headings wrap and amounts stay aligned. POS typecheck and targeted
+lint passed; interactive browser verification was unavailable.
+
 ## 2026-09-20 — Ticket Z color printing
 
 Made Print/PDF actions available on every daily report, including clearly marked
@@ -1578,3 +1586,20 @@ This closes the 9-sprint unified-commerce-platform epic. Every sprint
 HTTP/mongosh walkthroughs (not just typecheck), and documented above
 with its own detailed entry, deferred items, and any bugs found and
 fixed along the way.
+
+
+## 2026-09-20 — Variant inventory upgrade (local, not deployed)
+
+Added stable size/color inventory identities, explicit per-location allocation with
+transactional dry-run, separate Dépôt/Boutique stock pages, variant matrix editing,
+exact-variant storefront/POS carts, confirmation/cancellation/edit stock transitions,
+transfer receipts and safe stocktakes. Website badges now say Épuisé; zero-stock
+size/color buttons are disabled. Production was audited read-only with no stock
+migration. Full baseline, migration procedure and limitations are in
+`docs/pos-platform/variant-inventory-upgrade.md`; checklist is
+`tasks/variant-inventory-upgrade.md`.
+
+Validation: 323 backend unit, 32 database integration, 14 frontend, 2 POS session,
+41 hardware tests; all three production builds; typecheck/lint/contracts and dry-run
+passed. Browser visual acceptance and controlled production activation remain.
+Pre-existing PostCSS deletions are preserved; no inventory commit/push/deployment.

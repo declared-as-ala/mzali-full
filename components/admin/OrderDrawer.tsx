@@ -13,6 +13,7 @@ import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/
 type ProductPickerItem = { id: string; name: string; price: number; image?: string; status?: string; posOnly?: boolean };
 type LineDraft = {
   productId: string;
+  variantId?: string | null;
   name: string;
   image?: string;
   qty: number;
@@ -23,6 +24,8 @@ type LineDraft = {
 };
 
 type ProductInfo = {
+  variants?: { id: string; size: string; color: string; active: boolean }[];
+  matrix?: boolean;
   options: { name: string; values: string[] }[];   // {name:'size', values:['s','m','l',...]}
   bundles: { id: string; name: string; quantity: number; price: number }[];
   image?: string;
@@ -57,7 +60,8 @@ function numberFromMeta(value: unknown): number | null {
  *   [{ key: 'size', value: 'm' }, { key: 'color', value: 'noir' }]
  */
 function parseLine(i: {
-  productId: string; name: string; quantity: number; price: number;
+  productId: string;
+  variantId?: string | null; name: string; quantity: number; price: number;
   imageUrl?: string; attributes?: { key: string; value: string }[];
 }): LineDraft {
   const attrs = i.attributes ?? [];
@@ -83,6 +87,7 @@ function parseLine(i: {
 
   return {
     productId: i.productId,
+    variantId: i.variantId,
     name: i.name,
     image: i.imageUrl,
     qty: i.quantity,
@@ -224,6 +229,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       }));
       const info: ProductInfo = {
         options: opts,
+        matrix: p.inventoryModel === 'MATRIX',
+        variants: p.variants,
         bundles: (p.bundles ?? []).map((b: { id: string; name: string; quantity: number; price: number }) => ({
           id: b.id, name: b.name, quantity: b.quantity, price: b.price,
         })),
@@ -614,6 +621,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             customer,
             items: lines.map((l) => ({
               productId: l.productId,
+              variantId: l.variantId ?? undefined,
               qty: l.qty,
               unitPrice: l.unitPrice,
               variation: l.variation,
@@ -630,6 +638,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             items: lines.map((l, i) => ({
               lineId: `${l.productId}-${i}`,
               productId: l.productId,
+              variantId: l.variantId ?? undefined,
               name: l.name,
               price: l.unitPrice,
               qty: l.qty,
@@ -1216,6 +1225,9 @@ function renderSummaryRows(args: {
             </td>
             <td className="px-3 py-3 align-middle">
               <VariationSelects
+                variants={info?.matrix ? info.variants : undefined}
+                variantId={l.variantId ?? undefined}
+                onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l._i, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
                 attrs={attrs}
                 value={l.variation}
                 onChange={(name, v) => setLineVariation(l._i, name, v)}
@@ -1275,6 +1287,9 @@ function renderSummaryRows(args: {
           </td>
           <td className="px-3 py-3 align-middle">
             <VariationSelects
+                variants={info?.matrix ? info.variants : undefined}
+                variantId={l.variantId ?? undefined}
+                onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l._i, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
               attrs={attrs}
               value={l.variation}
               onChange={(name, v) => setLineVariation(l._i, name, v)}
@@ -1310,12 +1325,16 @@ function renderSummaryRows(args: {
 
 /** One <select> per known product attribute, free-form fallback when no options were configured. */
 function VariationSelects({
-  attrs, value, onChange,
+  attrs, value, onChange, variants, variantId, onVariantChange,
 }: {
+  variants?: ProductInfo['variants'];
+  variantId?: string;
+  onVariantChange?: (id: string) => void;
   attrs: { name: string; values: string[] }[];
   value: Record<string, string>;
   onChange: (name: string, v: string) => void;
 }) {
+  if (variants) return <select aria-label="Variante exacte" className="input min-w-36" value={variantId ?? ''} onChange={e => onVariantChange?.(e.target.value)}><option value="">Sélectionnez taille / couleur</option>{variantId && !variants.some(v => v.id === variantId) && <option value={variantId}>Variante historique (réconciliation requise)</option>}{variants.filter(v => v.active).map(v => <option key={v.id} value={v.id}>{v.size} / {v.color}</option>)}</select>;
   // If we don't have option metadata yet, just show whatever the order has as chips.
   if (!attrs.length) {
     const entries = Object.entries(value).filter(([, v]) => v);

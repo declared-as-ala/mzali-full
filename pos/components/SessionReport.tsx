@@ -4,9 +4,9 @@ import type { PosSessionReport } from '@/types/pos';
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className={`flex items-center justify-between py-1.5 ${strong ? 'font-black text-ink-900' : 'text-ink-700'}`}>
+    <div className={`flex items-center justify-between gap-3 py-1.5 ${strong ? 'font-black text-ink-900' : 'text-ink-700'}`}>
       <span className="text-sm">{label}</span>
-      <span className="text-sm">{value}</span>
+      <span className="shrink-0 text-right text-sm tabular-nums">{value}</span>
     </div>
   );
 }
@@ -14,7 +14,7 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 export default function SessionReport({ report }: { report: PosSessionReport }) {
   return (
     <div className="rounded-2xl border border-ink-200 bg-white p-5">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-black text-ink-900">
           Rapport {report.type === 'Z' ? 'Z (clôture)' : 'X (en cours)'}
         </h3>
