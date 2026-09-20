@@ -59,8 +59,39 @@ See [audit and migration guide](../docs/pos-platform/variant-inventory-upgrade.m
 ## Remaining before going live
 
 - [ ] Browser visual acceptance on desktop/mobile (browser unavailable in this session).
-- [ ] Deploy the coordinated API/Admin/storefront/POS release.
+- [x] Deploy the coordinated API/Admin/storefront/POS release — bf04dc5, 2026-09-21.
 - [ ] Count and allocate each legacy product, pilot one product, verify and activate.
 
 Products remain LEGACY until explicitly allocated and activated; existing size/color
-options alone do not establish their stock. The code has not been pushed or deployed.
+options alone do not establish their stock. The code is deployed; product allocation remains an explicit operator action.
+
+## Production deployment — 2026-09-21
+
+Release `bf04dc5a2b04b550f85b92eae02e38f2506b71b4` pushed and deployed successfully.
+CI and Deploy Production workflows passed. API, worker, storefront and POS all
+run the matching image and report healthy. Public domain/product smoke tests passed.
+A fresh Mongo backup was restored successfully in an isolated container before
+rollout; the deployment also backed up MongoDB and media.
+
+Post-deploy read-only audit: 94 legacy products, 94 variants, 137 stock rows,
+18,547 movements, DEPOT 1,114,746 and BOUTIQUE 195,072; no negative balances,
+duplicates, orphans, missing ledger snapshots or stock/ledger mismatches.
+No product allocation or inventory migration was activated.
+
+Deployment run: https://github.com/declared-as-ala/mzali-full/actions/runs/35543584820
+
+## Simplified stock entry — local follow-up, not yet deployed
+
+- [x] Generate all size/color combinations automatically from saved product options.
+- [x] Remove per-combination price, SKU and manual generation controls from the form.
+- [x] Configure stock directly from Stock Dépôt / Stock Boutique without opening the product.
+- [x] Enter first stock in Dépôt in one save; Boutique starts at zero.
+- [x] Keep transfer workflow for moving Dépôt quantities to Boutique.
+- [x] Preserve existing per-location totals when splitting legacy stock.
+- [x] Verify 18 transaction tests and 17 frontend tests.
+
+Normal flow: Products (details, shared price, options) → Stock Dépôt (quantities)
+→ Transfers (Dépôt to Boutique). Initial entry is explicit, audited and atomic.
+
+Follow-up verification: backend/frontend typechecks, lint and production builds passed.
+Existing unrelated frontend lint warnings remain. Simplification is not deployed yet.

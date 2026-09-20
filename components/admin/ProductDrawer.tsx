@@ -408,7 +408,7 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
               )}
               {tab === 'variants' && (
                 isEdit && productId
-                  ? <VariantMatrix productId={productId} />
+                  ? <VariantMatrix key={productId} productId={productId} />
                   : <p className="text-sm text-ink-700">Enregistrez le produit pour gérer sa variante (SKU, code-barres, stock).</p>
               )}
               {tab === 'related' && (

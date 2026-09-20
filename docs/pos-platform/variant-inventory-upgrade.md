@@ -2,7 +2,7 @@
 
 Implementation date: 2026-09-20. This document supersedes the original
 one-default-variant inventory design for products explicitly activated as MATRIX.
-The implementation is local; production has only been inspected read-only.
+Deployed on 2026-09-21 as `bf04dc5`. Production inventory was inspected read-only; no product allocation was activated.
 
 ## Production baseline
 
@@ -184,3 +184,22 @@ hardware tests passed. Backend typecheck/lint/build, contract synchronization,
 and storefront/Admin and POS production builds passed. The final isolated read-only
 preflight found zero duplicate keys/SKUs, negative balances, orphans, missing ledger
 rows or latest-snapshot mismatches. `git diff --check` passed.
+
+## Simplified entry follow-up (local, pending deployment)
+
+The stock pages now open the product's size/color stock form directly through
+**Configurer le stock**. Saved options generate the combinations automatically;
+there are no price fields, SKU fields or generation button. All new combinations
+inherit the product price. **Enregistrer le stock** runs validation and saves.
+
+For a product whose existing DEPOT and BOUTIQUE balances are both zero, an explicit
+`initialStock` request can receive its first quantities into DEPOT during activation.
+BOUTIQUE must remain zero; use Transfers afterward. The API rechecks the zero
+balances inside the transaction, records the receipt in the stock ledger, and
+rejects this path if stock already exists. Existing nonzero legacy balances still
+require conservative allocation separately for each location. No automatic
+quantity distribution occurs. New combinations added later start at zero.
+
+Example verified with real Mongo transactions: create product, receive 10 into
+DEPOT, transfer/receive 3 into BOUTIQUE → DEPOT 7, BOUTIQUE 3. First-stock requests
+cannot overwrite existing legacy stock or add directly to BOUTIQUE.

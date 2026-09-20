@@ -15,6 +15,7 @@ export class ActivateMatrixDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => MatrixRowDto) rows!: MatrixRowDto[];
   @IsString() @MaxLength(500) reason!: string;
   @IsOptional() @IsBoolean() dryRun?: boolean;
+  @IsOptional() @IsBoolean() initialStock?: boolean;
 }
 export class VariantAdjustmentDto {
   @IsString() variantId!: string;

@@ -200,4 +200,29 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     expect((await catalog.getById(productId))!.inventoryEnabled).toBe(false);
   });
 
+  it('adds first stock only to Depot and then transfers exact quantities to Boutique', async () => {
+    const p = await db.model<Product>(Product.name).create({ name: 'New product', slug: 'new-stock', regularPriceMinor: 30000 });
+    await variants.generateDefaultVariant(p.id);
+    const dto = { initialStock: true, reason: 'Premier stock Dépôt', rows: [{ size: 'XL', color: 'Noir', sku: 'NEW-XL', active: true, depot: 10, boutique: 0 }] };
+    await matrix.activate(p.id, { ...dto, dryRun: true }, actor);
+    expect((await variants.allForProducts([p.id]))[0].attributes.size).toBeUndefined();
+    await expect(matrix.activate(p.id, { ...dto, rows: [{ ...dto.rows[0], boutique: 2 }] }, actor)).rejects.toThrow('Dépôt');
+    await matrix.activate(p.id, dto, actor);
+    const variant = (await variants.allForProducts([p.id]))[0];
+    expect(await stock(variant.id)).toBe(10); expect(await stock(variant.id, 'BOUTIQUE')).toBe(0);
+    expect(variant.sellingPriceMinor).toBeNull();
+    const transfer = await transfers.create({ sourceLocationId: 'DEPOT', destinationLocationId: 'BOUTIQUE', lines: [{ productId: p.id, variantId: variant.id, requestedQuantity: 3 }] }, actor);
+    await transfers.approve(transfer.id, { lines: [{ variantId: variant.id, approvedQuantity: 3 }] }, actor);
+    await transfers.ship(transfer.id, actor);
+    await transfers.receive(transfer.id, { operationKey: 'first-transfer', lines: [{ variantId: variant.id, receivedQuantity: 3 }] }, actor);
+    expect(await stock(variant.id)).toBe(7); expect(await stock(variant.id, 'BOUTIQUE')).toBe(3);
+  });
+  it('does not use first-stock entry to overwrite an existing legacy balance', async () => {
+    const p = await db.model<Product>(Product.name).create({ name: 'Existing', slug: 'existing', regularPriceMinor: 30000 });
+    const v = await variants.generateDefaultVariant(p.id);
+    await ledger.applyMovement({ variantId: v.id, locationId: 'DEPOT', onHandDelta: 5, type: 'migration_init', actor });
+    await expect(matrix.activate(p.id, { initialStock: true, reason: 'Test', rows: [{ size: 'XL', color: 'Noir', sku: 'EXIST-XL', active: true, depot: 10, boutique: 0 }] }, actor)).rejects.toThrow('sans stock');
+    expect(await stock(v.id)).toBe(5);
+  });
+
 });

@@ -57,7 +57,8 @@ export class VariantStockService {
         if (!stock.length && product.stockQuantity) throw new ConflictException('Stock historique sans registre : réconciliation requise avant allocation.');
         const before = { DEPOT: 0, BOUTIQUE: 0 };
         for (const s of stock) before[s.locationId as keyof typeof before] += s.quantityOnHand;
-        if (dto.rows.reduce((s, r) => s + r.depot, 0) !== before.DEPOT || dto.rows.reduce((s, r) => s + r.boutique, 0) !== before.BOUTIQUE) throw new BadRequestException(`Les allocations doivent conserver Dépôt ${before.DEPOT} et Boutique ${before.BOUTIQUE}. Corrigez le stock séparément avec un motif si nécessaire.`);
+        if (dto.initialStock && (before.DEPOT !== 0 || before.BOUTIQUE !== 0 || dto.rows.some(r => r.boutique !== 0))) throw new BadRequestException('Le premier stock doit être ajouté au Dépôt sur un produit sans stock existant.');
+        if (!dto.initialStock && (dto.rows.reduce((s, r) => s + r.depot, 0) !== before.DEPOT || dto.rows.reduce((s, r) => s + r.boutique, 0) !== before.BOUTIQUE)) throw new BadRequestException(`Les allocations doivent conserver Dépôt ${before.DEPOT} et Boutique ${before.BOUTIQUE}. Corrigez le stock séparément avec un motif si nécessaire.`);
         const clash = await this.variants.exists({ sku: { $in: dto.rows.map(r => r.sku.trim()) } }).session(session);
         if (clash) throw new BadRequestException('Un SKU est déjà utilisé. Les SKU historiques restent réservés.');
         if (dto.dryRun) return { dryRun: true, before, variantCount: dto.rows.length };
@@ -68,7 +69,7 @@ export class VariantStockService {
         for (let i = 0; i < dto.rows.length; i++) {
           const r = dto.rows[i];
           const [v] = await this.variants.create([{ productId, combinationKey: keys[i], attributes: { size: r.size.trim(), color: r.color.trim() }, sku: r.sku.trim(), active: r.active, sellingPriceMinor: r.sellingPriceMinor ?? null, lowStockThreshold: r.lowStockThreshold ?? null }], { session });
-          for (const [locationId, qty] of [['DEPOT', r.depot], ['BOUTIQUE', r.boutique]] as const) await this.ledger.applyMovement({ variantId: v.id, locationId, type: 'correction', onHandDelta: qty, reference: `matrix:${productId}`, reason: dto.reason, actor, session });
+          for (const [locationId, qty] of [['DEPOT', r.depot], ['BOUTIQUE', r.boutique]] as const) await this.ledger.applyMovement({ variantId: v.id, locationId, type: dto.initialStock ? 'manual_adjust' : 'correction', onHandDelta: qty, reference: `matrix:${productId}`, reason: dto.reason, actor, session });
         }
         product.inventoryModel = 'MATRIX';
         await product.save({ session });
