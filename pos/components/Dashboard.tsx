@@ -1,13 +1,17 @@
 'use client';
+import { useState } from 'react';
+import OpenCashSession from './OpenCashSession';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, BarChart3, History, ShoppingCart, Sparkles, Store, UserCheck, Zap } from 'lucide-react';
 import NavBar from './NavBar';
 
 export default function Dashboard({ cashierName }: { cashierName: string; canEdit?: boolean }) {
   const router = useRouter();
+  const [opening, setOpening] = useState(false);
 
   return (
     <div className="flex h-screen flex-col bg-[#F4F6F9] text-slate-900 select-none">
+      {opening && <div className="fixed inset-0 z-50"><OpenCashSession onCancel={() => setOpening(false)} /></div>}
       {/* Top Navigation Header */}
       <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 py-3 shadow-xs">
         <div className="flex items-center gap-3.5">
@@ -40,7 +44,9 @@ export default function Dashboard({ cashierName }: { cashierName: string; canEdi
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
             {/* Button 1: Caisse (Ventes) */}
             <div
-              onClick={() => router.push('/till')}
+              role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOpening(true); }}
+              onClick={() => setOpening(true)}
               className="group relative overflow-hidden rounded-3xl bg-slate-900 border border-blue-500/30 p-8 text-white shadow-2xl shadow-slate-900/20 hover:border-blue-500/80 hover:shadow-blue-500/20 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer"
             >
               <div className="absolute -right-8 -top-8 h-36 w-36 rounded-full bg-blue-600/20 blur-2xl pointer-events-none group-hover:bg-blue-600/35 transition-all" />

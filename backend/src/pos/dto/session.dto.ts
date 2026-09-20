@@ -1,10 +1,11 @@
-import { IsIn, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min, MinLength, MaxLength } from 'class-validator';
 
 export class OpenSessionDto {
   @IsInt() @Min(0) openingCashMinor!: number;
 }
 
 export class CloseSessionDto {
+  @IsOptional() @IsString() @MaxLength(1000) note?: string;
   @IsInt() @Min(0) closingCountedCashMinor!: number;
 }
 

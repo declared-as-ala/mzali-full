@@ -1,5 +1,26 @@
 # Migration Progress
 
+## 2026-09-20 — POS opening fund, cash ledger and daily Ticket Z
+
+Audited and extended the existing cashier sessions, payments, cash movements
+and session Z reports. Added immutable opening funds, backend cash summaries,
+transactional sale/refund/correction movements, counted closure, and persisted
+daily Z archives with Admin filters, details and A4 PDF download/printing.
+Existing terminal pairing, authentication and hardware bridge remain in place.
+
+The accounting day follows the session opening date in Africa/Tunis. A manager
+finalizes the consolidated day after all sessions close. See
+[cash-register-ticket-z.md](docs/pos-platform/cash-register-ticket-z.md) for the
+audit, permissions, legacy-data rollout requirements and verification commands.
+
+Verification: backend typecheck/lint and contract synchronization passed;
+323 backend unit tests, 14 real Mongo replica-set accounting integration tests,
+2 POS session tests and 41 hardware bridge tests passed. Root and POS TypeScript
+checks passed. Targeted frontend lint passed with one existing image warning.
+The final A4 PDF was rendered and visually checked. No in-app browser was
+available for interactive UI verification; physical printer/drawer operation
+was not exercised. No production database changes or deployment were performed.
+
 Tracks completion of `tasks/TASK-0X-*.md` against the approved plan
 (`C:\Users\Ala\.claude\plans\compiled-petting-hartmanis.md`). Update this file
 whenever a task's verification gate passes.

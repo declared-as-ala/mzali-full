@@ -9,6 +9,7 @@ type PosCashierSession = {
   cashierId: string;
   terminalId: string;
   openingCashMinor: number;
+  expectedCashMinor: number;
   openedAt: string;
   closedAt: string | null;
   closingCountedCashMinor: number | null;
@@ -78,6 +79,11 @@ export default function PosSessionsView() {
   const [reviewFor, setReviewFor] = useState<PosCashierSession | null>(null);
   const [reviewNote, setReviewNote] = useState('');
   const [reviewing, setReviewing] = useState(false);
+  const [movementType, setMovementType] = useState('ADD');
+  const [movementAmount, setMovementAmount] = useState('');
+  const [movementReason, setMovementReason] = useState('');
+  const [movementBusy, setMovementBusy] = useState(false);
+  const [movements, setMovements] = useState<{ _id: string; type: string; amountMinor: number; reason: string; createdAt: string }[]>([]);
 
   async function refresh() {
     setLoading(true);
@@ -93,9 +99,23 @@ export default function PosSessionsView() {
   async function openReport(session: PosCashierSession) {
     setReportFor(session);
     setReport(null);
+    setMovements([]);
+    fetch(`/api/admin/pos/sessions/${session.id}/cash-movements`).then(async (res) => { if (res.ok) setMovements(await res.json()); });
     const type = session.status === 'CLOSED' ? 'Z' : 'X';
     const res = await fetch(`/api/admin/pos/sessions/${session.id}/report?type=${type}`, { cache: 'no-store' });
     if (res.ok) setReport(await res.json());
+  }
+
+  async function moveCash() {
+    if (!reportFor) return;
+    setMovementBusy(true);
+    try {
+      const res = await fetch(`/api/admin/pos/sessions/${reportFor.id}/cash-movements`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: movementType, amountMinor: Math.round(Number(movementAmount) * 1000), reason: movementReason.trim() }) });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? 'Mouvement refusé');
+      setMovementAmount(''); setMovementReason(''); await openReport(body); await refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Erreur'); }
+    finally { setMovementBusy(false); }
   }
 
   function openReview(session: PosCashierSession) {
@@ -148,7 +168,7 @@ export default function PosSessionsView() {
                 <th className="px-4 py-3">Statut</th>
                 <th className="px-4 py-3">Ouverture</th>
                 <th className="px-4 py-3">Fermeture</th>
-                <th className="px-4 py-3">Ventes brutes</th>
+                <th className="px-4 py-3">Fond / solde attendu</th>
                 <th className="px-4 py-3">Tickets</th>
                 <th className="px-4 py-3">Vérification</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -164,7 +184,7 @@ export default function PosSessionsView() {
                   </td>
                   <td className="px-4 py-3 text-ink-700">{formatDateTime(s.openedAt)}</td>
                   <td className="px-4 py-3 text-ink-700">{s.closedAt ? formatDateTime(s.closedAt) : '—'}</td>
-                  <td className="px-4 py-3 font-bold">{formatMinor(s.grossSalesMinor)}</td>
+                  <td className="px-4 py-3 font-bold">{formatMinor(s.openingCashMinor)} / {formatMinor(s.expectedCashMinor)}</td>
                   <td className="px-4 py-3 text-ink-700">{s.transactionCount}</td>
                   <td className="px-4 py-3">
                     {s.reviewedAt ? (
@@ -196,7 +216,7 @@ export default function PosSessionsView() {
 
       {reportFor && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" onClick={() => setReportFor(null)}>
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-ink-900">
                 Rapport {report?.type === 'Z' ? 'Z (clôture)' : 'X (en cours)'}
@@ -226,6 +246,8 @@ export default function PosSessionsView() {
                     <div className="flex justify-between font-bold"><span>Écart</span><span>{formatMinor(report.cashDifferenceMinor ?? 0)}</span></div>
                   </>
                 )}
+                {reportFor.status === 'OPEN' && <fieldset className="my-4 space-y-2 rounded-xl border border-ink-200 p-3"><legend className="px-2 font-bold">Mouvement autorisé</legend><label className="block">Type<select className="input" value={movementType} onChange={(e) => setMovementType(e.target.value)}><option value="ADD">Entrée caisse</option><option value="REMOVE">Sortie caisse</option></select></label><label className="block">Montant (DT)<input className="input" type="number" min="0.001" step="0.001" value={movementAmount} onChange={(e) => setMovementAmount(e.target.value)} /></label><label className="block">Motif obligatoire<input className="input" maxLength={500} value={movementReason} onChange={(e) => setMovementReason(e.target.value)} /></label><button className="btn-primary w-full" disabled={movementBusy || !movementReason.trim() || !(Number(movementAmount) > 0)} onClick={moveCash}>{movementBusy ? 'Enregistrement…' : 'Enregistrer le mouvement'}</button></fieldset>}
+                <details className="my-4"><summary className="cursor-pointer font-bold">Journal de caisse ({movements.length})</summary>{movements.map((m) => <div key={m._id} className="border-b py-2 text-xs"><div className="flex justify-between"><span>{m.type}</span><strong>{formatMinor(m.amountMinor)}</strong></div><p>{m.reason} · {formatDateTime(m.createdAt)}</p></div>)}</details>
                 {report.flagged && (
                   <p className="mt-3 flex items-center gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
                     <AlertTriangle size={14} /> Écart au-delà de la tolérance.
@@ -239,7 +261,7 @@ export default function PosSessionsView() {
 
       {reviewFor && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4" onClick={() => setReviewFor(null)}>
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-black text-ink-900">Vérifier la session</h2>
               <button onClick={() => setReviewFor(null)} className="grid h-9 w-9 place-items-center rounded-lg text-ink-500 hover:bg-ink-100" aria-label="Fermer">

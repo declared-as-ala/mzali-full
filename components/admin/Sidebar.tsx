@@ -49,6 +49,8 @@ const SECTIONS = [
   {
     label: 'Point de vente',
     items: [
+      { href: '/tickets-z', label: 'Tickets Z', icon: MonitorSmartphone, exact: false },
+      { href: '/pos-sessions', label: 'Sessions de caisse', icon: MonitorSmartphone, exact: false },
       { href: '/pos-analytics', label: 'Informations Caisse', icon: MonitorSmartphone, exact: false },
     ],
   },

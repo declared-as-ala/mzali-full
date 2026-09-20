@@ -1,3 +1,4 @@
+import { roleHasPermission } from '@/auth/permissions';
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditService } from '@/audit/audit.service';
@@ -21,8 +22,9 @@ export class PosSessionsController {
 
   @Get('current')
   @RequirePermissions('pos.open_session')
-  async current(@Req() posReq: PosRequest) {
+  async current(@Req() posReq: PosRequest, @CurrentUser() user: RequestUser) {
     const doc = await this.sessions.getOpenForTerminal(posReq.posTerminalId!);
+    if (doc) await this.sessions.assertAccess(doc.id, posReq.posTerminalId!, user.userId, roleHasPermission(user.role, 'pos.sessions.read'));
     // Never return a bare null/undefined body — Nest sends that as an
     // empty response (Content-Length 0), which callers can't JSON.parse.
     return { session: doc ? toPosSessionContract(doc) : null };
@@ -47,7 +49,8 @@ export class PosSessionsController {
   @Post(':id/close')
   @RequirePermissions('pos.close_session')
   async close(@Param('id') id: string, @Body() dto: CloseSessionDto, @CurrentUser() user: RequestUser, @Req() posReq: PosRequest) {
-    const doc = await this.sessions.close(id, dto.closingCountedCashMinor);
+    await this.sessions.assertAccess(id, posReq.posTerminalId!, user.userId, roleHasPermission(user.role, 'pos.sessions.read'));
+    const doc = await this.sessions.close(id, dto.closingCountedCashMinor, dto.note);
     await this.audit.log({
       actor: { type: 'employee', id: user.userId, name: user.name },
       action: 'pos.session.close',
@@ -61,12 +64,13 @@ export class PosSessionsController {
   }
 
   @Post(':id/cash-movements')
-  @RequirePermissions('pos.open_cash_drawer')
+  @RequirePermissions('pos.sessions.review')
   async addCashMovement(@Param('id') id: string, @Body() dto: CashMovementDto, @CurrentUser() user: RequestUser, @Req() posReq: PosRequest) {
+    await this.sessions.assertAccess(id, posReq.posTerminalId!, user.userId, true);
     await this.sessions.addCashMovement(id, dto.type, dto.amountMinor, dto.reason, user.userId);
     await this.audit.log({
       actor: { type: 'employee', id: user.userId, name: user.name },
-      action: 'pos.cash_drawer.open',
+      action: 'pos.cash_movement.create',
       entityType: 'pos_cashier_session',
       entityId: id,
       summary: `Mouvement de caisse ${dto.type} (${dto.amountMinor} millimes) — ${dto.reason}`,
@@ -78,7 +82,8 @@ export class PosSessionsController {
 
   @Get(':id/report')
   @RequirePermissions('pos.close_session')
-  async report(@Param('id') id: string, @Query() query: ReportQueryDto) {
+  async report(@Param('id') id: string, @Query() query: ReportQueryDto, @Req() posReq: PosRequest, @CurrentUser() user: RequestUser) {
+    await this.sessions.assertAccess(id, posReq.posTerminalId!, user.userId, roleHasPermission(user.role, 'pos.sessions.read'));
     return this.sessions.report(id, query.type ?? 'X');
   }
 }

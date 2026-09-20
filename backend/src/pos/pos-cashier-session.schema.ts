@@ -9,6 +9,9 @@ export type PosSessionStatus = 'OPEN' | 'CLOSED';
  *  SPRINT-03 "Z report is immutable after generation". */
 @Schema({ _id: false })
 class SessionReportSnapshot {
+  @Prop({ type: Object }) details?: Record<string, unknown>;
+  @Prop({ type: Boolean }) flagged?: boolean;
+  @Prop({ type: Number, default: 0 }) cashRefundsMinor!: number;
   @Prop({ type: String, enum: ['X', 'Z'], required: true }) type!: 'X' | 'Z';
   @Prop({ type: Date, required: true }) generatedAt!: Date;
   @Prop({ type: Number, required: true }) expectedCashMinor!: number;
@@ -38,8 +41,14 @@ export class PosCashierSession {
   @Prop({ type: String, default: null })
   registerId!: string | null;
 
-  @Prop({ type: Number, required: true, default: 0 })
+  @Prop({ type: Number, required: true, default: 0, immutable: true })
   openingCashMinor!: number;
+
+  @Prop({ type: String, index: true }) businessDate?: string;
+  @Prop({ type: String, default: null }) closingNote!: string | null;
+  @Prop({ type: Number, default: 0 }) cashRefundsMinor!: number;
+  @Prop({ type: Number, default: 0 }) cardRefundsMinor!: number;
+  @Prop({ type: Number, default: 0 }) otherRefundsMinor!: number;
 
   @Prop({ type: Date, required: true })
   openedAt!: Date;
@@ -85,3 +94,4 @@ export class PosCashierSession {
 export type PosCashierSessionDocument = HydratedDocument<PosCashierSession>;
 export const PosCashierSessionSchema = SchemaFactory.createForClass(PosCashierSession);
 PosCashierSessionSchema.index({ terminalId: 1, status: 1 });
+PosCashierSessionSchema.index({ terminalId: 1 }, { unique: true, partialFilterExpression: { status: 'OPEN' }, name: 'one_open_session_per_terminal' });

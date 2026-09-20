@@ -14,6 +14,7 @@ import { LoyaltyCoreModule } from '@/loyalty/loyalty-core.module';
 import { Setting, SettingSchema } from '@/settings/settings.schema';
 import { SettingsService } from '@/settings/settings.service';
 import { PosCashMovement, PosCashMovementSchema } from './pos-cash-movement.schema';
+import { PosDailyZ, PosDailyZSchema } from './pos-daily-z.schema';
 import { PosCashierSession, PosCashierSessionSchema } from './pos-cashier-session.schema';
 import { PosCatalogService } from './pos-catalog.service';
 import { PosEventsService } from './pos-events.service';
@@ -27,6 +28,7 @@ import { PosTerminal, PosTerminalSchema } from './pos-terminal.schema';
 import { PosTerminalsService } from './pos-terminals.service';
 
 const PosMongoose = MongooseModule.forFeature([
+  { name: PosDailyZ.name, schema: PosDailyZSchema },
   { name: PosTerminal.name, schema: PosTerminalSchema },
   { name: PosRegister.name, schema: PosRegisterSchema },
   { name: PosSale.name, schema: PosSaleSchema },

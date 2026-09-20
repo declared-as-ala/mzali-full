@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, FilterQuery, Model, Types } from 'mongoose';
 import type { CreatePosSaleInput, EmployeeRole, PosPrintStatus, PosSale as PosSaleContract, PosSaleLineInput, PosSalePaymentInput } from '@contracts';
@@ -53,13 +53,17 @@ export class PosSalesService {
   async create(input: CreatePosSaleInput, ctx: PosSaleContext, idempotencyKey?: string): Promise<{ doc: PosSaleDocument; wasExisting: boolean }> {
     if (idempotencyKey) {
       const existing = await this.sales.findOne({ idempotencyKey });
-      if (existing) return { doc: existing, wasExisting: true };
+      if (existing) {
+        if (existing.terminalId !== ctx.terminalId || existing.cashierId !== ctx.cashierId) throw new ConflictException('Clé de paiement déjà utilisée');
+        return { doc: existing, wasExisting: true };
+      }
     }
     if (!input.lines.length) throw new BadRequestException('Le panier est vide');
     if (!input.payments?.length) throw new BadRequestException('Au moins un mode de paiement est requis');
 
     const openSession = await this.sessions.getOpenForTerminal(ctx.terminalId);
     if (!openSession) throw new BadRequestException("Aucune session de caisse ouverte sur ce terminal");
+    await this.sessions.assertAccess(openSession.id, ctx.terminalId, ctx.cashierId, ['admin', 'super_admin', 'store_manager'].includes(ctx.cashierRole));
 
     // Recalculate every price server-side — never trust a client-sent
     // amount (same principle as online checkout).
@@ -119,7 +123,9 @@ export class PosSalesService {
         throw new BadRequestException(`La somme des paiements (${paymentsSum}) ne correspond pas au total (${totalMinor})`);
       }
       const cashRow = input.payments.find((p) => p.method === 'CASH');
-      const cashTenderedMinor = cashRow ? input.cashTenderedMinor ?? cashRow.amountMinor : null;
+      const cashAmountMinor = input.payments.filter((p) => p.method === 'CASH').reduce((sum, p) => sum + p.amountMinor, 0);
+      const cashTenderedMinor = cashRow ? input.cashTenderedMinor ?? cashAmountMinor : null;
+      if (cashTenderedMinor !== null && (!Number.isSafeInteger(cashTenderedMinor) || cashTenderedMinor < cashAmountMinor)) throw new BadRequestException('Espèces reçues insuffisantes');
       const legacyMethod = input.payments.length > 1 ? 'MIXED' : mapLegacyMethod(input.payments[0].method);
 
       // Earning — only for customers with an existing ACTIVE loyalty
@@ -164,7 +170,7 @@ export class PosSalesService {
             totalMinor,
             paymentMethod: legacyMethod,
             cashReceivedMinor: cashTenderedMinor,
-            changeMinor: cashRow && cashTenderedMinor !== null ? cashTenderedMinor - cashRow.amountMinor : null,
+            changeMinor: cashRow && cashTenderedMinor !== null ? cashTenderedMinor - cashAmountMinor : null,
             idempotencyKey: idempotencyKey ?? undefined,
             loyaltyPointsEarned,
             loyaltyPointsRedeemed: input.redeemPoints ?? 0,
@@ -209,6 +215,7 @@ export class PosSalesService {
         {
           totalMinor,
           discountMinor,
+          saleId: saleId.toString(), actorId: ctx.cashierId,
           cashMinor: byMethod('CASH'),
           cardMinor: byMethod('CARD'),
           otherMinor: byMethod('BANK_TRANSFER') + byMethod('OTHER'),
@@ -219,8 +226,16 @@ export class PosSalesService {
       return doc;
     };
 
-    const doc = await withOptionalTxn(this.connection, run);
-    return { doc, wasExisting: false };
+    try {
+      const doc = await withOptionalTxn(this.connection, run);
+      return { doc, wasExisting: false };
+    } catch (error) {
+      if (idempotencyKey && (error as { code?: number }).code === 11000) {
+        const existing = await this.sales.findOne({ idempotencyKey, terminalId: ctx.terminalId, cashierId: ctx.cashierId });
+        if (existing) return { doc: existing, wasExisting: true };
+      }
+      throw error;
+    }
   }
 
   /**
@@ -365,11 +380,13 @@ export class PosSalesService {
    * running totals move by the same delta so nothing is double-counted.
    */
   async update(id: string, dto: UpdateSaleDto, actor: { type: 'employee'; id: string; name: string }): Promise<{ before: PosSaleDocument; after: PosSaleDocument }> {
-    const [doc, beforeSnapshot] = await Promise.all([this.sales.findById(id), this.sales.findById(id)]);
-    if (!doc || !beforeSnapshot) throw new NotFoundException('Vente introuvable');
+    const doc = await this.sales.findById(id);
+    if (!doc) throw new NotFoundException('Vente introuvable');
+    const beforeSnapshot = doc.$clone();
     if (doc.status !== 'COMPLETED') throw new BadRequestException('Seule une vente complétée peut être modifiée');
 
-    const session = await this.sessions.getById(doc.sessionId).catch(() => null);
+    const session = await this.sessions.requireOpen(doc.sessionId);
+    if (doc.loyaltyPointsEarned || doc.loyaltyPointsRedeemed) throw new BadRequestException('Annulez puis recréez cette vente pour conserver son historique de fidélité');
 
     const oldPaymentRows = await this.payments.find({ saleId: doc.id });
     const oldCashMinor = sumByMethod(oldPaymentRows, 'CASH');
@@ -404,6 +421,10 @@ export class PosSalesService {
     const stockDeltas = dto.lines ? computeSaleStockDeltas(beforeSnapshot.lines, resolvedLines) : new Map<string, number>();
 
     const run = async (txnSession?: ClientSession) => {
+      // Reload on every transaction retry; an aborted save must not leave a
+      // reused Mongoose document with cleared dirty fields.
+      const doc = await this.sales.findOne({ _id: id, updatedAt: beforeSnapshot.updatedAt, status: 'COMPLETED' }).session(txnSession ?? null);
+      if (!doc) throw new ConflictException('Cette vente a changé, rechargez-la');
       for (const [variantId, delta] of stockDeltas) {
         try {
           await this.ledger.applyMovement({
@@ -425,6 +446,8 @@ export class PosSalesService {
         }
       }
 
+      const locked = await this.sales.updateOne({ _id: doc.id, updatedAt: beforeSnapshot.updatedAt, status: 'COMPLETED' }, { $set: { updatedAt: new Date() } }, { session: txnSession });
+      if (!locked.matchedCount) throw new ConflictException('Cette vente a changé, rechargez-la');
       doc.lines = resolvedLines;
       doc.subtotalMinor = subtotalMinor;
       doc.discountMinor = discountMinor;
@@ -452,6 +475,7 @@ export class PosSalesService {
         await this.sessions.applySaleEditToSession(
           doc.sessionId,
           {
+            saleId: doc.id, actorId: actor.id, reason: dto.reason,
             totalMinor: totalMinor - beforeSnapshot.totalMinor,
             discountMinor: discountMinor - beforeSnapshot.discountMinor,
             cashMinor: newCashMinor - oldCashMinor,
@@ -465,8 +489,8 @@ export class PosSalesService {
       return doc;
     };
 
-    await withOptionalTxn(this.connection, run);
-    return { before: beforeSnapshot, after: doc };
+    const after = await withOptionalTxn(this.connection, run);
+    return { before: beforeSnapshot, after };
   }
 
   async getById(id: string): Promise<PosSaleDocument | null> {
@@ -618,25 +642,36 @@ export class PosSalesService {
   }
 
   async cancel(id: string, actor: { type: 'employee'; id: string; name: string }): Promise<PosSaleDocument> {
-    const doc = await this.sales.findById(id);
-    if (!doc) throw new NotFoundException('Vente introuvable');
-    if (doc.status === 'CANCELLED') return doc;
-
-    for (const line of doc.lines) {
-      await this.ledger.applyMovement({
-        variantId: line.variantId,
-        locationId: doc.locationId,
-        type: 'correction',
-        onHandDelta: line.qty,
-        reference: doc.id,
-        reason: `Annulation/Suppression vente #${doc.saleNumber}`,
-        actor,
-      });
-    }
-
-    doc.status = 'CANCELLED';
-    await doc.save();
-    return doc;
+    return withOptionalTxn(this.connection, async (txn) => {
+      const doc = await this.sales.findById(id).session(txn ?? null);
+      if (!doc) throw new NotFoundException('Vente introuvable');
+      if (doc.status === 'CANCELLED') return doc;
+      if (doc.status !== 'COMPLETED') throw new BadRequestException('Vente non remboursable');
+      const cashSession = await this.sessions.requireOpen(doc.sessionId);
+      const rows = await this.payments.find({ saleId: id, status: 'PAID' }).session(txn ?? null);
+      const cash = sumByMethod(rows, 'CASH');
+      const card = sumByMethod(rows, 'CARD');
+      const other = rows.reduce((sum, row) => sum + (row.method !== 'CASH' && row.method !== 'CARD' ? row.amountMinor : 0), 0);
+      const result = await this.sales.db.model('PosCashierSession').updateOne({ _id: doc.sessionId, status: 'OPEN' }, {
+        $inc: { refundsMinor: doc.totalMinor, cashRefundsMinor: cash, cardRefundsMinor: card, otherRefundsMinor: other },
+      }, { session: txn });
+      if (!result.matchedCount) throw new ConflictException('Cette session est fermée');
+      for (const line of doc.lines) {
+        await this.ledger.applyMovement({ variantId: line.variantId, locationId: doc.locationId, type: 'correction', onHandDelta: line.qty, reference: doc.id, reason: `Annulation vente #${doc.saleNumber}`, actor, session: txn });
+      }
+      if (cash) await this.sessions.recordMovement(cashSession, 'CASH_REFUND', cash, actor.id, `Annulation vente #${doc.saleNumber}`, txn, doc.id, `refund:${doc.id}`);
+      await this.payments.updateMany({ saleId: id, status: 'PAID' }, { $set: { status: 'REFUNDED' } }, { session: txn });
+      if (doc.customerId && (doc.loyaltyPointsEarned || doc.loyaltyPointsRedeemed)) {
+        const account = await this.loyalty.getByCustomerId(doc.customerId);
+        if (account) {
+          if (doc.loyaltyPointsRedeemed) await this.loyaltyLedger.apply({ accountId: account.id, type: 'REFUND_REVERSAL', pointsDelta: doc.loyaltyPointsRedeemed, sourceType: 'REFUND', sourceId: doc.id, session: txn });
+          await this.loyaltyLedger.reverseEarnedPoints(account.id, doc.loyaltyPointsEarned, doc.id, txn);
+        }
+      }
+      doc.status = 'CANCELLED';
+      await doc.save({ session: txn });
+      return doc;
+    });
   }
 }
 

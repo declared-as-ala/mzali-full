@@ -30,6 +30,8 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
       <Row label="Carte" value={formatMinor(report.cardSalesMinor)} />
       <Row label="Autre" value={formatMinor(report.otherSalesMinor)} />
       <div className="my-2 border-t border-ink-200" />
+      <Row label="Fond initial" value={formatMinor(Number(report.details?.openingCashMinor ?? 0))} />
+      <Row label="Retours espèces" value={`- ${formatMinor(report.cashRefundsMinor ?? 0)}`} />
       <Row label="Entrées de caisse" value={`+ ${formatMinor(report.cashMovementsAddMinor)}`} />
       <Row label="Sorties de caisse" value={`- ${formatMinor(report.cashMovementsRemoveMinor)}`} />
       <Row label="Tickets" value={String(report.transactionCount)} />

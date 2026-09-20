@@ -72,8 +72,8 @@ type LoyaltyAnalytics = {
 };
 
 type LiveSession = {
-  sessionId: string; cashierId: string; cashierName: string; terminalId: string; registerId: string | null;
-  openedAt: string; revenue: number; transactionCount: number; cashTotal: number; cardTotal: number;
+  sessionId: string; cashierId: string; cashierName: string; terminalId: string; terminalName: string; registerId: string | null;
+  openedAt: string; revenue: number; transactionCount: number; cashTotal: number; cardTotal: number; openingCash: number; expectedCash: number; cashRefunds: number;
 };
 
 type AlertSeverity = 'info' | 'warning' | 'critical';
@@ -872,9 +872,9 @@ function LiveActivityPanel() {
         <ul className="space-y-2">
           {sessions.map((s) => (
             <li key={s.sessionId} className="flex items-center justify-between gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-sm">
-              <span className="flex items-center gap-2 font-bold text-ink-900"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />{s.cashierName}</span>
-              <span className="text-xs text-ink-500">{s.transactionCount} tickets</span>
-              <span className="font-black tabular-nums text-emerald-700">{formatPrice(s.revenue)}</span>
+              <span className="flex items-center gap-2 font-bold text-ink-900"><span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />{s.terminalName} · {s.cashierName}</span>
+              <span className="text-xs text-ink-500">Ouverte · {formatDateTime(s.openedAt)}<br />Fond : {s.openingCash.toFixed(3)} DT · Espèces : {s.cashTotal.toFixed(3)} DT</span>
+              <span className="font-black tabular-nums text-emerald-700">Caisse : {s.expectedCash.toFixed(3)} DT</span>
             </li>
           ))}
         </ul>

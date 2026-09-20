@@ -212,6 +212,31 @@ Chaque tablette/ordinateur de caisse doit être appairé une fois (code d'appair
 
 Un caissier ouvre une session avec un fond de caisse déclaré, vend toute la journée, puis la ferme en comptant l'argent réellement présent. L'écart entre le montant attendu (calculé) et le montant compté est affiché et signalé si trop important. Chaque session peut être rejouée dans un rapport détaillé (ventes, espèces, carte, remises, mouvements de tiroir).
 
+Le bouton **Ouvrir la caisse** demande le fond initial avant d'entrer en caisse.
+Une session déjà ouverte est reprise sans redemander ce montant. Le bandeau
+affiche séparément **Fond** (immuable) et **Caisse** (solde espèces attendu).
+Les paiements carte et virements ne font pas augmenter les espèces.
+
+Dans **Sessions de caisse**, le responsable peut enregistrer une entrée ou
+sortie d'espèces avec un motif et consulter le journal. Ouvrir physiquement le
+tiroir ne change jamais le solde.
+
+### Tickets Z — `/admin/tickets-z`
+
+Après le comptage et la fermeture de chaque session, ouvrir **Tickets Z**.
+Sélectionner la journée puis **Voir → Clôturer la journée** lorsque toutes ses
+sessions sont fermées. Cette action fige le rapport consolidé et bloque une
+nouvelle ouverture pour cette date. **PDF** télécharge le document A4 ;
+**Imprimer** ouvre ce même PDF archivé dans le lecteur du navigateur.
+
+Une journée de caisse correspond à la date d'ouverture de ses sessions, en
+heure de Tunis. Une session oubliée après minuit reste rattachée à sa journée
+d'ouverture ; les heures complètes restent visibles. Les fonds et comptages
+sont cumulés par session, y compris lorsqu'un même fond est réutilisé entre
+deux équipes. Les filtres terminal/caissier sélectionnent les journées sans
+modifier leurs totaux consolidés. Les anciens rapports restent consultables ;
+les données historiques manquantes ne sont pas inventées.
+
 ---
 
 ## Achats — `/admin/suppliers` · `/admin/purchase-orders` · `/admin/goods-receipts`

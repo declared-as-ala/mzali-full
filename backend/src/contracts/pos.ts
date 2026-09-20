@@ -3,6 +3,9 @@
 export type PosSessionStatus = 'OPEN' | 'CLOSED';
 
 export type PosCashierSession = {
+  expectedCashMinor: number;
+  cashRefundsMinor: number;
+  closingNote: string | null;
   id: string;
   cashierId: string;
   terminalId: string;
@@ -27,6 +30,8 @@ export type PosCashierSession = {
 };
 
 export type PosSessionReport = {
+  details?: Record<string, unknown>;
+  cashRefundsMinor?: number;
   type: 'X' | 'Z';
   generatedAt: string;
   expectedCashMinor: number;

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Headers, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditService } from '@/audit/audit.service';
 import { CurrentUser } from '@/auth/current-user.decorator';
@@ -11,6 +11,7 @@ import { QuoteSaleDto } from './dto/quote-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { PosTerminalGuard, PosRequest } from './guards/pos-terminal.guard';
 import { PosSalesService } from './pos-sales.service';
+import { PosSessionsService } from './pos-sessions.service';
 
 @ApiTags('pos/sales')
 @ApiBearerAuth()
@@ -20,6 +21,7 @@ export class PosSalesController {
   constructor(
     private readonly sales: PosSalesService,
     private readonly audit: AuditService,
+    private readonly sessions: PosSessionsService,
   ) {}
 
   @Post()
@@ -30,6 +32,7 @@ export class PosSalesController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Req() posReq: PosRequest,
   ) {
+    if (!idempotencyKey?.trim()) throw new BadRequestException('Idempotency-Key requis');
     const { doc, wasExisting } = await this.sales.create(
       dto,
       {
@@ -97,6 +100,9 @@ export class PosSalesController {
   @Patch(':id')
   @RequirePermissions('pos.edit_sale')
   async update(@Param('id') id: string, @Body() dto: UpdateSaleDto, @CurrentUser() user: RequestUser, @Req() posReq: PosRequest) {
+    const existing = await this.sales.getById(id);
+    if (!existing) throw new NotFoundException('Vente introuvable');
+    await this.sessions.assertAccess(existing.sessionId, posReq.posTerminalId!, user.userId, roleHasPermission(user.role, 'pos.sessions.read'));
     const { before, after } = await this.sales.update(id, dto, { type: 'employee', id: user.userId, name: user.name });
     await this.audit.log({
       actor: { type: 'employee', id: user.userId, name: user.name },
@@ -115,6 +121,9 @@ export class PosSalesController {
   @Delete(':id')
   @RequirePermissions('pos.cancel_sale')
   async delete(@Param('id') id: string, @CurrentUser() user: RequestUser, @Req() posReq: PosRequest) {
+    const existing = await this.sales.getById(id);
+    if (!existing) throw new NotFoundException('Vente introuvable');
+    await this.sessions.assertAccess(existing.sessionId, posReq.posTerminalId!, user.userId, roleHasPermission(user.role, 'pos.sessions.read'));
     const doc = await this.sales.cancel(id, { type: 'employee', id: user.userId, name: user.name });
     await this.audit.log({
       actor: { type: 'employee', id: user.userId, name: user.name },

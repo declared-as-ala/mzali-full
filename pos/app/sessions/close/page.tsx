@@ -12,22 +12,23 @@ export default function CloseSessionPage() {
   const [session, setSession] = useState<PosCashierSession | null | undefined>(undefined);
   const [liveReport, setLiveReport] = useState<PosSessionReport | null>(null);
   const [zReport, setZReport] = useState<PosSessionReport | null>(null);
-  const [countedCash, setCountedCash] = useState<number>(0);
+  const [countedCash, setCountedCash] = useState<string>('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     posFetch('/api/sessions', { cache: 'no-store' })
-      .then((res) => res.json())
+      .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error ?? 'Caisse indisponible'); return data; })
       .then((body: { session: PosCashierSession | null }) => {
         const data = body.session;
         setSession(data);
         if (!data) return;
         return posFetch(`/api/sessions/${data.id}/report?type=X`, { cache: 'no-store' })
-          .then((res) => res.json())
+          .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error ?? 'Caisse indisponible'); return data; })
           .then((report) => setLiveReport(report));
       })
-      .catch(() => {});
+      .catch((e) => { setSession(null); setError(e instanceof Error ? e.message : 'Caisse indisponible'); });
   }, [router]);
 
   async function handleClose() {
@@ -38,11 +39,12 @@ export default function CloseSessionPage() {
       const res = await posFetch(`/api/sessions/${session.id}/close`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ closingCountedCashMinor: countedCash }),
+        body: JSON.stringify({ closingCountedCashMinor: Math.round(Number(countedCash) * 1000), note }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Impossible de fermer la session');
       const reportRes = await posFetch(`/api/sessions/${session.id}/report?type=Z`, { cache: 'no-store' });
+      if (!reportRes.ok) throw new Error('Caisse fermée. Réessayez pour charger le Ticket Z archivé.');
       setZReport(await reportRes.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur');
@@ -64,7 +66,7 @@ export default function CloseSessionPage() {
     return (
       <div className="grid min-h-screen place-items-center bg-ink-100 p-6 text-center">
         <div>
-          <p className="mb-3 font-bold text-ink-700">Aucune session ouverte sur ce terminal.</p>
+          <p className="mb-3 font-bold text-ink-700">{error || 'Aucune session ouverte sur ce terminal.'}</p>
           <button onClick={() => router.replace('/')} className="btn-primary">Retour à la caisse</button>
         </div>
       </div>
@@ -89,18 +91,20 @@ export default function CloseSessionPage() {
             <input
               type="number"
               className="input mb-2 text-center text-2xl font-black"
-              value={countedCash / 1000}
+              aria-label="Montant compté en caisse (DT)"
+              value={countedCash}
               min={0}
-              step={0.1}
-              onChange={(e) => setCountedCash(Math.max(0, Math.round(Number(e.target.value || 0) * 1000)))}
+              step={0.001}
+              onChange={(e) => setCountedCash(e.target.value)}
             />
-            <p className="mb-5 text-center text-sm text-ink-500">{formatMinor(countedCash)}</p>
+            <p className="mb-5 text-center text-sm text-ink-500">{countedCash !== '' && liveReport ? `Écart : ${formatMinor(Math.round(Number(countedCash) * 1000) - liveReport.expectedCashMinor)}` : 'Saisissez le montant réellement compté.'}</p>
 
+            <label className="mb-4 block text-sm font-bold">Note de clôture (facultative)<textarea maxLength={1000} className="input mt-2" value={note} onChange={(e) => setNote(e.target.value)} /></label>
             {error && (
               <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-center text-sm font-bold text-red-700">{error}</p>
             )}
 
-            <button type="button" disabled={busy} onClick={handleClose} className="btn-primary min-h-16 w-full text-lg disabled:opacity-40">
+            <button type="button" disabled={busy || !liveReport || countedCash.trim() === '' || !Number.isFinite(Number(countedCash)) || Number(countedCash) < 0} onClick={handleClose} className="btn-primary min-h-16 w-full text-lg disabled:opacity-40">
               {busy ? 'Fermeture…' : 'FERMER LA CAISSE'}
             </button>
           </div>

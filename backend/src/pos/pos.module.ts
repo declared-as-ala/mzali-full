@@ -1,3 +1,5 @@
+import { PosDailyZController } from './pos-daily-z.controller';
+import { PosDailyZService } from './pos-daily-z.service';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Order, OrderSchema } from '@/orders/order.schema';
@@ -39,6 +41,7 @@ const ReportingMongoose = MongooseModule.forFeature([
 @Module({
   imports: [PosCoreModule, ReportingMongoose],
   controllers: [
+    PosDailyZController,
     PosTerminalsController,
     PosTerminalsAdminController,
     PosCatalogController,
@@ -56,6 +59,7 @@ const ReportingMongoose = MongooseModule.forFeature([
     PosPrinterController,
   ],
   providers: [
+    PosDailyZService,
     PosTerminalGuard, PosAnalyticsService, PosAlertsService, PosReportExportService, PosLostSalesService,
     PosDashboardService, PosCustomersService, PosSuggestionsService,
   ],

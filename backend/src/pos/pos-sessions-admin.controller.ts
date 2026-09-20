@@ -7,7 +7,7 @@ import { AuditService } from '@/audit/audit.service';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { AuthedRequest, JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePermissions } from '@/auth/guards/permissions.guard';
-import { ReportQueryDto } from './dto/session.dto';
+import { CashMovementDto, ReportQueryDto } from './dto/session.dto';
 import { PosCashMovement } from './pos-cash-movement.schema';
 import { PosPayment } from './pos-payment.schema';
 import { PosSale } from './pos-sale.schema';
@@ -70,6 +70,14 @@ export class PosSessionsAdminController {
   @RequirePermissions('pos.sessions.read')
   async sessionCashMovements(@Param('id') id: string) {
     return this.cashMovements.find({ sessionId: id }).sort({ createdAt: -1 });
+  }
+
+  @Post(':id/cash-movements')
+  @RequirePermissions('pos.sessions.review')
+  async moveCash(@Param('id') id: string, @Body() dto: CashMovementDto, @CurrentUser() user: RequestUser) {
+    await this.sessions.addCashMovement(id, dto.type, dto.amountMinor, dto.reason, user.userId);
+    await this.audit.log({ actor: { type: 'employee', id: user.userId, name: user.name }, action: 'pos.cash_movement.create', entityType: 'pos_cashier_session', entityId: id, summary: `${dto.type}: ${dto.amountMinor} millimes — ${dto.reason}` });
+    return toPosSessionContract(await this.sessions.getById(id));
   }
 
   @Post(':id/review')

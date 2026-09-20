@@ -7,6 +7,7 @@ import { canOpenDrawer, completeSaleHardware, DEFAULT_PRINTER_SETTINGS, getBridg
 import { usePosEvents } from '@/hooks/usePosEvents';
 import CategoryRail from './CategoryRail';
 import NavBar from './NavBar';
+import CashSummary from './CashSummary';
 import { DUPLICATE_CART_KEY } from './RecentSalesPanel';
 import ProductGrid from './ProductGrid';
 import ProductOfferModal from './ProductOfferModal';
@@ -103,12 +104,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     return () => clearTimeout(id);
   }, [saleFeedback]);
 
-  useEffect(() => {
-    posFetch('/api/sessions', { cache: 'no-store' })
-      .then((res) => res.json())
-      .then((data: { session: unknown }) => { if (!data.session) router.replace('/sessions/open'); })
-      .catch(() => {});
-  }, [router]);
 
   async function loadCatalog() {
     try {
@@ -521,6 +516,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Erreur de paiement');
       const sale: PosSale = data.after || data;
+      window.dispatchEvent(new Event('pos-cash-changed'));
       if (!wasEditing) {
         const hardware = await completeSaleHardware(sale, printerSettings.autoOpenDrawer);
         setHardwareWarning(hardware.warning);
@@ -633,8 +629,9 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
     <div className="flex h-screen flex-col bg-[#F4F6F9] text-slate-900 selection:bg-blue-600 selection:text-white">
       {/* Top Light Header */}
       <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 py-2.5 shadow-sm pr-36 sm:pr-44">
-        <div className="flex items-center gap-3.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-3.5">
           <NavBar />
+          <CashSummary />
           <div className="flex items-center gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 px-3.5 py-1.5 text-xs font-black text-blue-700">
             <UserCheck size={14} />
             <span>Caissier: {cashierName}</span>
@@ -646,7 +643,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           </span>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-2.5">
           {canOpenDrawer(role) && (
             <button
               type="button"

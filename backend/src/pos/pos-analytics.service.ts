@@ -1,3 +1,4 @@
+import { expectedCash } from './cash-accounting';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -20,6 +21,7 @@ import { PosCashMovement } from './pos-cash-movement.schema';
 import { PosLostSale } from './pos-lost-sale.schema';
 import { PosPayment } from './pos-payment.schema';
 import { PosSale } from './pos-sale.schema';
+import { PosTerminal } from './pos-terminal.schema';
 
 const TZ = 'Africa/Tunis';
 const OPEN_PO_STATUSES = ['SUBMITTED', 'CONFIRMED_BY_SUPPLIER', 'PARTIALLY_RECEIVED'];
@@ -716,15 +718,21 @@ export class PosAnalyticsService {
     const cashierIds = [...new Set(openSessions.map((s) => s.cashierId))];
     const employeeDocs = await this.employees.find({ _id: { $in: cashierIds } }).select({ name: 1 });
     const nameById = new Map(employeeDocs.map((e) => [e.id, e.name]));
+    const terminals = await this.sessions.db.model<PosTerminal>(PosTerminal.name).find({ _id: { $in: openSessions.map((s) => s.terminalId) } }).select({ name: 1 });
+    const terminalNames = new Map(terminals.map((t) => [t.id, t.name]));
     return openSessions.map((s) => ({
       sessionId: s.id,
       cashierId: s.cashierId,
       cashierName: nameById.get(s.cashierId) ?? s.cashierId,
       terminalId: s.terminalId,
+      terminalName: terminalNames.get(s.terminalId) ?? s.terminalId,
       registerId: s.registerId,
       openedAt: s.openedAt.toISOString(),
       revenue: toDinars(s.grossSalesMinor),
       transactionCount: s.transactionCount,
+      openingCash: toDinars(s.openingCashMinor),
+      expectedCash: toDinars(expectedCash(s)),
+      cashRefunds: toDinars(s.cashRefundsMinor ?? 0),
       cashTotal: toDinars(s.cashSalesMinor),
       cardTotal: toDinars(s.cardSalesMinor),
     }));
