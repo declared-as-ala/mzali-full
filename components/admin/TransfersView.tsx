@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ArrowRight, Package, Plus, RefreshCw, Truck, X } from 'lucide-react';
+import { ArrowRight, Plus, RefreshCw, Truck, X } from 'lucide-react';
 import { useToast } from './Toast';
+import CreateTransferDrawer from './CreateTransferDrawer';
 import { formatDateTime } from '@/lib/site-config';
 
 type TransferLine = {
@@ -16,7 +17,7 @@ type TransferLine = {
   missingQuantity: number;
 };
 
-type Transfer = {
+export type Transfer = {
   id: string;
   transferNumber: string;
   sourceLocationId: string;
@@ -26,13 +27,6 @@ type Transfer = {
   note: string | null;
   createdAt: string;
 };
-
-type PickerProduct = { variantId: string; productId: string; id: string; name: string; price: number; image: string | null };
-
-const LOCATIONS = [
-  { code: 'DEPOT', label: 'Dépôt' },
-  { code: 'BOUTIQUE', label: 'Boutique' },
-];
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: 'Brouillon', REQUESTED: 'Demandé', APPROVED: 'Approuvé', PREPARING: 'Préparation',
@@ -47,7 +41,6 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function TransfersView() {
-  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [creating, setCreating] = useState(false);
@@ -65,11 +58,11 @@ export default function TransfersView() {
   useEffect(() => { refresh(); }, []);
 
   return (
-    <div className="p-8">
-      <header className="mb-6 flex items-center justify-between">
+    <div className="p-4 sm:p-8">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black">Transferts de stock</h1>
-          <p className="text-ink-700">Dépôt ↔ Boutique — demande, approbation, expédition, réception.</p>
+          <p className="text-ink-700">Choisissez vos produits, puis les tailles, couleurs et quantités à envoyer.</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={refresh} className="btn-ghost inline-flex items-center gap-2">
@@ -81,7 +74,12 @@ export default function TransfersView() {
         </div>
       </header>
 
-      <div className="overflow-hidden rounded-2xl bg-white shadow-card">
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">{[
+        { label: 'À préparer', value: transfers.filter(t => ['DRAFT', 'REQUESTED', 'APPROVED', 'PREPARING'].includes(t.status)).length, color: 'text-blue-700 bg-blue-50' },
+        { label: 'En route vers la destination', value: transfers.filter(t => ['SHIPPED', 'PARTIALLY_RECEIVED'].includes(t.status)).length, color: 'text-violet-700 bg-violet-50' },
+        { label: 'Transferts reçus', value: transfers.filter(t => t.status === 'RECEIVED').length, color: 'text-emerald-700 bg-emerald-50' },
+      ].map(card => <div key={card.label} className={`rounded-2xl p-4 ${card.color}`}><p className="text-sm font-bold">{card.label}</p><p className="mt-1 text-3xl font-black">{card.value}</p></div>)}</div>
+      <div className="overflow-x-auto rounded-2xl border border-ink-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="bg-ink-100 text-xs font-black uppercase text-ink-700">
             <tr>
@@ -124,7 +122,7 @@ export default function TransfersView() {
       {creating && (
         <CreateTransferDrawer
           onClose={() => setCreating(false)}
-          onCreated={() => { setCreating(false); refresh(); }}
+          onCreated={(created) => { setCreating(false); setDetail(created); refresh(); }}
         />
       )}
 
@@ -138,110 +136,6 @@ export default function TransfersView() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function CreateTransferDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const toast = useToast();
-  const [source, setSource] = useState('DEPOT');
-  const [destination, setDestination] = useState('BOUTIQUE');
-  const [products, setProducts] = useState<PickerProduct[]>([]);
-  const [search, setSearch] = useState('');
-  const [lines, setLines] = useState<{ productId: string; variantId: string; name: string; requestedQuantity: number }[]>([]);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    const c = new AbortController();
-    fetch(`/api/admin/variant-stock?${new URLSearchParams({ locationId: source, search })}`, { signal: c.signal }).then((r) => r.json()).then((data) => setProducts((data.items ?? []).map((v: { variantId: string; productId: string; productName: string; size: string; color: string }) => ({ ...v, id: v.variantId, name: [v.productName, v.size, v.color].filter(Boolean).join(' / '), price: 0, image: null })))).catch(() => {});
-    return () => c.abort();
-  }, [source, search]);
-
-  const filtered = products.filter((p) => p.name.toLowerCase().includes(search.toLowerCase())).slice(0, 8);
-
-  function addLine(p: PickerProduct) {
-    if (lines.some((l) => l.variantId === p.id)) return;
-    setLines((prev) => [...prev, { productId: p.productId, variantId: p.variantId, name: p.name, requestedQuantity: 1 }]);
-    setSearch('');
-  }
-
-  async function submit() {
-    if (source === destination) { toast.error('Source et destination doivent différer'); return; }
-    if (!lines.length) { toast.error('Ajoutez au moins un produit'); return; }
-    setBusy(true);
-    try {
-      const res = await fetch('/api/admin/inventory/transfers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceLocationId: source,
-          destinationLocationId: destination,
-          lines: lines.map((l) => ({ productId: l.productId, variantId: l.variantId, requestedQuantity: l.requestedQuantity })),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { toast.error(data?.error ?? 'Erreur'); return; }
-      toast.success('Transfert demandé');
-      onCreated();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
-      <div className="h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-xl font-black text-ink-900">Nouveau transfert</h2>
-          <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg text-ink-500 hover:bg-ink-100"><X size={18} /></button>
-        </div>
-
-        <div className="mb-4 grid grid-cols-2 gap-3">
-          <label className="block text-sm font-bold">Source
-            <select className="input mt-1" value={source} onChange={(e) => setSource(e.target.value)}>
-              {LOCATIONS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-            </select>
-          </label>
-          <label className="block text-sm font-bold">Destination
-            <select className="input mt-1" value={destination} onChange={(e) => setDestination(e.target.value)}>
-              {LOCATIONS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-            </select>
-          </label>
-        </div>
-
-        <label className="mb-2 block text-sm font-bold">Ajouter un produit
-          <input className="input mt-1" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        </label>
-        {search && (
-          <div className="mb-4 max-h-40 overflow-y-auto rounded-xl border border-ink-200">
-            {filtered.map((p) => (
-              <button key={p.id} onClick={() => addLine(p)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-ink-100">
-                <Package size={14} className="text-ink-500" /> {p.name}
-              </button>
-            ))}
-            {!filtered.length && <p className="px-3 py-2 text-sm text-ink-500">Aucun résultat</p>}
-          </div>
-        )}
-
-        <div className="mb-5 space-y-2">
-          {lines.map((l) => (
-            <div key={l.variantId} className="flex items-center gap-2 rounded-xl bg-ink-100 px-3 py-2">
-              <span className="min-w-0 flex-1 truncate text-sm font-bold">{l.name}</span>
-              <input
-                type="number" min={1} className="input w-20 py-1 text-center"
-                value={l.requestedQuantity}
-                onChange={(e) => setLines((prev) => prev.map((x) => (x.variantId === l.variantId ? { ...x, requestedQuantity: Math.max(1, Number(e.target.value)) } : x)))}
-              />
-              <button onClick={() => setLines((prev) => prev.filter((x) => x.variantId !== l.variantId))} className="text-ink-500 hover:text-red-600"><X size={16} /></button>
-            </div>
-          ))}
-          {!lines.length && <p className="text-sm text-ink-500">Aucun produit ajouté.</p>}
-        </div>
-
-        <button disabled={busy} onClick={submit} className="btn-primary w-full disabled:opacity-40">
-          {busy ? 'Envoi…' : 'Demander le transfert'}
-        </button>
-      </div>
     </div>
   );
 }

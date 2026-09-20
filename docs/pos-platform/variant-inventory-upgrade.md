@@ -185,7 +185,7 @@ and storefront/Admin and POS production builds passed. The final isolated read-o
 preflight found zero duplicate keys/SKUs, negative balances, orphans, missing ledger
 rows or latest-snapshot mismatches. `git diff --check` passed.
 
-## Simplified entry follow-up (local, pending deployment)
+## Simplified entry follow-up (deployed 680a054 on 2026-09-21)
 
 The stock pages now open the product's size/color stock form directly through
 **Configurer le stock**. Saved options generate the combinations automatically;
@@ -203,3 +203,22 @@ quantity distribution occurs. New combinations added later start at zero.
 Example verified with real Mongo transactions: create product, receive 10 into
 DEPOT, transfer/receive 3 into BOUTIQUE → DEPOT 7, BOUTIQUE 3. First-stock requests
 cannot overwrite existing legacy stock or add directly to BOUTIQUE.
+
+
+## Stock and transfer interface follow-up — local, not deployed
+
+- [x] Remove Inventaires and Mouvements navigation and stock-row movement links; retain historical records and backend audit functionality.
+- [x] Combine configuration and adjustments under « Configurer le stock et ajuster ».
+- [x] Lock adjustments to the stock page's location. Boutique cannot edit Dépôt quantities or change global variant configuration.
+- [x] Display matching stock dashboards for Dépôt and Boutique: physical, available, reserved and exhausted combinations.
+- [x] Print the complete location stock report across all pages, with size/color details and totals, independently of table filters.
+- [x] Show products on transfer-field focus without mandatory search.
+- [x] Select multiple exact size/color quantities with availability limits and a selection summary.
+- [x] Keep approval, shipment and receipt steps; preserve server stock guards.
+
+Usage: create product/options → configure and receive stock in Dépôt → create a
+transfer with quantities per combination → approve → ship → receive in Boutique.
+Boutique corrections affect Boutique only. Initial legacy allocation stays in
+Dépôt because it must preserve both existing location totals.
+
+Validation: frontend production build, TypeScript, targeted lint and 17 frontend tests passed. Existing unrelated lint warnings remain. POS changes requested during this follow-up were reverted at user request; existing POS behavior is unchanged.

@@ -6,7 +6,7 @@ import { productStockRows, stockCombinationKey, type StockOption, type StockRow 
 
 type Variant = { id: string; sku: string; attributes: Record<string, string>; active: boolean; retired: boolean; stock: { locationId: string; onHand: number; reserved: number }[] };
 type Config = { options: StockOption[]; model: string; variants: Variant[] };
-export default function VariantMatrix({ productId, onBusyChange }: { productId: string; onBusyChange?: (busy: boolean) => void }) {
+export default function VariantMatrix({ productId, onBusyChange, initialLocation = 'DEPOT' }: { productId: string; onBusyChange?: (busy: boolean) => void; initialLocation?: 'DEPOT' | 'BOUTIQUE' }) {
   const href = useAdminHref();
   const [config, setConfig] = useState<Config | null>(null);
   const [rows, setRows] = useState<StockRow[]>([]);
@@ -67,10 +67,13 @@ export default function VariantMatrix({ productId, onBusyChange }: { productId: 
     <div><h3 className="text-lg font-black">Stock par taille et couleur</h3><p className="mt-1 text-sm text-ink-500">Toutes les combinaisons de vos options sont affichées automatiquement. Le prix est celui du produit.</p></div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {message && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
-    {!config ? (!error && <p>Chargement…</p>) : config.model === 'MATRIX' ? <>
+    {config && current.length > 0 && (config.model === 'MATRIX'
+      ? <StockAdjustment variants={current} location={initialLocation} busy={busy} setBusy={setBusy} onSaved={load} onError={setError} onMessage={setMessage} />
+      : <details className="rounded-xl border bg-white p-3"><summary className="cursor-pointer text-sm font-bold">Corriger le stock total existant</summary><div className="mt-3"><StockAdjustment variants={current} location={initialLocation} busy={busy} setBusy={setBusy} onSaved={load} onError={setError} onMessage={setMessage} /></div></details>)}
+    {!config ? (!error && <p>Chargement…</p>) : initialLocation === 'BOUTIQUE' ? <p className="rounded-xl bg-blue-50 p-4 text-sm">Vous gérez uniquement le stock Boutique. Pour recevoir des pièces du Dépôt, utilisez <Link className="font-bold underline" href={href('/transfers')}>Transferts</Link>.{config.model !== 'MATRIX' && ' La répartition initiale par taille et couleur se fait depuis Stock Dépôt.'}</p> : config.model === 'MATRIX' ? <>
       <p className="rounded-xl bg-blue-50 p-3 text-sm font-bold">Dépôt : {total('DEPOT')} · Boutique : {total('BOUTIQUE')}</p>
       <div className="overflow-x-auto rounded-xl border"><table className="w-full text-left text-sm"><thead className="bg-ink-50"><tr>{['Taille', 'Couleur', 'Dépôt', 'Boutique', 'En vente'].map(h => <th className="p-3" key={h}>{h}</th>)}</tr></thead><tbody>{current.map(v => <tr className="border-t" key={v.id}><td className="p-3 font-bold">{v.attributes.size}</td><td className="p-3">{v.attributes.color}</td><td className="p-3">{v.stock.find(s => s.locationId === 'DEPOT')?.onHand ?? 0}</td><td className="p-3">{v.stock.find(s => s.locationId === 'BOUTIQUE')?.onHand ?? 0}</td><td className="p-3"><input type="checkbox" checked={v.active} disabled={busy} aria-label={`En vente : ${v.attributes.size} ${v.attributes.color}`} onChange={() => void toggle(v)} /></td></tr>)}</tbody></table></div>
-      <div className="flex flex-wrap gap-2"><Link className="btn-ghost" href={href('/stock-depot')}>Modifier le stock Dépôt</Link><Link className="btn-ghost" href={href('/transfers')}>Transférer vers la Boutique</Link></div>
+      <div className="flex flex-wrap gap-2"><Link className="btn-ghost" href={href('/transfers')}>Transférer vers la Boutique</Link></div>
       {missing.length > 0 && <button type="button" className="btn-primary" disabled={busy} onClick={() => void save(true)}>Ajouter les {missing.length} nouvelles combinaisons des options</button>}
     </> : rows.length === 0 ? <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Ajoutez les tailles et les couleurs dans l’onglet Options, enregistrez le produit, puis revenez ici.</p> : <>
       <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-900"><p className="font-bold">{initialStock ? 'Premier stock au Dépôt' : `Stock à répartir : Dépôt ${total('DEPOT')} · Boutique ${total('BOUTIQUE')}`}</p><p className="mt-1">Indiquez combien de pièces vous avez pour chaque taille et couleur. Pour approvisionner la Boutique, utilisez ensuite Transferts.</p></div>
@@ -78,4 +81,21 @@ export default function VariantMatrix({ productId, onBusyChange }: { productId: 
       <div className="sticky bottom-0 space-y-3 rounded-xl border bg-white p-4 shadow-sm"><p aria-live="polite" className={`text-sm font-bold ${valid ? 'text-emerald-700' : 'text-amber-800'}`}>{initialStock ? `${allocated('depot')} pièces à ajouter au Dépôt` : valid ? 'Tout le stock est réparti.' : `Reste à répartir : Dépôt ${remainingDepot} · Boutique ${remainingBoutique}`}</p>{!initialStock && (remainingDepot < 0 || remainingBoutique < 0) && <p className="text-sm text-red-700">Les quantités saisies dépassent le stock existant.</p>}<button type="button" className="btn-primary w-full sm:w-auto" disabled={busy || !valid} onClick={() => void save()}>{busy ? 'Enregistrement…' : 'Enregistrer le stock'}</button></div>
     </>}
   </section>;
+}
+
+function StockAdjustment({ variants, location, busy, setBusy, onSaved, onError, onMessage }: { variants: Variant[]; location: 'DEPOT' | 'BOUTIQUE'; busy: boolean; setBusy: (v: boolean) => void; onSaved: () => Promise<void>; onError: (s: string) => void; onMessage: (s: string) => void }) {
+  const [variantId, setVariantId] = useState(variants[0]?.id ?? '');
+  const locationId = location;
+  const [qty, setQty] = useState(''), [reason, setReason] = useState('');
+  const selected = variants.find(v => v.id === variantId) ?? variants[0];
+  const stock = selected?.stock.find(s => s.locationId === locationId);
+  async function save() {
+    setBusy(true); onError(''); onMessage('');
+    try {
+      const res = await fetch('/api/admin/variant-stock/adjust', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ variantId: selected.id, locationId, qty: Number(qty), reason }) });
+      const data = await res.json(); if (!res.ok) throw new Error(data.error ?? 'Ajustement impossible');
+      await onSaved(); setQty(''); setReason(''); onMessage('Stock ajusté.');
+    } catch(e) { onError(e instanceof Error ? e.message : 'Ajustement impossible'); } finally { setBusy(false); }
+  }
+  return <fieldset disabled={busy} className="space-y-3 rounded-xl bg-blue-50 p-4"><legend className="sr-only">Ajuster le stock</legend><h4 className="font-bold">Ajouter ou retirer des pièces</h4><div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Taille / couleur<select className="input mt-1" value={selected?.id ?? ''} onChange={e => setVariantId(e.target.value)}>{variants.map(v => <option key={v.id} value={v.id}>{[v.attributes.size, v.attributes.color].filter(Boolean).join(' / ') || 'Stock total du produit'}</option>)}</select></label><div className="text-sm">Emplacement<p className="mt-1 rounded-xl border bg-white p-3 font-bold">{locationId === 'DEPOT' ? 'Dépôt' : 'Boutique'}</p></div><label className="text-sm">Quantité à ajouter (+) ou retirer (−)<input className="input mt-1" type="number" step={1} value={qty} onChange={e => setQty(e.target.value)} placeholder="Ex. 20 ou -5" /></label><label className="text-sm">Motif<input className="input mt-1" value={reason} onChange={e => setReason(e.target.value)} placeholder="Ex. réception de marchandises" /></label></div><p className="text-sm">Stock actuel : <strong>{stock?.onHand ?? 0}</strong>{Number.isSafeInteger(Number(qty)) && qty !== '' && <> → Après ajustement : <strong>{(stock?.onHand ?? 0) + Number(qty)}</strong></>}</p><button type="button" onClick={() => void save()} disabled={busy || !selected || !Number.isSafeInteger(Number(qty)) || !Number(qty) || !reason.trim()} className="btn-primary">Enregistrer l’ajustement</button></fieldset>;
 }

@@ -43,8 +43,6 @@ const SECTIONS = [
       { href: '/stock-depot', label: 'Stock Dépôt', icon: Boxes, exact: false },
       { href: '/stock-boutique', label: 'Stock Boutique', icon: Store, exact: false },
       { href: '/transfers', label: 'Transferts', icon: ArrowLeftRight, exact: false },
-      { href: '/stock-movements', label: 'Mouvements de stock', icon: ScrollText, exact: false },
-      { href: '/stocktakes', label: 'Inventaires', icon: ClipboardList, exact: false },
     ],
   },
   {

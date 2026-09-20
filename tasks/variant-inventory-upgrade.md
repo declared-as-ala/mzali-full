@@ -80,7 +80,7 @@ No product allocation or inventory migration was activated.
 
 Deployment run: https://github.com/declared-as-ala/mzali-full/actions/runs/35543584820
 
-## Simplified stock entry — local follow-up, not yet deployed
+## Simplified stock entry — deployed 2026-09-21
 
 - [x] Generate all size/color combinations automatically from saved product options.
 - [x] Remove per-combination price, SKU and manual generation controls from the form.
@@ -94,4 +94,27 @@ Normal flow: Products (details, shared price, options) → Stock Dépôt (quanti
 → Transfers (Dépôt to Boutique). Initial entry is explicit, audited and atomic.
 
 Follow-up verification: backend/frontend typechecks, lint and production builds passed.
-Existing unrelated frontend lint warnings remain. Simplification is not deployed yet.
+Existing unrelated frontend lint warnings remain. Simplification deployed as 680a054; all application containers healthy.
+
+Deployment of `680a0546246beb31e063ba2a280fa9decf9649ca` succeeded after CI and
+pre-deployment backups. API, worker, storefront and POS run the matching images.
+Workflow: https://github.com/declared-as-ala/mzali-full/actions/runs/35544573959
+
+
+## Stock and transfer interface follow-up — local, not deployed
+
+- [x] Remove Inventaires and Mouvements navigation and stock-row movement links; retain historical records and backend audit functionality.
+- [x] Combine configuration and adjustments under « Configurer le stock et ajuster ».
+- [x] Lock adjustments to the stock page's location. Boutique cannot edit Dépôt quantities or change global variant configuration.
+- [x] Display matching stock dashboards for Dépôt and Boutique: physical, available, reserved and exhausted combinations.
+- [x] Print the complete location stock report across all pages, with size/color details and totals, independently of table filters.
+- [x] Show products on transfer-field focus without mandatory search.
+- [x] Select multiple exact size/color quantities with availability limits and a selection summary.
+- [x] Keep approval, shipment and receipt steps; preserve server stock guards.
+
+Usage: create product/options → configure and receive stock in Dépôt → create a
+transfer with quantities per combination → approve → ship → receive in Boutique.
+Boutique corrections affect Boutique only. Initial legacy allocation stays in
+Dépôt because it must preserve both existing location totals.
+
+Validation: frontend production build, TypeScript, targeted lint and 17 frontend tests passed. Existing unrelated lint warnings remain. POS changes requested during this follow-up were reverted at user request; existing POS behavior is unchanged.
