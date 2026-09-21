@@ -118,3 +118,16 @@ Boutique corrections affect Boutique only. Initial legacy allocation stays in
 Dépôt because it must preserve both existing location totals.
 
 Validation: frontend production build, TypeScript, targeted lint and 17 frontend tests passed. Existing unrelated lint warnings remain. POS changes requested during this follow-up were reverted at user request; existing POS behavior is unchanged.
+
+
+## Variant totals follow-up — local, not deployed
+
+- Remove the legacy total correction form and manual reason field.
+- Rename Stock Dépôt to Stock; remove Boutique configuration/adjustment action.
+- Initial variant configuration explicitly replaces the historical Dépôt total
+  with the sum of entered quantities (e.g. Vert XL 50 + Vert L 20 = 70).
+- Save the replacement atomically with ledger corrections and preserve history.
+- Preserve existing Boutique totals during allocation; reservation and open
+  transfer/session checks still apply. No production quantities changed automatically.
+- This replaces the earlier requirement to match the historical Dépôt total;
+  API callers without the explicit replacement flag retain the conservation rule.

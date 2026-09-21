@@ -16,6 +16,7 @@ export class ActivateMatrixDto {
   @IsString() @MaxLength(500) reason!: string;
   @IsOptional() @IsBoolean() dryRun?: boolean;
   @IsOptional() @IsBoolean() initialStock?: boolean;
+  @IsOptional() @IsBoolean() replaceDepotStock?: boolean;
 }
 export class VariantAdjustmentDto {
   @IsString() variantId!: string;

@@ -254,7 +254,7 @@ function LoginForm() {
             </div>
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 backdrop-blur-xl hover:border-slate-700 transition">
               <Boxes size={20} className="text-indigo-400 mb-2" />
-              <p className="text-sm font-bold text-white">Stock Dépôt</p>
+              <p className="text-sm font-bold text-white">Stock</p>
               <p className="text-xs text-slate-500 mt-0.5">Inventaire synchro</p>
             </div>
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 backdrop-blur-xl hover:border-slate-700 transition">

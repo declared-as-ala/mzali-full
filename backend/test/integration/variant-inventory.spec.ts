@@ -225,4 +225,38 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     expect(await stock(v.id)).toBe(5);
   });
 
+  it('replaces legacy depot stock with the sum of entered variants and keeps its audit history', async () => {
+    const p = await db.model<Product>(Product.name).create({ name: 'Green', slug: 'green', regularPriceMinor: 1000 });
+    const old = await variants.generateDefaultVariant(p.id);
+    await ledger.applyMovement({ variantId: old.id, locationId: 'DEPOT', onHandDelta: 4168, type: 'migration_init', actor });
+    const dto = { replaceDepotStock: true, reason: 'Stock saisi par variante', rows: [
+      { size: 'XL', color: 'Vert', sku: 'GREEN-XL', active: true, depot: 50, boutique: 0 },
+      { size: 'L', color: 'Vert', sku: 'GREEN-L', active: true, depot: 20, boutique: 0 },
+    ] };
+    const count = await db.model(StockMovement.name).countDocuments();
+    await matrix.activate(p.id, { ...dto, dryRun: true }, actor);
+    expect(await stock(old.id)).toBe(4168);
+    expect(await db.model(StockMovement.name).countDocuments()).toBe(count);
+    await matrix.activate(p.id, dto, actor);
+    const active = await variants.allForProducts([p.id]);
+    expect((await Promise.all(active.map(v => stock(v.id)))).reduce((a, b) => a + b, 0)).toBe(70);
+    expect(await stock(old.id)).toBe(0);
+    expect(await db.model(StockMovement.name).countDocuments({ variantId: old.id, type: 'migration_init' })).toBe(1);
+    await expect(matrix.activate(p.id, dto, actor)).rejects.toThrow('déjà configuré');
+  });
+  it('does not erase boutique stock when replacing the depot total', async () => {
+    const p = await db.model<Product>(Product.name).create({ name: 'Both', slug: 'both', regularPriceMinor: 1000 });
+    const old = await variants.generateDefaultVariant(p.id);
+    await ledger.applyMovement({ variantId: old.id, locationId: 'DEPOT', onHandDelta: 100, type: 'migration_init', actor });
+    await ledger.applyMovement({ variantId: old.id, locationId: 'BOUTIQUE', onHandDelta: 3, type: 'migration_init', actor });
+    const dto = { replaceDepotStock: true, reason: 'Stock par variante', rows: [{ size: 'XL', color: 'Vert', sku: 'BOTH-XL', active: true, depot: 50, boutique: 0 }] };
+    await expect(matrix.activate(p.id, dto, actor)).rejects.toThrow('conserver');
+    expect(await stock(old.id)).toBe(100);
+    expect(await stock(old.id, 'BOUTIQUE')).toBe(3);
+    await matrix.activate(p.id, { ...dto, rows: [{ ...dto.rows[0], boutique: 3 }] }, actor);
+    const [v] = await variants.allForProducts([p.id]);
+    expect(await stock(v.id)).toBe(50);
+    expect(await stock(v.id, 'BOUTIQUE')).toBe(3);
+  });
+
 });

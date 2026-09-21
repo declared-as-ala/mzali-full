@@ -276,7 +276,7 @@ export default function StockView({
           />
           <KpiCard
             icon={<Archive size={20} />}
-            title="Stock Dépôt"
+            title="Stock"
             value={kpis.totalDepot}
             subtitle="unités en entrepôt"
             color="green"

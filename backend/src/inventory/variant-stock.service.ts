@@ -58,7 +58,7 @@ export class VariantStockService {
         const before = { DEPOT: 0, BOUTIQUE: 0 };
         for (const s of stock) before[s.locationId as keyof typeof before] += s.quantityOnHand;
         if (dto.initialStock && (before.DEPOT !== 0 || before.BOUTIQUE !== 0 || dto.rows.some(r => r.boutique !== 0))) throw new BadRequestException('Le premier stock doit être ajouté au Dépôt sur un produit sans stock existant.');
-        if (!dto.initialStock && (dto.rows.reduce((s, r) => s + r.depot, 0) !== before.DEPOT || dto.rows.reduce((s, r) => s + r.boutique, 0) !== before.BOUTIQUE)) throw new BadRequestException(`Les allocations doivent conserver Dépôt ${before.DEPOT} et Boutique ${before.BOUTIQUE}. Corrigez le stock séparément avec un motif si nécessaire.`);
+        if (!dto.initialStock && ((!dto.replaceDepotStock && dto.rows.reduce((s, r) => s + r.depot, 0) !== before.DEPOT) || dto.rows.reduce((s, r) => s + r.boutique, 0) !== before.BOUTIQUE)) throw new BadRequestException(dto.replaceDepotStock ? `Les allocations doivent conserver le stock Boutique existant : ${before.BOUTIQUE}.` : `Les allocations doivent conserver Dépôt ${before.DEPOT} et Boutique ${before.BOUTIQUE}.`);
         const clash = await this.variants.exists({ sku: { $in: dto.rows.map(r => r.sku.trim()) } }).session(session);
         if (clash) throw new BadRequestException('Un SKU est déjà utilisé. Les SKU historiques restent réservés.');
         if (dto.dryRun) return { dryRun: true, before, variantCount: dto.rows.length };
