@@ -41,7 +41,6 @@ const SECTIONS = [
     label: 'Stock',
     items: [
       { href: '/stock-depot', label: 'Stock', icon: Boxes, exact: false },
-      { href: '/stock-boutique', label: 'Stock Boutique', icon: Store, exact: false },
       { href: '/transfers', label: 'Transferts', icon: ArrowLeftRight, exact: false },
     ],
   },

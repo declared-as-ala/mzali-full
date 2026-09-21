@@ -131,3 +131,11 @@ Validation: frontend production build, TypeScript, targeted lint and 17 frontend
   transfer/session checks still apply. No production quantities changed automatically.
 - This replaces the earlier requirement to match the historical Dépôt total;
   API callers without the explicit replacement flag retain the conservation rule.
+
+
+## Single stock page — local follow-up
+
+Remove the separate Stock Boutique navigation/page; old URLs redirect to Stock.
+Stock now has a Dépôt/Boutique location selector with statistics, printing and
+location-specific adjustments for either selection. This corrects the earlier
+interpretation that Boutique adjustments should be removed.
