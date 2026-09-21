@@ -1,5 +1,5 @@
 'use client';
-import { ShoppingBag } from 'lucide-react';
+import { formatMinor } from '@/lib/money';
 import type { PosCatalogItem } from '@/types/pos';
 
 export default function QuickPickRail({
@@ -11,7 +11,7 @@ export default function QuickPickRail({
       <p className="mb-2 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-500">
         {icon} {title}
       </p>
-      <div className="flex gap-2.5 overflow-x-auto pb-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-2 overflow-x-auto pb-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((item) => {
           const outOfStock = item.stockTracked !== false && item.boutiqueAvailable <= 0;
           return (
@@ -20,21 +20,17 @@ export default function QuickPickRail({
               type="button"
               onClick={() => !outOfStock && onSelect(item)}
               disabled={outOfStock}
-              className={`group flex h-14 w-14 flex-none items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition duration-200 active:scale-95 ${
-                outOfStock ? 'opacity-30 cursor-not-allowed' : 'hover:border-slate-300 hover:shadow-md'
+              className={`group flex h-9 flex-none items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-xs transition duration-150 active:scale-95 ${
+                outOfStock ? 'opacity-40 cursor-not-allowed' : 'hover:border-blue-400 hover:bg-blue-50/30 hover:shadow-xs'
               }`}
               title={item.name}
             >
-              <div className="h-full w-full overflow-hidden bg-slate-50">
-                {item.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover transition-transform group-hover:scale-110" draggable={false} />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-slate-300">
-                    <ShoppingBag size={18} />
-                  </div>
-                )}
-              </div>
+              <span className="max-w-[140px] truncate text-[11.5px] font-bold text-slate-800 group-hover:text-blue-700">
+                {item.name}
+              </span>
+              <span className="shrink-0 text-[11.5px] font-black text-emerald-600">
+                {formatMinor(item.priceMinor)}
+              </span>
             </button>
           );
         })}

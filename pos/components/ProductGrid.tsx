@@ -1,5 +1,5 @@
 'use client';
-import { PackageX, ShoppingBag } from 'lucide-react';
+import { PackageX } from 'lucide-react';
 import { formatMinor } from '@/lib/money';
 import type { PosCatalogItem } from '@/types/pos';
 
@@ -18,7 +18,7 @@ export default function ProductGrid({ items, onSelect, onUnavailableAttempt }: {
     );
   }
   return (
-    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 pb-4">
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 pb-4">
       {items.map((item) => {
         const outOfStock = item.stockTracked !== false && item.boutiqueAvailable <= 0;
         return (
@@ -26,35 +26,32 @@ export default function ProductGrid({ items, onSelect, onUnavailableAttempt }: {
             key={item.productId}
             type="button"
             onClick={() => (outOfStock ? onUnavailableAttempt?.(item) : onSelect(item))}
-            className={`group relative flex min-h-[150px] flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white text-left shadow-sm transition duration-200 ease-out active:scale-[.97] ${
-              outOfStock ? 'opacity-40 hover:opacity-60' : 'hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg hover:shadow-slate-900/5'
+            className={`group relative flex min-h-[68px] flex-col justify-between rounded-xl border p-2 sm:p-2.5 text-left shadow-xs transition duration-150 ease-out active:scale-[.97] ${
+              outOfStock
+                ? 'border-slate-200 bg-slate-50/70 opacity-40 hover:opacity-60'
+                : 'border-slate-200/90 bg-white hover:-translate-y-0.5 hover:border-blue-400 hover:bg-blue-50/30 hover:shadow-md hover:shadow-slate-900/5'
             }`}
           >
-            <div className="relative h-24 w-full shrink-0 overflow-hidden bg-slate-100">
-              {item.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" draggable={false} />
-              ) : (
-                <div className="grid h-full w-full place-items-center text-slate-400 text-[10px] font-semibold">
-                  <ShoppingBag size={18} className="mb-0.5 text-slate-300" />
-                  Mzali Product
-                </div>
-              )}
+            <div className="flex items-start justify-between gap-1">
+              <p className="line-clamp-2 text-[12px] sm:text-[12.5px] font-bold leading-tight text-slate-800 group-hover:text-blue-700 transition-colors">
+                {item.name}
+              </p>
               <span
-                className={`absolute right-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-black tracking-wider uppercase shadow-sm ${
+                className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-black tracking-wider uppercase shadow-xs ${
                   outOfStock
-                    ? 'bg-rose-500 text-white'
+                    ? 'bg-rose-100 text-rose-700'
                     : item.boutiqueAvailable <= 3
-                    ? 'bg-amber-500 text-white'
-                    : 'bg-white/95 text-emerald-700 border border-emerald-200'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-slate-100 text-slate-600'
                 }`}
               >
-                {item.stockTracked === false ? 'Disponible' : outOfStock ? 'Épuisé' : item.boutiqueAvailable}
+                {item.stockTracked === false ? '✓' : outOfStock ? 'Épuisé' : item.boutiqueAvailable}
               </span>
             </div>
-            <div className="flex flex-1 flex-col justify-between gap-1 p-2">
-              <p className="line-clamp-2 text-[11.5px] font-bold leading-tight text-slate-800 group-hover:text-blue-600 transition">{item.name}</p>
-              <p className="text-[13px] font-black text-emerald-600">{formatMinor(item.priceMinor)}</p>
+            <div className="mt-1 flex items-baseline justify-between">
+              <span className="text-[13px] sm:text-[14px] font-black text-emerald-600">
+                {formatMinor(item.priceMinor)}
+              </span>
             </div>
           </button>
         );
