@@ -76,6 +76,11 @@
 	request_body {
 		max_size 25MB
 	}
+	# Next.js static assets are content-hashed — serve them with immutable
+	# Cache-Control so the browser never re-requests them after a deploy.
+	@static_assets path /_next/static/*
+	header @static_assets Cache-Control "public, max-age=31536000, immutable"
+
 	# /api/events is a long-lived SSE stream (inventory/live updates) proxied
 	# by the POS app itself — disable response buffering so chunks flush
 	# immediately instead of queuing behind Caddy's default buffer.

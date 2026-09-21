@@ -75,6 +75,7 @@ bash "$SCRIPT_DIR/backup-mongodb.sh"
 bash "$SCRIPT_DIR/backup-minio.sh"
 compose pull
 compose up -d --remove-orphans
+compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
 
 wait_for_container() {
   local service="$1" probe="$2" attempts="${3:-30}"
