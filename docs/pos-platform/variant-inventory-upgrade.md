@@ -243,3 +243,14 @@ Remove the separate Stock Boutique navigation/page; old URLs redirect to Stock.
 Stock now has a Dépôt/Boutique location selector with statistics, printing and
 location-specific adjustments for either selection. This corrects the earlier
 interpretation that Boutique adjustments should be removed.
+
+
+## Product stock table — local, not deployed
+
+- Stock list groups variants into one product row before filtering/pagination.
+- Clicking a product name or Ajuster le stock opens a color-row / size-column table.
+- Show color, size and overall totals; absent combinations stay unavailable.
+- Initial allocation and existing stock use the same table layout.
+- Existing quantities are edited as absolute counts, saved in one transaction
+  with location isolation, audit movements and optimistic stock checks.
+- Keep variant-level lists for transfers and full detailed print reports.

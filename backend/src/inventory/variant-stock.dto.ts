@@ -24,3 +24,13 @@ export class VariantAdjustmentDto {
   @IsInt() qty!: number;
   @IsString() @MaxLength(500) reason!: string;
 }
+
+export class StockQuantityRowDto {
+  @IsString() variantId!: string;
+  @IsInt() @Min(0) quantity!: number;
+  @IsInt() @Min(0) expectedQuantity!: number;
+}
+export class SetStockQuantitiesDto {
+  @IsIn(['DEPOT', 'BOUTIQUE']) locationId!: string;
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => StockQuantityRowDto) rows!: StockQuantityRowDto[];
+}

@@ -7,7 +7,7 @@ import { Variant } from '@/catalog/variant.schema';
 import { StockItem } from './stock-item.schema';
 import { StockMovement } from './stock-movement.schema';
 import { StockLedgerService } from './stock-ledger.service';
-import { ActivateMatrixDto, VariantAdjustmentDto } from './variant-stock.dto';
+import { ActivateMatrixDto, SetStockQuantitiesDto, VariantAdjustmentDto } from './variant-stock.dto';
 
 export const combinationKey = (size: string, color: string) => JSON.stringify([size.trim().normalize('NFC').toLocaleLowerCase('fr'), color.trim().normalize('NFC').toLocaleLowerCase('fr')]);
 
@@ -90,6 +90,20 @@ export class VariantStockService {
       const onHand = s?.quantityOnHand ?? 0, reserved = s?.quantityReserved ?? 0;
       return { variantId: v.id, productId: v.productId, productName: p.name, size: v.attributes.size ?? '', color: v.attributes.color ?? '', sku: v.sku, active: v.active, migrationRequired: p.inventoryModel !== 'MATRIX', onHand, reserved, available: onHand - reserved, threshold: v.lowStockThreshold ?? s?.lowStockThreshold ?? 3, locationId };
     });
+    if (query.groupBy === 'product') {
+      const grouped = new Map<string, typeof rows[number]>();
+      for (const row of rows) {
+        const existing = grouped.get(row.productId);
+        if (existing) {
+          existing.onHand += row.onHand;
+          existing.reserved += row.reserved;
+          existing.available += row.available;
+          existing.threshold += row.threshold;
+          existing.active ||= row.active;
+        } else grouped.set(row.productId, { ...row, size: '', color: '', sku: '' });
+      }
+      rows = [...grouped.values()];
+    }
     const sizes = [...new Set(rows.map(r => r.size).filter(Boolean))].sort();
     const colors = [...new Set(rows.map(r => r.color).filter(Boolean))].sort();
     const search = query.search?.trim().toLocaleLowerCase('fr');
@@ -97,6 +111,27 @@ export class VariantStockService {
     rows.sort((a, b) => query.sort === 'available' ? a.available - b.available : a.productName.localeCompare(b.productName, 'fr') || a.sku.localeCompare(b.sku));
     const page = Math.max(1, Number(query.page) || 1), perPage = 30;
     return { items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, totalPages: Math.ceil(rows.length / perPage), page, sizes, colors, products: products.map(p => ({ id: p.id, name: p.name })) };
+  }
+
+  async setQuantities(productId: string, dto: SetStockQuantitiesDto, actor: AuditActor) {
+    if (new Set(dto.rows.map(r => r.variantId)).size !== dto.rows.length) throw new BadRequestException('Variante en double');
+    const session = await this.products.db.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const product = await this.products.findById(productId).session(session);
+        if (!product || product.inventoryModel !== 'MATRIX') throw new BadRequestException('Configurez les variantes en premier.');
+        for (const row of dto.rows) {
+          const variant = await this.variants.findOne({ _id: row.variantId, productId, retired: { $ne: true } }).session(session);
+          if (!variant) throw new BadRequestException('Variante invalide pour ce produit');
+          const item = await this.items.findOne({ variantId: row.variantId, locationId: dto.locationId }).session(session);
+          const before = item?.quantityOnHand ?? 0;
+          if (before !== row.expectedQuantity) throw new ConflictException('Le stock a changé. Actualisez le tableau avant de réessayer.');
+          const delta = row.quantity - before;
+          if (delta) await this.ledger.applyMovement({ variantId: row.variantId, locationId: dto.locationId, type: 'manual_adjust', onHandDelta: delta, requireAvailableAtLeast: delta < 0 ? -delta : undefined, reason: 'Quantité saisie dans le tableau couleur / taille', actor, session });
+        }
+        return { ok: true };
+      });
+    } finally { await session.endSession(); }
   }
 
   async adjust(dto: VariantAdjustmentDto, actor: AuditActor) {

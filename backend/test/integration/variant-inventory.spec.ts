@@ -259,4 +259,25 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     expect(await stock(v.id, 'BOUTIQUE')).toBe(3);
   });
 
+  it('groups all variant balances into one product row before pagination', async () => {
+    const result = await matrix.list({ locationId: 'DEPOT', groupBy: 'product' });
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({ productId, onHand: 5, available: 5, reserved: 0 });
+    expect((await matrix.list({ locationId: 'BOUTIQUE', groupBy: 'product' })).items[0].onHand).toBe(3);
+    expect((await matrix.list({ locationId: 'DEPOT' })).total).toBe(2);
+  });
+  it('saves table quantities as absolute counts and rejects stale saves without partial writes', async () => {
+    await matrix.setQuantities(productId, { locationId: 'DEPOT', rows: [{ variantId: black, expectedQuantity: 0, quantity: 100 }, { variantId: white, expectedQuantity: 5, quantity: 50 }] }, actor);
+    expect(await stock(black)).toBe(100); expect(await stock(white)).toBe(50);
+    expect(await stock(black, 'BOUTIQUE')).toBe(3);
+    await expect(matrix.setQuantities(productId, { locationId: 'DEPOT', rows: [{ variantId: black, expectedQuantity: 100, quantity: 20 }, { variantId: white, expectedQuantity: 5, quantity: 25 }] }, actor)).rejects.toThrow('changé');
+    expect(await stock(black)).toBe(100); expect(await stock(white)).toBe(50);
+  });
+  it('rejects duplicate and foreign variants when editing a stock table', async () => {
+    const row = { variantId: white, expectedQuantity: 5, quantity: 2 };
+    await expect(matrix.setQuantities(productId, { locationId: 'DEPOT', rows: [row, row] }, actor)).rejects.toThrow('double');
+    await expect(matrix.setQuantities(productId, { locationId: 'DEPOT', rows: [{ ...row, variantId: new Types.ObjectId().toString() }] }, actor)).rejects.toThrow('invalide');
+    expect(await stock(white)).toBe(5);
+  });
+
 });
