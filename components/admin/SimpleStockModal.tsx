@@ -68,7 +68,14 @@ export default function SimpleStockModal({ productId, productName, locationId, c
       <header className="flex items-center justify-between gap-3 border-b bg-white p-4">
         <div>
           <h2 className="text-lg font-black">{productName}</h2>
-          <p className="text-sm text-ink-500">Stock {locationLabel} · <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">GLOBAL</span></p>
+          <p className="text-sm text-ink-500">
+            Stock {locationLabel} ·{' '}
+            {locationId === 'DEPOT' ? (
+              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-700">VARIANTE</span>
+            ) : (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">GLOBAL</span>
+            )}
+          </p>
         </div>
         <button type="button" className="btn-ghost" disabled={saving} onClick={() => onClose(false)}>✕</button>
       </header>

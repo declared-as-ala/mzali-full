@@ -86,11 +86,11 @@ export class VariantStockService {
 
   async list(query: Record<string, string | undefined>) {
     const locationId = query.locationId === 'BOUTIQUE' ? 'BOUTIQUE' : 'DEPOT';
-    const products = await this.products.find({ deletedAt: null, ...(query.productId ? { _id: query.productId } : {}) }).select({ name: 1, inventoryModel: 1 });
+    const products = await this.products.find({ deletedAt: null, ...(query.productId ? { _id: query.productId } : {}) }).select({ name: 1, inventoryModel: 1, depotTrackingMode: 1, boutiqueTrackingMode: 1 });
     if (locationId === 'BOUTIQUE' && (!query.productId || query.groupBy === 'product')) {
       const rows = await Promise.all(products.map(async p => {
         const balance = await this.ledger.boutiqueBalance(p.id);
-        return { productId: p.id, variantId: p.id, productName: p.name, size: '', color: '', sku: '', active: true, migrationRequired: false, onHand: balance.onHand, reserved: balance.reserved, available: balance.onHand - balance.reserved, threshold: 3, locationId };
+        return { productId: p.id, variantId: p.id, productName: p.name, size: '', color: '', sku: '', active: true, migrationRequired: false, onHand: balance.onHand, reserved: balance.reserved, available: balance.onHand - balance.reserved, threshold: 3, locationId, trackingMode: p.boutiqueTrackingMode ?? 'SIMPLE' };
       }));
       const search = query.search?.trim().toLocaleLowerCase('fr');
       const filtered = rows.filter(r => (!search || r.productName.toLocaleLowerCase('fr').includes(search)) && (query.status === 'out' ? r.available <= 0 : query.status === 'low' ? r.available > 0 && r.available <= r.threshold : query.status === 'in' ? r.available > 0 : true));
@@ -105,7 +105,7 @@ export class VariantStockService {
     let rows = variants.map(v => {
       const s = byVariant.get(v.id), p = byId.get(v.productId)!;
       const onHand = s?.quantityOnHand ?? 0, reserved = s?.quantityReserved ?? 0;
-      return { variantId: v.id, productId: v.productId, productName: p.name, size: v.attributes.size ?? '', color: v.attributes.color ?? '', sku: v.sku, active: v.active, migrationRequired: p.inventoryModel !== 'MATRIX', onHand, reserved, available: onHand - reserved, threshold: v.lowStockThreshold ?? s?.lowStockThreshold ?? 3, locationId };
+      return { variantId: v.id, productId: v.productId, productName: p.name, size: v.attributes.size ?? '', color: v.attributes.color ?? '', sku: v.sku, active: v.active, migrationRequired: p.inventoryModel !== 'MATRIX', onHand, reserved, available: onHand - reserved, threshold: v.lowStockThreshold ?? s?.lowStockThreshold ?? 3, locationId, trackingMode: locationId === 'BOUTIQUE' ? (p.boutiqueTrackingMode ?? 'SIMPLE') : (p.depotTrackingMode ?? (p.inventoryModel === 'MATRIX' ? 'VARIANT' : 'SIMPLE')) };
     });
     if (locationId === 'BOUTIQUE' && query.productId) {
       const balance = await this.ledger.boutiqueBalance(query.productId);
