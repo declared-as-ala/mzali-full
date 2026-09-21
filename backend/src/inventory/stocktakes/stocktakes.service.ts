@@ -38,12 +38,13 @@ export class StocktakesService {
     const productDocs = await this.products.find(productFilter).select({ _id: 1, name: 1 });
     const productIds = productDocs.map((p) => p.id);
     const productNameById = new Map(productDocs.map((p) => [p.id, p.name]));
-    const allVariants = await this.variants.allForProducts(productIds);
+    const allVariants = locationId === 'BOUTIQUE' ? await Promise.all(productIds.map(id => this.ledger.boutiqueVariant(id))) : await this.variants.allForProducts(productIds);
     if (!allVariants.length) throw new BadRequestException('Aucune variante dans ce périmètre');
 
     const variantIds = allVariants.map(v => v.id);
     const stockItems = await this.ledger.stockForVariants(variantIds, locationId);
     const onHandByVariant = new Map(stockItems.map((i) => [i.variantId, i.quantityOnHand]));
+    if (locationId === 'BOUTIQUE') for (const v of allVariants) onHandByVariant.set(v.id, (await this.ledger.boutiqueBalance(v.productId)).onHand);
 
     const stocktakeNumber = await this.counters.next(SEQUENCE_NAME);
     const doc = await this.model.create({
@@ -163,7 +164,9 @@ export class StocktakesService {
         for (const line of doc.lines) {
           if (line.countedQuantity === null) continue;
           const current = await this.ledger.stockAt(line.variantId, doc.locationId, session);
-          const currentOnHand = current?.quantityOnHand ?? 0;
+          const variant = doc.locationId === 'BOUTIQUE' ? await this.variants.findById(line.variantId) : null;
+          if (doc.locationId === 'BOUTIQUE' && !variant?.boutiquePool) throw new BadRequestException('Recréez cet inventaire Boutique par produit.');
+          const currentOnHand = doc.locationId === 'BOUTIQUE' ? (await this.ledger.boutiqueBalance(line.productId, session)).onHand : current?.quantityOnHand ?? 0;
           if (currentOnHand !== line.expectedQuantity) throw new BadRequestException('Le stock a changé depuis le comptage. Annulez cet inventaire et créez un nouveau comptage.');
           const delta = line.countedQuantity - currentOnHand;
           if (delta === 0) continue;

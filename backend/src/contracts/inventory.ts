@@ -1,5 +1,7 @@
 // Backend-only contract (not mirrored from frontend types/).
 
+export type TrackingMode = 'SIMPLE' | 'VARIANT';
+
 export type InventoryItem = {
   productId: string;
   productName: string;
@@ -10,6 +12,10 @@ export type InventoryItem = {
   reserved: number;
   available: number;             // onHand - reserved
   lowStockThreshold: number | null;
+  /** Tracking mode at DEPOT location. */
+  depotTrackingMode: TrackingMode;
+  /** Tracking mode at BOUTIQUE location. */
+  boutiqueTrackingMode: TrackingMode;
   /** BOUTIQUE-side numbers, populated by Sprint 5 transfers — 0 until a transfer ever lands stock there. */
   boutiqueOnHand: number;
   boutiqueReserved: number;

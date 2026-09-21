@@ -74,6 +74,18 @@ export class Product {
   @Prop({ type: String, enum: ['LEGACY', 'MATRIX'], default: 'LEGACY' })
   inventoryModel!: 'LEGACY' | 'MATRIX';
 
+  /**
+   * Per-location inventory tracking granularity:
+   * SIMPLE — one global qty for the product/location (pool variant).
+   * VARIANT — per size+color variant qty at that location (MATRIX).
+   * Stored independently so DEPOT=VARIANT + BOUTIQUE=SIMPLE is valid.
+   */
+  @Prop({ type: String, enum: ['SIMPLE', 'VARIANT'], default: 'SIMPLE' })
+  depotTrackingMode!: 'SIMPLE' | 'VARIANT';
+
+  @Prop({ type: String, enum: ['SIMPLE', 'VARIANT'], default: 'SIMPLE' })
+  boutiqueTrackingMode!: 'SIMPLE' | 'VARIANT';
+
   @Prop({ type: String, required: true, unique: true, index: true })
   slug!: string;
 

@@ -12,6 +12,7 @@ import { HydratedDocument } from 'mongoose';
  */
 @Schema({ collection: 'variants', timestamps: true })
 export class Variant {
+  @Prop({ type: Boolean, default: false }) boutiquePool!: boolean;
   @Prop({ type: String }) combinationKey?: string;
   @Prop({ type: Boolean, default: false }) retired!: boolean;
   @Prop({ type: Number, default: 0 }) inventoryRevision!: number;

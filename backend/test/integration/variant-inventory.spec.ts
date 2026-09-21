@@ -1,3 +1,4 @@
+import { PosCatalogService } from '@/pos/pos-catalog.service';
 import { createConnection, Connection, Types } from 'mongoose';
 import { ProductsService } from '@/catalog/products.service';
 import { Product, ProductSchema } from '@/catalog/product.schema';
@@ -49,12 +50,12 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     black = rows[0].id; white = rows[1].id;
     for (const [variantId, depot, boutique] of [[black, 0, 3], [white, 5, 0]] as const) for (const [locationId, qty] of [['DEPOT', depot], ['BOUTIQUE', boutique]] as const) await ledger.applyMovement({ variantId, locationId, onHandDelta: qty, type: 'migration_init', actor });
   });
-  const stock = async (id: string, location = 'DEPOT') => (await ledger.stockAt(id, location))!.quantityOnHand;
+  const stock = async (id: string, location = 'DEPOT') => location === 'BOUTIQUE' ? (await ledger.boutiqueBalance((await variants.findById(id))!.productId)).onHand : (await ledger.stockAt(id, location))!.quantityOnHand;
   const checkout = (variantId = white, qty = 1) => orders.create({ customer: { phone: '22123456' }, shipping: 0, items: [{ productId, variantId, lineId: '1', name: 'Nike', price: 59, image: '', qty }] }, new Types.ObjectId().toString());
   it('routes online availability to DEPOT independently of BOUTIQUE', async () => {
     const availability = new OnlineAvailabilityService(ledger, locations as never, settings as never);
     expect(await availability.resolve(black)).toBe(0); expect(await availability.resolve(white)).toBe(5);
-    expect(await stock(black, 'BOUTIQUE')).toBe(3); expect(await stock(white, 'BOUTIQUE')).toBe(0);
+    expect(await stock(black, 'BOUTIQUE')).toBe(3); expect(await stock(white, 'BOUTIQUE')).toBe(3);
     await expect(checkout(black)).rejects.toThrow('disponible');
   });
   it('pending and tentative orders do not deduct; confirmation and cancellation are retry safe', async () => {
@@ -62,7 +63,7 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     for (const status of ['tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5']) await orders.changeStatus(order.id, status, actor);
     expect(await stock(white)).toBe(5);
     await Promise.all([orders.changeStatus(order.id, 'confirme', actor), orders.changeStatus(order.id, 'confirme', actor)]);
-    expect(await stock(white)).toBe(3); expect(await stock(white, 'BOUTIQUE')).toBe(0);
+    expect(await stock(white)).toBe(3); expect(await stock(white, 'BOUTIQUE')).toBe(3);
     await Promise.all([orders.changeStatus(order.id, 'annule', actor), orders.changeStatus(order.id, 'annule', actor)]);
     expect(await stock(white)).toBe(5);
   });
@@ -95,7 +96,7 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     await Promise.all([transfers.ship(t.id, actor), transfers.ship(t.id, actor)]);
     const receipt = { operationKey: 'receipt-1', lines: [{ variantId: white, receivedQuantity: 2 }] };
     await Promise.all([transfers.receive(t.id, receipt, actor), transfers.receive(t.id, receipt, actor)]);
-    expect(await stock(white)).toBe(3); expect(await stock(white, 'BOUTIQUE')).toBe(2); expect(await stock(black, 'BOUTIQUE')).toBe(3);
+    expect(await stock(white)).toBe(3); expect(await stock(white, 'BOUTIQUE')).toBe(5); expect(await stock(black, 'BOUTIQUE')).toBe(5);
   });
   it('stocktakes count every variant and post one auditable correction', async () => {
     const t = await stocktakes.create({ locationId: 'DEPOT', scopeKind: 'all' }, actor);
@@ -248,7 +249,7 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     const p = await db.model<Product>(Product.name).create({ name: 'Both', slug: 'both', regularPriceMinor: 1000 });
     const old = await variants.generateDefaultVariant(p.id);
     await ledger.applyMovement({ variantId: old.id, locationId: 'DEPOT', onHandDelta: 100, type: 'migration_init', actor });
-    await ledger.applyMovement({ variantId: old.id, locationId: 'BOUTIQUE', onHandDelta: 3, type: 'migration_init', actor });
+    await ledger.applyMovement({ variantId: old.id, locationId: 'BOUTIQUE', onHandDelta: 3, type: 'migration_init', actor, migration: true });
     const dto = { replaceDepotStock: true, reason: 'Stock par variante', rows: [{ size: 'XL', color: 'Vert', sku: 'BOTH-XL', active: true, depot: 50, boutique: 0 }] };
     await expect(matrix.activate(p.id, dto, actor)).rejects.toThrow('conserver');
     expect(await stock(old.id)).toBe(100);
@@ -278,6 +279,39 @@ const actor = { type: 'employee' as const, id: 'test', name: 'Inventory test' };
     await expect(matrix.setQuantities(productId, { locationId: 'DEPOT', rows: [row, row] }, actor)).rejects.toThrow('double');
     await expect(matrix.setQuantities(productId, { locationId: 'DEPOT', rows: [{ ...row, variantId: new Types.ObjectId().toString() }] }, actor)).rejects.toThrow('invalide');
     expect(await stock(white)).toBe(5);
+  });
+
+  it('sets one Boutique quantity without options while leaving exact Depot stock unchanged', async () => {
+    await matrix.setBoutiqueQuantity(productId, { expectedQuantity: 3, quantity: 100 }, actor);
+    expect((await ledger.boutiqueBalance(productId)).onHand).toBe(100);
+    expect(await stock(white)).toBe(5);
+    expect(await stock(black)).toBe(0);
+    const pool = await ledger.boutiqueVariant(productId);
+    expect(pool.attributes).toEqual({});
+    expect(await variants.allForProducts([productId])).toHaveLength(2);
+    await ledger.applyMovement({ variantId: pool.id, locationId: 'BOUTIQUE', type: 'pos_sale', onHandDelta: -1, requireAvailableAtLeast: 1, actor });
+    expect((await ledger.boutiqueBalance(productId)).onHand).toBe(99);
+    await expect(matrix.setBoutiqueQuantity(productId, { expectedQuantity: 100, quantity: 40 }, actor)).rejects.toThrow('changé');
+    expect((await ledger.boutiqueBalance(productId)).onHand).toBe(99);
+    await ledger.applyMovement({ variantId: black, locationId: 'BOUTIQUE', type: 'correction', onHandDelta: 1, actor });
+    expect((await ledger.boutiqueBalance(productId)).onHand).toBe(100);
+  });
+  it('consolidates historical Boutique balances once and protects the final shared unit', async () => {
+    await matrix.setBoutiqueQuantity(productId, { expectedQuantity: 3, quantity: 1 }, actor);
+    const pool = await ledger.boutiqueVariant(productId);
+    const results = await Promise.allSettled([black, white].map(variantId => ledger.applyMovement({ variantId, locationId: 'BOUTIQUE', type: 'pos_sale', onHandDelta: -1, requireAvailableAtLeast: 1, actor })));
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect((await ledger.boutiqueBalance(productId)).onHand).toBe(0);
+    await expect(variants.resolveForSale(productId, pool.id)).rejects.toThrow('indisponible');
+    await expect(ledger.applyMovement({ variantId: pool.id, locationId: 'DEPOT', type: 'manual_adjust', onHandDelta: 5, actor })).rejects.toThrow('Dépôt');
+  });
+
+  it('publishes one POS catalog item per product with no size/color selection', async () => {
+    const catalog = new PosCatalogService({ list: async () => ({ totalPages: 1, items: [{ id: productId, name: 'Nike', slug: 'nike', price: 59, images: [], categoryIds: [], bundles: [], inventoryEnabled: true }] }) } as never, { list: async () => [] } as never, variants, locations as never, ledger, { getRaw: async () => ({}) } as never);
+    const result = await catalog.getCatalog();
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ productId, size: '', color: '', boutiqueAvailable: 3, depotAvailable: 5, priceMinor: 59000 });
+    expect((await variants.findById(result.items[0].variantId))!.boutiquePool).toBe(true);
   });
 
 });

@@ -34,3 +34,23 @@ export class SetStockQuantitiesDto {
   @IsIn(['DEPOT', 'BOUTIQUE']) locationId!: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @ValidateNested({ each: true }) @Type(() => StockQuantityRowDto) rows!: StockQuantityRowDto[];
 }
+
+export class BoutiqueQuantityDto {
+  @IsInt() @Min(0) quantity!: number;
+  @IsInt() @Min(0) expectedQuantity!: number;
+}
+
+export class DistributionRowDto {
+  @IsString() variantId!: string;
+  @IsInt() @Min(0) qty!: number;
+}
+
+export class SetModeDto {
+  @IsIn(['DEPOT', 'BOUTIQUE']) location!: 'DEPOT' | 'BOUTIQUE';
+  @IsIn(['SIMPLE', 'VARIANT']) mode!: 'SIMPLE' | 'VARIANT';
+  @IsString() @MaxLength(500) reason!: string;
+  /** Required only when switching SIMPLE→VARIANT and stock > 0. */
+  @IsOptional() @IsBoolean() dryRun?: boolean;
+  /** Per-variant distribution when switching SIMPLE→VARIANT at BOUTIQUE. */
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => DistributionRowDto) distribution?: DistributionRowDto[];
+}

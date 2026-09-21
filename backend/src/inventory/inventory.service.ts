@@ -161,7 +161,7 @@ export class InventoryService {
     const { page: p, perPage: pp, skip } = clampPagination(page, perPage, 100);
     const productFilter: Record<string, unknown> = { deletedAt: null };
     if (search) productFilter.name = { $regex: search, $options: 'i' };
-    const productDocs = await this.products.find(productFilter).select({ name: 1, slug: 1, images: 1 }).sort({ name: 1 });
+    const productDocs = await this.products.find(productFilter).select({ name: 1, slug: 1, images: 1, inventoryModel: 1, depotTrackingMode: 1, boutiqueTrackingMode: 1 }).sort({ name: 1 });
     const byId = new Map(productDocs.map((p) => [p.id, p]));
 
     const variantByProduct = await this.variants.findManyByProductIds(Array.from(byId.keys()));
@@ -288,7 +288,7 @@ export class InventoryService {
     item: Pick<StockItemDocument, 'locationId' | 'quantityOnHand' | 'quantityReserved' | 'lowStockThreshold' | 'updatedAt'>,
     boutiqueItem: StockItemDocument | null,
     productId: string,
-    product: { name: string; slug: string; images?: { url: string }[] },
+    product: { name: string; slug: string; images?: { url: string }[]; depotTrackingMode?: string; boutiqueTrackingMode?: string },
     incomingPurchase: number,
   ): InventoryItemContract {
     return {
@@ -301,6 +301,8 @@ export class InventoryService {
       reserved: item.quantityReserved,
       available: item.quantityOnHand - item.quantityReserved,
       lowStockThreshold: item.lowStockThreshold,
+      depotTrackingMode: (product.depotTrackingMode as 'SIMPLE' | 'VARIANT') ?? 'SIMPLE',
+      boutiqueTrackingMode: (product.boutiqueTrackingMode as 'SIMPLE' | 'VARIANT') ?? 'SIMPLE',
       boutiqueOnHand: boutiqueItem?.quantityOnHand ?? 0,
       boutiqueReserved: boutiqueItem?.quantityReserved ?? 0,
       boutiqueAvailable: boutiqueItem ? boutiqueItem.quantityOnHand - boutiqueItem.quantityReserved : 0,

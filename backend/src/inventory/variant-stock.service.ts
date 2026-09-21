@@ -7,7 +7,7 @@ import { Variant } from '@/catalog/variant.schema';
 import { StockItem } from './stock-item.schema';
 import { StockMovement } from './stock-movement.schema';
 import { StockLedgerService } from './stock-ledger.service';
-import { ActivateMatrixDto, SetStockQuantitiesDto, VariantAdjustmentDto } from './variant-stock.dto';
+import { ActivateMatrixDto, BoutiqueQuantityDto, SetModeDto, SetStockQuantitiesDto, VariantAdjustmentDto } from './variant-stock.dto';
 
 export const combinationKey = (size: string, color: string) => JSON.stringify([size.trim().normalize('NFC').toLocaleLowerCase('fr'), color.trim().normalize('NFC').toLocaleLowerCase('fr')]);
 
@@ -24,9 +24,14 @@ export class VariantStockService {
   async configuration(productId: string) {
     const product = await this.products.findById(productId);
     if (!product) throw new NotFoundException('Produit introuvable');
-    const variants = await this.variants.find({ productId });
+    const variants = await this.variants.find({ productId, boutiquePool: { $ne: true } });
     const stock = await this.items.find({ variantId: { $in: variants.map(v => v.id) } });
-    return { productId, name: product.name, model: product.inventoryModel ?? 'LEGACY', legacyStockQuantity: product.stockQuantity, options: product.options,
+    const boutique = await this.ledger.boutiqueBalance(productId);
+    return { boutique, productId, name: product.name,
+      model: product.inventoryModel ?? 'LEGACY',
+      depotTrackingMode: product.depotTrackingMode ?? 'SIMPLE',
+      boutiqueTrackingMode: product.boutiqueTrackingMode ?? 'SIMPLE',
+      legacyStockQuantity: product.stockQuantity, options: product.options,
       variants: variants.map(v => ({ id: v.id, sku: v.sku, attributes: v.attributes, active: v.active, retired: v.retired, sellingPriceMinor: v.sellingPriceMinor, lowStockThreshold: v.lowStockThreshold,
         stock: stock.filter(s => s.variantId === v.id).map(s => ({ locationId: s.locationId, onHand: s.quantityOnHand, reserved: s.quantityReserved })) })) };
   }
@@ -44,7 +49,7 @@ export class VariantStockService {
         const product = await this.products.findById(productId).session(session);
         if (!product) throw new NotFoundException('Produit introuvable');
         if (product.inventoryModel === 'MATRIX') throw new ConflictException('Ce produit est déjà configuré. Utilisez les ajustements de stock.');
-        const legacy = await this.variants.find({ productId }).session(session);
+        const legacy = await this.variants.find({ productId, boutiquePool: { $ne: true } }).session(session);
         const legacyIds = legacy.map(v => v.id);
         const openTransfer = await this.products.db.collection('stock_transfers').findOne({ 'lines.variantId': { $in: legacyIds }, status: { $nin: ['RECEIVED', 'CANCELLED', 'REJECTED'] } }, { session, projection: { _id: 1 } });
         const openCount = await this.products.db.collection('stocktakes').findOne({ 'lines.variantId': { $in: legacyIds }, status: { $nin: ['POSTED', 'CANCELLED'] } }, { session, projection: { _id: 1 } });
@@ -64,7 +69,7 @@ export class VariantStockService {
         if (dto.dryRun) return { dryRun: true, before, variantCount: dto.rows.length };
         // Serialize with every movement using the legacy variants, including sales
         // that resolved their variant just before activation.
-        await this.variants.updateMany({ productId }, { $set: { retired: true, active: false }, $inc: { inventoryRevision: 1 } }, { session });
+        await this.variants.updateMany({ productId, boutiquePool: { $ne: true } }, { $set: { retired: true, active: false }, $inc: { inventoryRevision: 1 } }, { session });
         for (const s of stock) if (s.quantityOnHand) await this.ledger.applyMovement({ variantId: s.variantId, locationId: s.locationId, type: 'correction', onHandDelta: -s.quantityOnHand, reference: `matrix:${productId}`, reason: dto.reason, actor, session, migration: true });
         for (let i = 0; i < dto.rows.length; i++) {
           const r = dto.rows[i];
@@ -72,6 +77,7 @@ export class VariantStockService {
           for (const [locationId, qty] of [['DEPOT', r.depot], ['BOUTIQUE', r.boutique]] as const) await this.ledger.applyMovement({ variantId: v.id, locationId, type: dto.initialStock ? 'manual_adjust' : 'correction', onHandDelta: qty, reference: `matrix:${productId}`, reason: dto.reason, actor, session });
         }
         product.inventoryModel = 'MATRIX';
+        product.depotTrackingMode = 'VARIANT';
         await product.save({ session });
         return { dryRun: false, before, variantCount: dto.rows.length };
       });
@@ -81,8 +87,19 @@ export class VariantStockService {
   async list(query: Record<string, string | undefined>) {
     const locationId = query.locationId === 'BOUTIQUE' ? 'BOUTIQUE' : 'DEPOT';
     const products = await this.products.find({ deletedAt: null, ...(query.productId ? { _id: query.productId } : {}) }).select({ name: 1, inventoryModel: 1 });
+    if (locationId === 'BOUTIQUE' && (!query.productId || query.groupBy === 'product')) {
+      const rows = await Promise.all(products.map(async p => {
+        const balance = await this.ledger.boutiqueBalance(p.id);
+        return { productId: p.id, variantId: p.id, productName: p.name, size: '', color: '', sku: '', active: true, migrationRequired: false, onHand: balance.onHand, reserved: balance.reserved, available: balance.onHand - balance.reserved, threshold: 3, locationId };
+      }));
+      const search = query.search?.trim().toLocaleLowerCase('fr');
+      const filtered = rows.filter(r => (!search || r.productName.toLocaleLowerCase('fr').includes(search)) && (query.status === 'out' ? r.available <= 0 : query.status === 'low' ? r.available > 0 && r.available <= r.threshold : query.status === 'in' ? r.available > 0 : true));
+      filtered.sort((a,b) => query.sort === 'available' ? a.available - b.available : a.productName.localeCompare(b.productName, 'fr'));
+      const page = Math.max(1, Number(query.page) || 1);
+      return { items: filtered.slice((page - 1) * 30, page * 30), total: filtered.length, totalPages: Math.ceil(filtered.length / 30), page, sizes: [], colors: [], products: products.map(p => ({ id: p.id, name: p.name })) };
+    }
     const byId = new Map(products.map(p => [p.id, p]));
-    const variants = await this.variants.find({ productId: { $in: [...byId.keys()] }, retired: { $ne: true } });
+    const variants = await this.variants.find({ productId: { $in: [...byId.keys()] }, retired: { $ne: true }, boutiquePool: { $ne: true } });
     const stock = await this.items.find({ variantId: { $in: variants.map(v => v.id) }, locationId });
     const byVariant = new Map(stock.map(s => [s.variantId, s]));
     let rows = variants.map(v => {
@@ -90,6 +107,10 @@ export class VariantStockService {
       const onHand = s?.quantityOnHand ?? 0, reserved = s?.quantityReserved ?? 0;
       return { variantId: v.id, productId: v.productId, productName: p.name, size: v.attributes.size ?? '', color: v.attributes.color ?? '', sku: v.sku, active: v.active, migrationRequired: p.inventoryModel !== 'MATRIX', onHand, reserved, available: onHand - reserved, threshold: v.lowStockThreshold ?? s?.lowStockThreshold ?? 3, locationId };
     });
+    if (locationId === 'BOUTIQUE' && query.productId) {
+      const balance = await this.ledger.boutiqueBalance(query.productId);
+      rows = rows.map(row => ({ ...row, onHand: balance.onHand, reserved: balance.reserved, available: balance.onHand - balance.reserved }));
+    }
     if (query.groupBy === 'product') {
       const grouped = new Map<string, typeof rows[number]>();
       for (const row of rows) {
@@ -113,7 +134,29 @@ export class VariantStockService {
     return { items: rows.slice((page - 1) * perPage, page * perPage), total: rows.length, totalPages: Math.ceil(rows.length / perPage), page, sizes, colors, products: products.map(p => ({ id: p.id, name: p.name })) };
   }
 
+  async setBoutiqueQuantity(productId: string, dto: BoutiqueQuantityDto, actor: AuditActor) {
+    const session = await this.products.db.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const product = await this.products.findById(productId).session(session);
+        if (!product || product.deletedAt) throw new NotFoundException('Produit introuvable');
+        if ((product.boutiqueTrackingMode ?? 'SIMPLE') === 'VARIANT') throw new BadRequestException('Ce produit utilise le stock par variante en Boutique. Utilisez le tableau taille/couleur.');
+        const pool = await this.ledger.consolidateBoutique(productId, actor, session);
+        const before = await this.ledger.boutiqueBalance(productId, session);
+        if (before.onHand !== dto.expectedQuantity) throw new ConflictException('Le stock a changé. Actualisez avant de réessayer.');
+        const delta = dto.quantity - before.onHand;
+        if (delta) await this.ledger.applyMovement({ variantId: pool.id, locationId: 'BOUTIQUE', type: 'manual_adjust', onHandDelta: delta, requireAvailableAtLeast: delta < 0 ? -delta : undefined, actor, session, reason: 'Quantité produit Boutique saisie' });
+        return { ok: true };
+      });
+    } finally { await session.endSession(); }
+  }
+
   async setQuantities(productId: string, dto: SetStockQuantitiesDto, actor: AuditActor) {
+    if (dto.locationId === 'BOUTIQUE') {
+      // In BOUTIQUE+VARIANT mode, per-variant quantities are allowed.
+      const product = await this.products.findById(productId);
+      if ((product?.boutiqueTrackingMode ?? 'SIMPLE') !== 'VARIANT') throw new BadRequestException('Ce produit utilise le stock global Boutique. Saisissez une quantité globale.');
+    }
     if (new Set(dto.rows.map(r => r.variantId)).size !== dto.rows.length) throw new BadRequestException('Variante en double');
     const session = await this.products.db.startSession();
     try {
@@ -172,4 +215,121 @@ export class VariantStockService {
     const [items, total] = await Promise.all([this.movements.find(filter).sort({ createdAt: -1 }).skip((page - 1) * 50).limit(50).lean(), this.movements.countDocuments(filter)]);
     return { items, total, page, totalPages: Math.ceil(total / 50) };
   }
+
+  /**
+   * Switch the inventory tracking mode for a product at one location.
+   *
+   * VARIANT → SIMPLE (either location):
+   *   Sums current per-variant stock at that location, writes it to the pool
+   *   (BOUTIQUE) or the single legacy variant (DEPOT), sets the mode flag.
+   *   Historical movements are preserved — nothing is deleted.
+   *
+   * SIMPLE → VARIANT (BOUTIQUE):
+   *   Requires `distribution` when current global qty > 0.  Each distribution
+   *   row must carry a valid variantId (a non-retired MATRIX variant for this
+   *   product) and a qty.  Total must equal the current global Boutique qty.
+   *   On confirm: pool stock is zeroed via correction movements, per-variant
+   *   BOUTIQUE stock items are written, mode flag is set.
+   *
+   * SIMPLE → VARIANT (DEPOT):
+   *   Delegates to the existing activate() / MATRIX activation flow.  Call
+   *   POST /products/:id (ActivateMatrixDto) instead — this endpoint refuses
+   *   the combination to avoid double-activating.
+   */
+  async setMode(productId: string, dto: SetModeDto, actor: AuditActor) {
+    if (!dto.reason.trim()) throw new BadRequestException('Motif obligatoire');
+    const session = await this.products.db.startSession();
+    try {
+      return await session.withTransaction(async () => {
+        const product = await this.products.findById(productId).session(session);
+        if (!product || product.deletedAt) throw new NotFoundException('Produit introuvable');
+
+        const currentMode = dto.location === 'DEPOT'
+          ? (product.depotTrackingMode ?? 'SIMPLE')
+          : (product.boutiqueTrackingMode ?? 'SIMPLE');
+
+        if (currentMode === dto.mode) return { ok: true, noChange: true };
+
+        /* ── VARIANT → SIMPLE ──────────────────────────────────────────── */
+        if (dto.mode === 'SIMPLE') {
+          if (dto.location === 'BOUTIQUE') {
+            // Aggregate all BOUTIQUE variant stock into the pool (which
+            // consolidateBoutique already does), then just flip the flag.
+            await this.ledger.consolidateBoutique(productId, actor, session);
+            product.boutiqueTrackingMode = 'SIMPLE';
+          } else {
+            // DEPOT: sum all active per-variant DEPOT stocks into one correction
+            // on the first non-retired variant, retire the matrix variants,
+            // reset inventoryModel to LEGACY.
+            const matrixVariants = await this.variants.find({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } }).session(session);
+            const depotItems = await this.items.find({ variantId: { $in: matrixVariants.map(v => v.id) }, locationId: 'DEPOT' }).session(session);
+            const totalDepot = depotItems.reduce((s, i) => s + i.quantityOnHand, 0);
+            // Zero out each variant's DEPOT stock
+            for (const item of depotItems) {
+              if (!item.quantityOnHand && !item.quantityReserved) continue;
+              await this.ledger.applyMovement({ variantId: item.variantId, locationId: 'DEPOT', type: 'correction', onHandDelta: -item.quantityOnHand, reason: dto.reason, actor, session, migration: true });
+            }
+            // Retire all matrix variants (non-pool only)
+            await this.variants.updateMany({ productId, boutiquePool: { $ne: true } }, { $set: { retired: true, active: false }, $inc: { inventoryRevision: 1 } }, { session });
+            // Create a single plain legacy variant for DEPOT SIMPLE tracking
+            const legacySku = `${product.slug}-${Date.now().toString(36)}`;
+            const [newLegacy] = await this.variants.create([{ productId, sku: legacySku, attributes: {}, active: product.status !== 'private', sellingPriceMinor: null, boutiquePool: false }], { session });
+            if (totalDepot > 0) {
+              await this.ledger.applyMovement({ variantId: newLegacy.id, locationId: 'DEPOT', type: 'correction', onHandDelta: totalDepot, reason: dto.reason, actor, session, migration: true });
+            }
+            product.inventoryModel = 'LEGACY';
+            product.depotTrackingMode = 'SIMPLE';
+
+          }
+          await product.save({ session });
+          return { ok: true, mode: dto.mode };
+        }
+
+        /* ── SIMPLE → VARIANT ──────────────────────────────────────────── */
+        if (dto.location === 'DEPOT') {
+          // DEPOT SIMPLE → VARIANT requires the full ActivateMatrixDto flow.
+          throw new BadRequestException('Pour activer le stock par variante au Dépôt, utilisez la section "Répartir par taille et couleur" (POST /products/:id).');
+        }
+
+        // BOUTIQUE SIMPLE → VARIANT
+        if (product.depotTrackingMode !== 'VARIANT') {
+          throw new BadRequestException('Le produit doit d\'abord être configuré en variantes au Dépôt (MATRIX) avant d\'activer les variantes en Boutique.');
+        }
+        const pool = await this.ledger.consolidateBoutique(productId, actor, session);
+        const before = await this.ledger.boutiqueBalance(productId, session);
+
+        if (dto.dryRun) {
+          return { dryRun: true, currentGlobalQty: before.onHand, variantCount: (await this.variants.countDocuments({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } })) };
+        }
+
+        if (before.onHand > 0) {
+          // Distribution is required to redistribute pool stock to variants
+          if (!dto.distribution?.length) {
+            throw new BadRequestException(`Stock Boutique actuel : ${before.onHand}. Fournissez la répartition par variante.`);
+          }
+          const totalDistributed = dto.distribution.reduce((s, r) => s + r.qty, 0);
+          if (totalDistributed !== before.onHand) {
+            throw new BadRequestException(`Total distribué (${totalDistributed}) ≠ stock actuel (${before.onHand}). Corrigez la répartition.`);
+          }
+          // Zero the pool
+          if (before.onHand) {
+            await this.ledger.applyMovement({ variantId: pool.id, locationId: 'BOUTIQUE', type: 'correction', onHandDelta: -before.onHand, reason: dto.reason, actor, session, migration: true });
+          }
+          // Credit each variant at BOUTIQUE
+          for (const row of dto.distribution) {
+            const variant = await this.variants.findOne({ _id: row.variantId, productId, retired: { $ne: true }, boutiquePool: { $ne: true } }).session(session);
+            if (!variant) throw new BadRequestException(`Variante introuvable: ${row.variantId}`);
+            if (row.qty > 0) {
+              await this.ledger.applyMovement({ variantId: variant.id, locationId: 'BOUTIQUE', type: 'correction', onHandDelta: row.qty, reason: dto.reason, actor, session, migration: true });
+            }
+          }
+        }
+
+        product.boutiqueTrackingMode = 'VARIANT';
+        await product.save({ session });
+        return { ok: true, mode: dto.mode };
+      });
+    } finally { await session.endSession(); }
+  }
 }
+

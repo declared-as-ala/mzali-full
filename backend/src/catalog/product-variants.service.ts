@@ -21,7 +21,7 @@ export class ProductVariantsService {
    * a cartesian product of the product's `options[]`.
    */
   async generateDefaultVariant(productId: string): Promise<VariantDocument> {
-    const existing = await this.variants.findOne({ productId });
+    const existing = await this.variants.findOne({ productId, boutiquePool: { $ne: true } });
     if (existing) return existing;
 
     const product = await this.products.findById(productId);
@@ -47,7 +47,7 @@ export class ProductVariantsService {
     let created = 0;
     let skipped = 0;
     for (const p of products) {
-      const already = await this.variants.exists({ productId: p.id });
+      const already = await this.variants.exists({ productId: p.id, boutiquePool: { $ne: true } });
       if (already) { skipped += 1; continue; }
       if (!dryRun) await this.generateDefaultVariant(p.id);
       created += 1;
@@ -57,7 +57,7 @@ export class ProductVariantsService {
   }
 
   async allForProducts(productIds: string[]) {
-    return this.variants.find({ productId: { $in: productIds }, retired: { $ne: true } }).sort({ createdAt: 1 });
+    return this.variants.find({ productId: { $in: productIds }, retired: { $ne: true }, boutiquePool: { $ne: true } }).sort({ createdAt: 1 });
   }
 
   async resolveForSale(productId: string, variantId?: string | null) {
@@ -65,18 +65,18 @@ export class ProductVariantsService {
     if (!product || product.deletedAt) throw new BadRequestException('Produit introuvable');
     if (!variantId && product.inventoryModel === 'MATRIX') throw new BadRequestException('Sélectionnez une variante exacte (taille / couleur).');
     const variant = variantId ? await this.findById(variantId) : await this.generateDefaultVariant(productId);
-    if (!variant || variant.productId !== productId || !variant.active || variant.retired) throw new BadRequestException('Variante inactive ou indisponible.');
+    if (!variant || variant.productId !== productId || !variant.active || variant.retired || variant.boutiquePool) throw new BadRequestException('Variante inactive ou indisponible.');
     return variant;
   }
 
   async findByProductId(productId: string): Promise<VariantDocument | null> {
-    return this.variants.findOne({ productId, retired: { $ne: true } });
+    return this.variants.findOne({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } });
   }
 
   /** Bulk lookup, keyed by productId — avoids N+1 queries in list views. */
   async findManyByProductIds(productIds: string[]): Promise<Map<string, VariantDocument>> {
     if (!productIds.length) return new Map();
-    const docs = await this.variants.find({ productId: { $in: productIds }, retired: { $ne: true } });
+    const docs = await this.variants.find({ productId: { $in: productIds }, retired: { $ne: true }, boutiquePool: { $ne: true } });
     return new Map(docs.map((d) => [d.productId, d]));
   }
 

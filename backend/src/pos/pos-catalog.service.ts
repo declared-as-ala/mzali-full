@@ -28,10 +28,9 @@ export class PosCatalogService {
   ) {}
 
   async getCatalog(): Promise<PosCatalogResponse> {
-    const [productList, categoryList, boutiqueCode, depotCode, posSettings] = await Promise.all([
+    const [productList, categoryList, depotCode, posSettings] = await Promise.all([
       this.products.list({ perPage: 100, status: 'published' }, true),
       this.categories.list({ hideEmpty: true }),
-      this.locations.getDefaultPosLocationCode(),
       this.locations.getDefaultOnlineLocationCode(),
       this.settings.getRaw('pos'),
     ]);
@@ -42,12 +41,8 @@ export class PosCatalogService {
     const allVariants = await this.variants.allForProducts(productIds);
     const variantIds = allVariants.map(v => v.id);
 
-    const [boutiqueStock, depotStock] = await Promise.all([
-      this.ledger.stockForVariants(variantIds, boutiqueCode),
-      this.ledger.stockForVariants(variantIds, depotCode),
-    ]);
-    const boutiqueByVariant = new Map(boutiqueStock.map((s) => [s.variantId, s]));
-    const depotByVariant = new Map(depotStock.map((s) => [s.variantId, s]));
+    const depotStock = await this.ledger.stockForVariants(variantIds, depotCode);
+    const depotByVariant = new Map(depotStock.map(s => [s.variantId, s]));
 
     const favoriteProductIds = new Set<string>(
       (posSettings?.favoriteProductIds as string[] | undefined) ?? [],
@@ -55,9 +50,9 @@ export class PosCatalogService {
 
     const items: PosCatalogItem[] = [];
     for (const p of products) {
-      for (const variant of allVariants.filter(v => v.productId === p.id && v.active)) {
-      const b = boutiqueByVariant.get(variant.id);
-      const d = depotByVariant.get(variant.id);
+      const variant = await this.ledger.boutiqueVariant(p.id);
+      const b = await this.ledger.boutiqueBalance(p.id);
+      const depotAvailable = allVariants.filter(v => v.productId === p.id).reduce((sum,v) => { const item = depotByVariant.get(v.id); return sum + (item ? item.quantityOnHand - item.quantityReserved : 0); }, 0);
       items.push({
         productId: p.id,
         variantId: variant.id,
@@ -71,8 +66,8 @@ export class PosCatalogService {
         stockTracked: p.inventoryEnabled !== false,
         imageUrl: normalizePublicMediaUrl(primaryProductImage(p.images)?.url ?? null),
         categoryIds: p.categoryIds,
-        boutiqueAvailable: b ? b.quantityOnHand - b.quantityReserved : 0,
-        depotAvailable: d ? d.quantityOnHand - d.quantityReserved : 0,
+        boutiqueAvailable: b.onHand - b.reserved,
+        depotAvailable: depotAvailable,
         favorite: favoriteProductIds.has(p.id),
         bundles: p.bundles.map((bundle) => ({
           id: bundle.id,
@@ -83,7 +78,6 @@ export class PosCatalogService {
           quantity: bundle.quantity,
         })),
       });
-      }
     }
 
     return {
