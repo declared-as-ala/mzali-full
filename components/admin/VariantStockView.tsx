@@ -1,5 +1,4 @@
 'use client';
-import SimpleStockModal from './SimpleStockModal';
 import { useEffect, useRef, useState } from 'react';
 import VariantMatrix from './VariantMatrix';
 
@@ -32,7 +31,6 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState('');
   const [configuring, setConfiguring] = useState<Row | null>(null);
-  const [simpleAdjust, setSimpleAdjust] = useState<Row | null>(null);
   const [data, setData] = useState<Data>({ items: [], total: 0, totalPages: 0, products: [], sizes: [], colors: [] });
   const [filters, setFilters] = useState({ search: '', productId: '', size: '', color: '', status: '', sort: 'name' });
   const [page, setPage] = useState(1), [refresh, setRefresh] = useState(0), [error, setError] = useState(''), [loading, setLoading] = useState(true);
@@ -42,10 +40,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
     const t = setTimeout(async () => {
       setLoading(true);
       try {
-        const queryParams: Record<string, string> = { ...filters, locationId, page: String(page) };
-        if (locationId === 'BOUTIQUE') {
-          queryParams.groupBy = 'product';
-        }
+        const queryParams: Record<string, string> = { ...filters, locationId, groupBy: 'product', page: String(page) };
         const searchParams = new URLSearchParams();
         for (const [k, v] of Object.entries(queryParams)) {
           if (v) searchParams.set(k, v);
@@ -98,22 +93,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
 
   function filter(key: keyof typeof filters, value: string) { setFilters(f => ({ ...f, [key]: value })); setPage(1); }
 
-  function openAdjust(r: Row) {
-    if (locationId === 'DEPOT') {
-      setSimpleAdjust(r);
-    } else {
-      const mode = r.trackingMode ?? 'SIMPLE';
-      if (mode === 'SIMPLE') {
-        setSimpleAdjust(r);
-      } else {
-        setConfiguring(r);
-      }
-    }
-  }
-
-  const tableHeaders = locationId === 'DEPOT'
-    ? ['Produit', 'Taille', 'Couleur', 'SKU', 'Disponible', 'Stock', 'Actions']
-    : ['Produit', 'Mode', 'Disponible', 'Stock', 'Actions'];
+  const tableHeaders = ['Produit', 'Mode', 'Disponible', 'Stock', 'Actions'];
 
   return (
     <div className="p-4 sm:p-8">
@@ -121,7 +101,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
         <div>
           <h1 className="text-3xl font-black">Stock</h1>
           <p className="mt-1 text-sm text-ink-500">
-            {locationId === 'DEPOT' ? 'Disponibilité des commandes en ligne par variante (taille / couleur).' : 'Stock pour la caisse POS.'}
+            {locationId === 'DEPOT' ? 'Disponibilité des commandes en ligne.' : 'Stock pour la caisse POS.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -145,7 +125,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
         Emplacement
         <select className="input w-auto" value={locationId} onChange={e => {
           setLocationId(e.target.value as 'DEPOT' | 'BOUTIQUE');
-          setPage(1); setConfiguring(null); setSimpleAdjust(null); setLoading(true); setReportLoading(true); setAllRows([]);
+          setPage(1); setConfiguring(null); setLoading(true); setReportLoading(true); setAllRows([]);
           setData({ items: [], total: 0, totalPages: 0, products: [], sizes: [], colors: [] });
         }}>
           <option value="DEPOT">Dépôt</option>
@@ -156,23 +136,11 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
       <p className="mb-4 text-xs text-ink-500">Totaux et impression : tout le stock de cet emplacement. Les filtres ci-dessous concernent uniquement le tableau.</p>
 
       <div className="mb-5 flex flex-wrap gap-3 rounded-2xl border bg-white p-4">
-        <input aria-label="Rechercher" placeholder="Rechercher un produit, SKU…" className="input w-56" value={filters.search} onChange={e => filter('search', e.target.value)} />
+        <input aria-label="Rechercher" placeholder="Rechercher un produit…" className="input w-56" value={filters.search} onChange={e => filter('search', e.target.value)} />
         <select aria-label="productId" className="input w-auto" value={filters.productId} onChange={e => filter('productId', e.target.value)}>
           <option value="">Tous les produits</option>
           {data.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        {locationId === 'DEPOT' && data.sizes.length > 0 && (
-          <select aria-label="size" className="input w-auto" value={filters.size} onChange={e => filter('size', e.target.value)}>
-            <option value="">Toutes les tailles</option>
-            {data.sizes.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )}
-        {locationId === 'DEPOT' && data.colors.length > 0 && (
-          <select aria-label="color" className="input w-auto" value={filters.color} onChange={e => filter('color', e.target.value)}>
-            <option value="">Toutes les couleurs</option>
-            {data.colors.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        )}
         <select aria-label="status" className="input w-auto" value={filters.status} onChange={e => filter('status', e.target.value)}>
           <option value="">Tous les stocks</option>
           <option value="in">En stock</option>
@@ -197,8 +165,8 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
             </tr>
           </thead>
           <tbody>
-            {data.items.map((r, idx) => (
-              <tr className="border-t hover:bg-slate-50/50" key={r.variantId ? `${r.productId}-${r.variantId}` : `${r.productId}-${idx}`}>
+            {data.items.map(r => (
+              <tr className="border-t hover:bg-slate-50/50" key={r.productId}>
                 <td className="p-3 font-bold">
                   <button className="text-left hover:text-blue-700 hover:underline" onClick={() => setConfiguring(r)}>
                     {r.productName}
@@ -207,93 +175,38 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
                     <small className="block font-normal text-amber-700">Stock à répartir par taille et couleur</small>
                   )}
                 </td>
-                {locationId === 'DEPOT' ? (
-                  <>
-                    <td className="p-3">
-                      {r.size ? (
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
-                          {r.size}
-                        </span>
-                      ) : (
-                        <span className="text-ink-400">—</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {r.color ? (
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
-                          {r.color}
-                        </span>
-                      ) : (
-                        <span className="text-ink-400">—</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {r.sku ? (
-                        <code className="rounded bg-slate-50 px-1 py-0.5 font-mono text-xs text-ink-600">{r.sku}</code>
-                      ) : (
-                        <span className="text-ink-400">—</span>
-                      )}
-                    </td>
-                  </>
-                ) : (
-                  <td className="p-3">
-                    <ModeBadge mode={r.trackingMode} />
-                  </td>
-                )}
+                <td className="p-3">
+                  <ModeBadge mode={r.trackingMode} />
+                </td>
                 <td className={`p-3 font-bold ${r.available <= 0 ? 'text-red-700' : r.available <= r.threshold ? 'text-amber-700' : 'text-emerald-700'}`}>
                   {r.available} {r.available <= 0 ? '· Épuisé' : r.available <= r.threshold ? '· Faible' : ''}
                 </td>
                 <td className="p-3">{r.onHand}</td>
                 <td className="p-3">
-                  <div className="flex gap-1">
-                    <button
-                      id={`adjust-${r.variantId || r.productId}`}
-                      className="btn-ghost text-xs"
-                      onClick={() => openAdjust(r)}
-                    >
-                      Ajuster
-                    </button>
-                    {(r.trackingMode === 'VARIANT' || r.migrationRequired || locationId === 'DEPOT') && (
-                      <button className="btn-ghost text-xs" onClick={() => setConfiguring(r)}>Matrice</button>
-                    )}
-                  </div>
+                  <button
+                    id={`adjust-${r.productId}`}
+                    className="btn-ghost text-xs font-semibold text-blue-700 hover:text-blue-800 hover:underline"
+                    onClick={() => setConfiguring(r)}
+                  >
+                    Ajuster
+                  </button>
                 </td>
               </tr>
             ))}
             {!data.items.length && (
-              <tr><td colSpan={locationId === 'DEPOT' ? 7 : 5} className="p-8 text-center">{loading ? 'Chargement…' : 'Aucun produit.'}</td></tr>
+              <tr><td colSpan={5} className="p-8 text-center">{loading ? 'Chargement…' : 'Aucun produit.'}</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       <div className="mt-4 flex items-center justify-between text-sm">
-        <span>{data.total} {locationId === 'DEPOT' ? 'variantes' : 'produits'} · Page {page} / {Math.max(1, data.totalPages)}</span>
+        <span>{data.total} produits · Page {page} / {Math.max(1, data.totalPages)}</span>
         <div className="flex gap-2">
           <button className="btn-ghost" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Précédent</button>
           <button className="btn-ghost" disabled={page >= data.totalPages} onClick={() => setPage(p => p + 1)}>Suivant</button>
         </div>
       </div>
-
-      {/* Compact simple-mode adjustment modal */}
-      {simpleAdjust && (
-        <SimpleStockModal
-          productId={simpleAdjust.productId}
-          productName={
-            locationId === 'DEPOT' && (simpleAdjust.size || simpleAdjust.color)
-              ? `${simpleAdjust.productName} · ${[simpleAdjust.size, simpleAdjust.color].filter(Boolean).join(' / ')}`
-              : simpleAdjust.productName
-          }
-          locationId={locationId}
-          currentOnHand={simpleAdjust.onHand}
-          currentReserved={simpleAdjust.reserved}
-          depotVariantId={locationId === 'DEPOT' ? simpleAdjust.variantId : undefined}
-          onClose={(saved) => {
-            setSimpleAdjust(null);
-            if (saved) setRefresh(v => v + 1);
-          }}
-        />
-      )}
 
       {/* Full matrix configuration modal */}
       {configuring && (
@@ -314,7 +227,10 @@ function StockConfiguration({ product, locationId, onClose }: { product: Row; lo
   return (
     <dialog ref={dialog} onCancel={e => { if (saving) e.preventDefault(); else onClose(); }} className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-5xl overflow-y-auto rounded-2xl border p-0 shadow-xl backdrop:bg-slate-900/40">
       <header className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b bg-white p-4">
-        <h2 className="text-xl font-black">{product.productName}</h2>
+        <div>
+          <h2 className="text-xl font-black">{product.productName}</h2>
+          <p className="text-xs text-ink-500">Ajustement du stock {locationId === 'DEPOT' ? 'Dépôt' : 'Boutique'}</p>
+        </div>
         <button type="button" className="btn-ghost" disabled={saving} onClick={onClose}>Fermer</button>
       </header>
       <div className="p-4 sm:p-6">

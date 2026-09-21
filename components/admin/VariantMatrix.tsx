@@ -1,10 +1,8 @@
 'use client';
-import Link from 'next/link';
 import StockColorSizeTable from './StockColorSizeTable';
 import SwitchToSimpleModal from './SwitchToSimpleModal';
 import SwitchToVariantModal from './SwitchToVariantModal';
 import { useCallback, useEffect, useState } from 'react';
-import { useAdminHref } from '@/lib/admin-nav-context';
 import { productStockRows, stockCombinationKey, type StockOption, type StockRow } from '@/lib/product-stock-options';
 
 type Variant = { id: string; sku: string; attributes: Record<string, string>; active: boolean; retired: boolean; stock: { locationId: string; onHand: number; reserved: number }[] };
@@ -20,7 +18,6 @@ type Config = {
 type ModeSwitch = { type: 'toSimple' | 'toVariant' } | null;
 
 export default function VariantMatrix({ productId, onBusyChange, initialLocation = 'DEPOT' }: { productId: string; onBusyChange?: (busy: boolean) => void; initialLocation?: 'DEPOT' | 'BOUTIQUE' }) {
-  const href = useAdminHref();
   const [boutiqueQuantity, setBoutiqueQuantity] = useState(0);
   const [config, setConfig] = useState<Config | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -185,6 +182,16 @@ export default function VariantMatrix({ productId, onBusyChange, initialLocation
     );
   }
 
+  const currentTotal = current.reduce((sum, v) => {
+    const qty = quantities[v.id] !== undefined ? quantities[v.id] : stockQuantity(v);
+    return sum + (Number.isSafeInteger(qty) && qty > 0 ? qty : 0);
+  }, 0);
+  const initialTotal = current.reduce((sum, v) => sum + stockQuantity(v), 0);
+  const totalReserved = current.reduce((sum, v) => {
+    const s = v.stock.find(si => si.locationId === initialLocation);
+    return sum + (s?.reserved ?? 0);
+  }, 0);
+
   return (
     <section className="space-y-4">
       <div>
@@ -202,20 +209,73 @@ export default function VariantMatrix({ productId, onBusyChange, initialLocation
             currentTrackingMode === 'VARIANT' ? <BoutiqueVariantView /> : <BoutiqueSimpleView />
           ) : config.model === 'MATRIX' ? (
             <>
-              <StockColorSizeTable label="Stock" disabled={busy} cells={current.map(v => ({ size: v.attributes.size ?? '', color: v.attributes.color ?? '', quantity: quantities[v.id] ?? stockQuantity(v) }))} onChange={(size, color, quantity) => { const variant = current.find(v => stockCombinationKey(v.attributes.size ?? '', v.attributes.color ?? '') === stockCombinationKey(size, color)); if (variant) setQuantities(previous => ({ ...previous, [variant.id]: quantity })); }} />
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50/50 p-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-ink-500">
+                    Stock total {initialLocation === 'DEPOT' ? 'Dépôt' : 'Boutique'}
+                  </p>
+                  <div className="mt-1 flex items-baseline gap-3">
+                    <span className="text-3xl font-black text-blue-700">{currentTotal}</span>
+                    <span className="text-sm font-semibold text-ink-600">pièces au total</span>
+                    {totalReserved > 0 && (
+                      <span className="text-xs text-ink-500">({totalReserved} réservé{totalReserved > 1 ? 's' : ''} · {Math.max(0, currentTotal - totalReserved)} disponible{currentTotal - totalReserved > 1 ? 's' : ''})</span>
+                    )}
+                  </div>
+                </div>
+                {changes.length > 0 && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-right text-xs shadow-sm">
+                    <span className="font-bold text-amber-900">{changes.length} variante(s) modifiée(s)</span>
+                    <span className="ml-2 font-black text-ink-900">
+                      ({currentTotal - initialTotal >= 0 ? `+${currentTotal - initialTotal}` : `${currentTotal - initialTotal}`} pièces)
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <StockColorSizeTable label="Stock par taille et couleur" disabled={busy} cells={current.map(v => ({ size: v.attributes.size ?? '', color: v.attributes.color ?? '', quantity: quantities[v.id] ?? stockQuantity(v) }))} onChange={(size, color, quantity) => { const variant = current.find(v => stockCombinationKey(v.attributes.size ?? '', v.attributes.color ?? '') === stockCombinationKey(size, color)); if (variant) setQuantities(previous => ({ ...previous, [variant.id]: quantity })); }} />
               <div className="flex flex-wrap gap-2">
                 <button className="btn-primary" disabled={busy || !changes.length || changes.some(v => !Number.isSafeInteger(quantities[v.id]) || quantities[v.id] < 0)} onClick={() => void saveQuantities()}>{busy ? 'Enregistrement…' : 'Enregistrer le stock'}</button>
                 <button className="btn-ghost" disabled={busy} onClick={() => void load().catch(e => setError(e.message))}>Actualiser les quantités</button>
               </div>
               <details className="rounded-xl border p-3"><summary className="cursor-pointer text-sm font-bold">Disponibilité à la vente</summary><div className="mt-3 flex flex-wrap gap-3">{current.map(v => <label key={v.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.active} disabled={busy} onChange={() => void toggle(v)} />{v.attributes.color} / {v.attributes.size}</label>)}</div></details>
-              <div className="flex flex-wrap gap-2"><Link className="btn-ghost" href={href('/transfers')}>Transférer vers la Boutique</Link></div>
               {missing.length > 0 && <button type="button" className="btn-primary" disabled={busy} onClick={() => void save(true)}>Ajouter les {missing.length} nouvelles combinaisons des options</button>}
             </>
           ) : rows.length === 0 ? (
-            <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Ajoutez les tailles et les couleurs dans l&apos;onglet Options, enregistrez le produit, puis revenez ici.</p>
+            current.length > 0 ? (
+              <div className="rounded-2xl border bg-slate-50 p-5 space-y-4">
+                <div className="flex items-baseline justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-ink-500">Stock total {initialLocation === 'DEPOT' ? 'Dépôt' : 'Boutique'}</p>
+                    <p className="mt-1 text-3xl font-black text-blue-700">{stockQuantity(current[0])} pièces</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-ink-700">Nouvelle quantité</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="input mt-1 w-36 text-xl font-bold"
+                    value={quantities[current[0].id] !== undefined ? quantities[current[0].id] : stockQuantity(current[0])}
+                    onChange={e => setQuantities({ [current[0].id]: Math.max(0, Number(e.target.value)) })}
+                  />
+                </div>
+                <div>
+                  <button
+                    className="btn-primary"
+                    disabled={busy || quantities[current[0].id] === undefined || quantities[current[0].id] === stockQuantity(current[0])}
+                    onClick={() => void saveQuantities()}
+                  >
+                    {busy ? 'Enregistrement…' : 'Enregistrer le stock'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Ajoutez les tailles et les couleurs dans l&apos;onglet Options, enregistrez le produit, puis revenez ici.</p>
+            )
           ) : (
             <>
-              <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-900"><p className="font-bold">Stock calculé depuis vos variantes</p><p className="mt-1">Saisissez le stock réel de chaque taille et couleur. Le total sera la somme des quantités saisies et remplacera l&apos;ancien stock. Pour approvisionner la Boutique, utilisez ensuite Transferts.</p></div>
+              <div className="rounded-xl bg-blue-50 p-4 text-sm text-blue-900"><p className="font-bold">Stock calculé depuis vos variantes</p><p className="mt-1">Saisissez le stock réel de chaque taille et couleur. Le total sera la somme des quantités saisies et remplacera l&apos;ancien stock.</p></div>
               {(total('BOUTIQUE') === 0 ? ['depot'] as const : ['depot', 'boutique'] as const).map(key => <StockColorSizeTable key={key} label={key === 'depot' ? 'Stock' : 'Stock Boutique existant'} disabled={busy} cells={rows.map(r => ({ size: r.size, color: r.color, quantity: r[key] }))} onChange={(size, color, quantity) => setRows(previous => previous.map(row => stockCombinationKey(row.size, row.color) === stockCombinationKey(size, color) ? { ...row, [key]: quantity } : row))} />)}
               <div className="sticky bottom-0 space-y-3 rounded-xl border bg-white p-4 shadow-sm"><p aria-live="polite" className={`text-sm font-bold ${valid ? 'text-emerald-700' : 'text-amber-800'}`}>{`Total stock : ${allocated('depot')} pièces`}</p>{remainingBoutique !== 0 && <p className="text-sm text-amber-800">Stock Boutique existant à répartir : {remainingBoutique} pièces. Le total Boutique reste inchangé.</p>}<button type="button" className="btn-primary w-full sm:w-auto" disabled={busy || !valid} onClick={() => void save()}>{busy ? 'Enregistrement…' : 'Enregistrer le stock'}</button></div>
             </>
