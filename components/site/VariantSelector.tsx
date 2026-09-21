@@ -19,6 +19,7 @@ export default function VariantSelector({
   );
 
   const colors = [...new Set(variants.filter((v) => v.active).map((v) => v.color))];
+  const sizesForColor = variants.filter((v) => v.color === color && v.active);
 
   return (
     <div className="space-y-4 text-ink-900">
@@ -51,47 +52,35 @@ export default function VariantSelector({
       <div>
         <p className="mb-2 text-sm font-bold">Taille</p>
         <div className="flex flex-wrap gap-2">
-          {variants
-            .filter((v) => v.color === color && v.active)
-            .map((v) => {
-              const sold = stockEnabled && v.available <= 0;
-              const isSelected = value === v.id;
-              return (
-                <button
-                  type="button"
-                  key={v.id}
-                  disabled={sold}
-                  aria-pressed={isSelected}
-                  aria-disabled={sold}
-                  onClick={() => onChange(v.id)}
-                  className={`relative rounded-xl border px-4 py-2 text-sm font-bold transition ${
-                    sold
-                      ? 'cursor-not-allowed border-red-200 bg-red-50 text-red-400 line-through'
-                      : isSelected
-                      ? 'border-brand-500 bg-brand-50 text-brand-700'
-                      : 'bg-white hover:border-brand-300'
-                  }`}
-                >
-                  {v.size}
-                  {sold && (
-                    <span className="sr-only"> — Épuisé</span>
-                  )}
-                  {sold && (
-                    <span
-                      aria-hidden="true"
-                      className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-black text-white"
-                      title="Épuisé"
-                    >
-                      ✕
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          {sizesForColor.map((v) => {
+            const sold = stockEnabled && v.available <= 0;
+            const isSelected = value === v.id;
+            return (
+              <button
+                type="button"
+                key={v.id}
+                disabled={sold}
+                aria-pressed={isSelected}
+                aria-disabled={sold}
+                onClick={() => onChange(v.id)}
+                className={`relative rounded-xl border px-4 py-2 text-sm font-bold transition ${
+                  sold
+                    ? 'cursor-not-allowed border-red-200 bg-red-50 text-red-400 line-through'
+                    : isSelected
+                    ? 'border-brand-500 bg-brand-50 text-brand-700'
+                    : 'bg-white hover:border-brand-300'
+                }`}
+              >
+                {sold ? `${v.size} \u00b7 \u00c9puis\u00e9` : v.size}
+              </button>
+            );
+          })}
         </div>
-        <p className="mt-1.5 text-[11px] text-ink-400">
-          Les tailles barrées sont épuisées.
-        </p>
+        {sizesForColor.some((v) => stockEnabled && v.available <= 0) && (
+          <p className="mt-1.5 text-[11px] text-ink-400">
+            Les tailles barrées sont épuisées.
+          </p>
+        )}
       </div>
     </div>
   );
