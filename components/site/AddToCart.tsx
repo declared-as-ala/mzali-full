@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Minus, Plus, ShoppingBag, Zap, Check } from 'lucide-react';
+import { Minus, Plus, ShoppingBag, Zap, Check, XCircle } from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { getPrimaryProductImage, type Product } from '@/types';
 import VariantSelector from './VariantSelector';
@@ -114,8 +114,8 @@ export default function AddToCart({ product }: { product: Product }) {
   return (
     <div className="mt-6 space-y-4">
       {soldOut && (
-        <p className="inline-flex items-center rounded-lg bg-ink-900/85 px-3 py-1.5 text-sm font-bold text-white">
-          {t.product.outOfStock}
+        <p className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-black uppercase tracking-widest text-red-700 shadow-sm">
+          <XCircle size={16} />{t.product.outOfStock}
         </p>
       )}
 
@@ -261,3 +261,8 @@ function Slot({
     </>
   );
 }
+
+
+
+
+
