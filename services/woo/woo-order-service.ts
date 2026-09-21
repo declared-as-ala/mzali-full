@@ -1,5 +1,5 @@
 import type { CheckoutPayload, OrderResponse, OrderStatusCounts } from '@/types';
-import type { OrderCountsQuery, OrderService, OrderListQuery, OrderListResult, OrderUpdate } from '../order-service';
+import type { OrderCountsQuery, OrderListQuery, OrderListResult, OrderReturnPayload, OrderSearchResult, OrderService, OrderUpdate } from '../order-service';
 import { wooClient } from './woo-client';
 import type { WooOrderRaw } from './woo-types';
 import { mapOrder } from './woo-mappers';
@@ -285,5 +285,17 @@ export class WooCommerceOrderService implements OrderService {
     } else {
       await wooClient.trash(`/orders/${id}`);
     }
+  }
+
+  async searchByShipment(code: string): Promise<OrderSearchResult> {
+    // WooCommerce provider does not support the Retour Colis workflow.
+    // Falls back to a simple text search so the UI can at least find an order by number.
+    const res = await this.list({ search: code, perPage: 5 });
+    return { query: code, count: res.total, order: res.items[0] ?? null, matches: res.items };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async returnOrder(_id: string, _payload: OrderReturnPayload): Promise<OrderResponse> {
+    throw new Error('returnOrder is not supported by the WooCommerce provider. Switch to mzali-api.');
   }
 }

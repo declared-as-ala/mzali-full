@@ -115,6 +115,7 @@ describe('ALLOWED_FOR_EMPLOYEE', () => {
         'on-hold', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5',
         'completed',
         'cancelled', 'annule',
+        'retourne',
       ].sort(),
     );
   });
