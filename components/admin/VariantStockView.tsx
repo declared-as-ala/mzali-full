@@ -1,9 +1,7 @@
 'use client';
-import Link from 'next/link';
 import SimpleStockModal from './SimpleStockModal';
 import { useEffect, useRef, useState } from 'react';
 import VariantMatrix from './VariantMatrix';
-import { useAdminHref } from '@/lib/admin-nav-context';
 
 type Row = {
   variantId: string;
@@ -29,7 +27,6 @@ function ModeBadge({ mode }: { mode?: 'SIMPLE' | 'VARIANT' }) {
 }
 
 export default function VariantStockView({ locationId: initialLocation }: { locationId: 'DEPOT' | 'BOUTIQUE' }) {
-  const href = useAdminHref();
   const [locationId, setLocationId] = useState(initialLocation);
   const [allRows, setAllRows] = useState<Row[]>([]);
   const [reportLoading, setReportLoading] = useState(true);
@@ -87,7 +84,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
     const title = locationId === 'DEPOT' ? 'Stock' : 'Stock Boutique';
     popup.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title><style>
       @page{size:A4 landscape;margin:14mm}*{box-sizing:border-box;print-color-adjust:exact;-webkit-print-color-adjust:exact}body{font:12px Arial,sans-serif;color:#172554;margin:24px}h1{font-size:28px;color:#1d4ed8;margin-bottom:8px}.summary{display:flex;gap:20px;background:#eff6ff;padding:18px;margin:20px 0;border-radius:10px}.summary strong{display:block;font-size:22px;margin-top:6px}table{border-collapse:collapse;width:100%}th{background:#1e40af;color:white;text-align:left}td,th{padding:9px;border-bottom:1px solid #dbeafe}tr:nth-child(even){background:#f8fafc}tr{break-inside:avoid}thead{display:table-header-group}.out{color:#b91c1c;font-weight:bold}.note{color:#64748b;font-size:10px}.badge-global{background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:bold}.badge-variant{background:#ede9fe;color:#7c3aed;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:bold}
-      </style></head><body><h1>Mzali Boutique · ${title}</h1><p>État détaillé · ${escape(new Date().toLocaleString('fr-TN'))} · Tous les produits, tailles et couleurs</p><div class="summary"><div>Stock physique<strong>${stats.onHand}</strong></div><div>Disponible<strong>${stats.available}</strong></div><div>Réservé<strong>${stats.reserved}</strong></div><div>${locationId === 'DEPOT' ? 'Combinaisons épuisées' : 'Produits épuisés'}<strong>${stats.out}</strong></div></div><table><thead><tr>${['Produit', 'Mode', 'Taille', 'Couleur', 'SKU', 'Physique', 'Réservé', 'Disponible'].map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${allRows.map(row => `<tr><td>${escape(row.productName)}${row.migrationRequired ? '<br><span class="note">À répartir par taille et couleur</span>' : ''}</td><td>${row.trackingMode === 'VARIANT' ? '<span class="badge-variant">VARIANTES</span>' : '<span class="badge-global">GLOBAL</span>'}</td><td>${escape(row.size || '—')}</td><td>${escape(row.color || '—')}</td><td>${escape(row.sku)}</td><td>${row.onHand}</td><td>${row.reserved}</td><td class="${row.available <= 0 ? 'out' : ''}">${row.available}${row.available <= 0 ? ' · Épuisé' : ''}</td></tr>`).join('')}</tbody></table><p class="note">${allRows.length} lignes · Rapport complet de cet emplacement, indépendamment des filtres affichés.</p></body></html>`);
+      </style></head><body><h1>Mzali Boutique · ${title}</h1><p>État détaillé · ${escape(new Date().toLocaleString('fr-TN'))} · Tous les produits, tailles et couleurs</p><div class="summary"><div>Stock physique<strong>${stats.onHand}</strong></div><div>Disponible<strong>${stats.available}</strong></div><div>${locationId === 'DEPOT' ? 'Combinaisons épuisées' : 'Produits épuisés'}<strong>${stats.out}</strong></div></div><table><thead><tr>${['Produit', 'Mode', 'Taille', 'Couleur', 'SKU', 'Physique', 'Disponible'].map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${allRows.map(row => `<tr><td>${escape(row.productName)}${row.migrationRequired ? '<br><span class="note">À répartir par taille et couleur</span>' : ''}</td><td>${row.trackingMode === 'VARIANT' ? '<span class="badge-variant">VARIANTES</span>' : '<span class="badge-global">GLOBAL</span>'}</td><td>${escape(row.size || '—')}</td><td>${escape(row.color || '—')}</td><td>${escape(row.sku)}</td><td>${row.onHand}</td><td class="${row.available <= 0 ? 'out' : ''}">${row.available}${row.available <= 0 ? ' · Épuisé' : ''}</td></tr>`).join('')}</tbody></table><p class="note">${allRows.length} lignes · Rapport complet de cet emplacement, indépendamment des filtres affichés.</p></body></html>`);
     popup.document.close(); popup.focus(); popup.print();
   }
 
@@ -133,14 +130,13 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
         <div className="flex flex-wrap gap-2">
           <button className="btn-ghost" disabled={reportLoading || !!reportError} onClick={printStock}>Imprimer le stock détaillé</button>
           <button className="btn-ghost" onClick={() => setRefresh(v => v + 1)}>Actualiser</button>
-          <Link className="btn-primary" href={href('/transfers')}>Transferts</Link>
         </div>
       </header>
 
       {reportError && <p role="alert" className="mb-4 text-red-700">{reportError}</p>}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[['Stock physique', stats.onHand], ['Disponible', stats.available], ['Réservé', stats.reserved], [locationId === 'DEPOT' ? 'Combinaisons épuisées' : 'Produits épuisés', stats.out]].map(([label, value]) => (
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[['Stock physique', stats.onHand], ['Disponible', stats.available], [locationId === 'DEPOT' ? 'Combinaisons épuisées' : 'Produits épuisés', stats.out]].map(([label, value]) => (
           <div className="rounded-2xl border bg-white p-4" key={label}>
             <p className="text-sm text-ink-500">{label}</p>
             <p className="mt-2 text-2xl font-black text-blue-700">{reportLoading ? '…' : reportError ? '—' : value}</p>
@@ -182,7 +178,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
         <table className="w-full whitespace-nowrap text-left text-sm">
           <thead className="bg-ink-100">
             <tr>
-              {['Produit', 'Mode', 'Disponible', 'Réservé', 'Stock', 'Actions'].map(h => (
+              {['Produit', 'Mode', 'Disponible', 'Stock', 'Actions'].map(h => (
                 <th className="p-3" key={h}>{h}</th>
               ))}
             </tr>
@@ -204,7 +200,6 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
                 <td className={`p-3 font-bold ${r.available <= 0 ? 'text-red-700' : r.available <= r.threshold ? 'text-amber-700' : 'text-emerald-700'}`}>
                   {r.available} {r.available <= 0 ? '· Épuisé' : r.available <= r.threshold ? '· Faible' : ''}
                 </td>
-                <td className="p-3">{r.reserved}</td>
                 <td className="p-3">{r.onHand}</td>
                 <td className="p-3">
                   <div className="flex gap-1">
@@ -223,7 +218,7 @@ export default function VariantStockView({ locationId: initialLocation }: { loca
               </tr>
             ))}
             {!data.items.length && (
-              <tr><td colSpan={6} className="p-8 text-center">{loading ? 'Chargement…' : 'Aucun produit.'}</td></tr>
+              <tr><td colSpan={5} className="p-8 text-center">{loading ? 'Chargement…' : 'Aucun produit.'}</td></tr>
             )}
           </tbody>
         </table>

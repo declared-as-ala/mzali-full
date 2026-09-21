@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, ShoppingCart, Package, Tag, LogOut,
   UserCircle, Users, Contact, Ticket, Boxes, ScrollText,
-  MonitorSmartphone, Wallet, ArrowLeftRight, ClipboardList,
+  MonitorSmartphone, Wallet, ClipboardList,
   Building2, FileText, FileSignature, Receipt,
   ShieldCheck, Award, AlertTriangle, BarChart3, CreditCard,
   ChevronRight, Sparkles, Store
@@ -41,7 +41,6 @@ const SECTIONS = [
     label: 'Stock',
     items: [
       { href: '/stock-depot', label: 'Stock', icon: Boxes, exact: false },
-      { href: '/transfers', label: 'Transferts', icon: ArrowLeftRight, exact: false },
     ],
   },
   {

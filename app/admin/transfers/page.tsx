@@ -1,7 +1,6 @@
-import TransfersView from '@/components/admin/TransfersView';
-
-export const dynamic = 'force-dynamic';
+import { redirect } from 'next/navigation';
 
 export default function TransfersPage() {
-  return <TransfersView />;
+  redirect('/admin/stock-depot');
 }
+
