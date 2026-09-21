@@ -227,5 +227,22 @@ jobs:
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         shell: bash
         run: |
-          docker push "ghcr.io/$IMAGE_OWNER/mzali-${{ matrix.service }}:${GITHUB_SHA}"
-          docker push "ghcr.io/$IMAGE_OWNER/mzali-${{ matrix.service }}:latest"
+          # Retry registry upload failures (including GHCR "unknown blob")
+          # using the same built image. Exhaustion still blocks deployment.
+          push_with_retry() {
+            local image="$1"
+            local attempt
+            for attempt in 1 2 3 4; do
+              if docker push "$image"; then
+                return 0
+              fi
+              if (( attempt == 4 )); then
+                echo "::error::Failed to publish $image after $attempt attempts"
+                return 1
+              fi
+              echo "::warning::Publish attempt $attempt failed for $image; retrying"
+              sleep "$(( attempt * 10 ))"
+            done
+          }
+          push_with_retry "ghcr.io/$IMAGE_OWNER/mzali-${{ matrix.service }}:${GITHUB_SHA}"
+          push_with_retry "ghcr.io/$IMAGE_OWNER/mzali-${{ matrix.service }}:latest"
