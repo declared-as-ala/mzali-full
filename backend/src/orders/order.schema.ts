@@ -71,6 +71,29 @@ class Carrier {
 }
 const CarrierSchema = SchemaFactory.createForClass(Carrier);
 
+@Schema({ _id: false })
+class ReturnedItem {
+  @Prop({ type: String, required: true }) productId!: string;
+  @Prop({ type: String, default: null }) variantId!: string | null;
+  @Prop({ type: String, required: true }) name!: string;
+  @Prop({ type: Number, required: true }) qty!: number;
+}
+const ReturnedItemSchema = SchemaFactory.createForClass(ReturnedItem);
+
+@Schema({ _id: false })
+export class ReturnRecord {
+  @Prop({ type: Date, required: true, default: () => new Date() }) returnedAt!: Date;
+  @Prop({ type: Object, required: true }) returnedBy!: { type: string; id: string | null; name: string };
+  @Prop({ type: String, default: null }) trackingNumber!: string | null;
+  @Prop({ type: String, default: null }) carrier!: string | null;
+  @Prop({ type: String, default: null }) reason!: string | null;
+  @Prop({ type: String, default: null }) note!: string | null;
+  @Prop({ type: Boolean, required: true, default: false }) stockRestored!: boolean;
+  @Prop({ type: [ReturnedItemSchema], default: [] }) itemsReturned!: ReturnedItem[];
+  @Prop({ type: [String], default: [] }) stockMovementIds!: string[];
+}
+export const ReturnRecordSchema = SchemaFactory.createForClass(ReturnRecord);
+
 @Schema({ collection: 'orders', timestamps: true })
 export class Order {
   @Prop({ type: Boolean, default: null }) stockCommitted!: boolean | null;
@@ -82,6 +105,9 @@ export class Order {
 
   @Prop({ type: [StatusHistoryEntrySchema], default: [] })
   statusHistory!: StatusHistoryEntry[];
+
+  @Prop({ type: ReturnRecordSchema, default: null })
+  returnInfo!: ReturnRecord | null;
 
   @Prop({ type: OrderCustomerSchema, required: true })
   customer!: OrderCustomer;
@@ -148,3 +174,7 @@ OrderSchema.index({ createdAt: -1 });
 // Combined with status and createdAt so the planner can use it for the most
 // common filtered+sorted queries without a separate collection scan.
 OrderSchema.index({ 'items.productId': 1, status: 1, createdAt: -1 });
+OrderSchema.index({ 'carrier.navex.tracking': 1 }, { sparse: true });
+OrderSchema.index({ 'carrier.firstdelivery.tracking': 1 }, { sparse: true });
+OrderSchema.index({ 'carrier.axess.tracking': 1 }, { sparse: true });
+OrderSchema.index({ 'returnInfo.trackingNumber': 1 }, { sparse: true });

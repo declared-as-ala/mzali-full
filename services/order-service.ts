@@ -56,6 +56,21 @@ export type OrderUpdate = {
   version?: number;
 };
 
+export type OrderSearchResult = {
+  query: string;
+  count: number;
+  order: OrderResponse | null;
+  matches: OrderResponse[];
+};
+
+export type OrderReturnPayload = {
+  trackingNumber?: string;
+  carrier?: string;
+  reason?: string;
+  note?: string;
+  items?: { productId: string; variantId?: string | null; name: string; qty: number }[];
+};
+
 export interface OrderService {
   create(payload: CheckoutPayload): Promise<OrderResponse>;
   getById(id: string): Promise<OrderResponse | null>;
@@ -65,4 +80,6 @@ export interface OrderService {
   counts(query?: OrderCountsQuery): Promise<OrderStatusCounts>;
   update(id: string, patch: OrderUpdate): Promise<OrderResponse>;
   remove(id: string): Promise<void>;
+  searchByShipment(code: string): Promise<OrderSearchResult>;
+  returnOrder(id: string, payload: OrderReturnPayload): Promise<OrderResponse>;
 }

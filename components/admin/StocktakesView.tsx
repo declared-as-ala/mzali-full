@@ -232,6 +232,7 @@ function StocktakeDetailDrawer({ id, onClose, onChanged }: { id: string; onClose
       return next;
     });
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [id]);
 
   async function submitCount() {

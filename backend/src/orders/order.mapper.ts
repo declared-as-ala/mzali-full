@@ -71,6 +71,25 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     }
   }
 
+  const returnInfo = doc.returnInfo
+    ? {
+        returnedAt: doc.returnInfo.returnedAt.toISOString(),
+        returnedBy: doc.returnInfo.returnedBy,
+        trackingNumber: doc.returnInfo.trackingNumber ?? undefined,
+        carrier: doc.returnInfo.carrier ?? undefined,
+        reason: doc.returnInfo.reason ?? undefined,
+        note: doc.returnInfo.note ?? undefined,
+        stockRestored: doc.returnInfo.stockRestored,
+        itemsReturned: (doc.returnInfo.itemsReturned ?? []).map((i) => ({
+          productId: i.productId,
+          variantId: i.variantId ?? undefined,
+          name: i.name,
+          qty: i.qty,
+        })),
+        stockMovementIds: doc.returnInfo.stockMovementIds,
+      }
+    : undefined;
+
   return {
     id: String(doc.id ?? doc._id),
     number: String(doc.orderNumber),
@@ -93,6 +112,7 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     },
     items,
     shipping: toDinars(doc.shippingMinor),
+    returnInfo,
     meta,
   };
 }

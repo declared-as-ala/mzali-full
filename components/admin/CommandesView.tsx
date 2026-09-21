@@ -1,9 +1,10 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, Edit, Trash2, Plus, Search, X, ShoppingBag } from 'lucide-react';
+import { Eye, Edit, Trash2, Plus, Search, X, ShoppingBag, RotateCcw } from 'lucide-react';
 import OrderDrawer from './OrderDrawer';
 import CustomerBadge from './CustomerBadge';
+import ReturnScanModal from './ReturnScanModal';
 import { useToast } from './Toast';
 import { formatPrice, formatDate, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
@@ -13,7 +14,7 @@ import type { OrderResponse, OrderStatusCounts } from '@/types';
 const EMPTY_COUNTS: OrderStatusCounts = {
   total: 0, pending: 0, confirmed: 0,
   attempts: { total: 0, attempt1: 0, attempt2: 0, attempt3: 0, attempt4: 0, attempt5: 0 },
-  cancelled: 0, abandoned: 0, trash: 0,
+  cancelled: 0, returned: 0, abandoned: 0, trash: 0,
 };
 
 /** Fixed set for the "Normal" tab's status filter — no longer derived from
@@ -21,7 +22,7 @@ const EMPTY_COUNTS: OrderStatusCounts = {
  *  a real source of the "counts don't mean what you think" confusion this
  *  view used to have). 'tentative' here is a UI-only sentinel meaning "any
  *  of tentative-1..5", expanded server-side — see app/admin/commandes/page.tsx. */
-const NORMAL_STATUS_FILTERS = ['en-attente', 'confirme', 'tentative', 'annule'];
+const NORMAL_STATUS_FILTERS = ['en-attente', 'confirme', 'tentative', 'annule', 'retourne'];
 
 type Props = {
   initialOrders: OrderResponse[];
@@ -56,6 +57,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [orders, setOrders] = useState(initialOrders);
@@ -170,6 +172,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     'tentative-4': counts.attempts.attempt4,
     'tentative-5': counts.attempts.attempt5,
     annule: counts.cancelled,
+    retourne: counts.returned ?? 0,
   }), [
     counts.pending,
     counts.confirmed,
@@ -180,6 +183,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     counts.attempts.attempt4,
     counts.attempts.attempt5,
     counts.cancelled,
+    counts.returned,
   ]);
 
   // Product filter dropdown: product name displayed, ID stored in URL.
@@ -528,16 +532,25 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
                 </p>
                 {activeTab === 'normal' && (
                   <p className="mt-0.5 text-xs text-ink-400">
-                    = En attente ({formatCount(counts.pending)}) + Confirmée ({formatCount(counts.confirmed)}) + Tentative ({formatCount(counts.attempts.total)}) + Annulée ({formatCount(counts.cancelled)})
+                    = En attente ({formatCount(counts.pending)}) + Confirmée ({formatCount(counts.confirmed)}) + Tentative ({formatCount(counts.attempts.total)}) + Annulée ({formatCount(counts.cancelled)}) + Retournée ({formatCount(counts.returned ?? 0)})
                   </p>
                 )}
               </>
             )}
           </div>
         </div>
-        <button onClick={openCreate} className="btn-primary inline-flex min-h-11 items-center gap-2">
-          <Plus size={16} /> Ajouter une commande
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReturnModalOpen(true)}
+            className="btn-secondary inline-flex min-h-11 items-center gap-2 border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 hover:border-purple-300 font-bold shadow-soft transition"
+          >
+            <RotateCcw size={16} /> Scanner un retour
+          </button>
+          <button onClick={openCreate} className="btn-primary inline-flex min-h-11 items-center gap-2">
+            <Plus size={16} /> Ajouter une commande
+          </button>
+        </div>
       </header>
 
       {/* Segregated tabs for normal orders, abandoned recovery checkouts, and trashed orders */}
@@ -962,6 +975,15 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         onClose={() => setDrawerOpen(false)}
         orderId={editingId}
         onSaved={applySavedOrder}
+        apiBase={apiBase}
+      />
+
+      <ReturnScanModal
+        open={returnModalOpen}
+        onClose={() => setReturnModalOpen(false)}
+        onReturnProcessed={() => {
+          router.refresh();
+        }}
         apiBase={apiBase}
       />
     </div>

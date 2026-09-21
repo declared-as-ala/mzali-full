@@ -4,6 +4,7 @@ import { AuditService } from '@/audit/audit.service';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { AuthedRequest, JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePermissions } from '@/auth/guards/permissions.guard';
+import { ProcessOrderReturnDto } from './dto/order-return.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { CheckoutDto } from './dto/checkout.dto';
@@ -18,6 +19,12 @@ export class OrdersAdminController {
     private readonly orders: OrdersService,
     private readonly audit: AuditService,
   ) {}
+
+  @Get('admin/orders/search-by-shipment')
+  @RequirePermissions('orders.read')
+  searchByShipment(@Query('code') code: string) {
+    return this.orders.findOrderByShipmentCode(code ?? '');
+  }
 
   @Get('admin/orders')
   @RequirePermissions('orders.read')
@@ -63,6 +70,16 @@ export class OrdersAdminController {
   @RequirePermissions('orders.write')
   update(@Param('id') id: string, @Body() dto: UpdateOrderDto, @CurrentUser() user: RequestUser) {
     return this.orders.update(id, dto, { type: 'employee', id: user.userId, name: user.name });
+  }
+
+  @Post('admin/orders/:id/return')
+  @RequirePermissions('orders.return')
+  async returnOrder(
+    @Param('id') id: string,
+    @Body() dto: ProcessOrderReturnDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.orders.processReturn(id, dto, { type: 'employee', id: user.userId, name: user.name });
   }
 
   @Delete('admin/orders/:id')

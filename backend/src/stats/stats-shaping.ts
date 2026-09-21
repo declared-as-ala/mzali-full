@@ -26,6 +26,7 @@ export const FUNNEL_ORDER = [
   ...TENTATIVE_STATUSES,
   'annule',
   'cancelled',
+  'retourne',
 ] as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -34,7 +34,9 @@ export type StandardOrderStatus =
   | 'completed'
   | 'cancelled'
   | 'refunded'
-  | 'failed';
+  | 'failed'
+  | 'retourne'
+  | 'returned';
 export type OrderStatus = StandardOrderStatus | (string & {});
 
 export type OrderLineItem = {
@@ -46,6 +48,18 @@ export type OrderLineItem = {
   total: number;
   imageUrl?: string;
   attributes?: { key: string; value: string }[];   // variation / bundle slot info shown in admin
+};
+
+export type ReturnInfo = {
+  returnedAt: string;
+  returnedBy: { type: string; id: string | null; name: string };
+  trackingNumber?: string | null;
+  carrier?: string | null;
+  reason?: string | null;
+  note?: string | null;
+  stockRestored: boolean;
+  itemsReturned: { productId: string; variantId?: string | null; name: string; qty: number }[];
+  stockMovementIds?: string[];
 };
 
 export type OrderResponse = {
@@ -64,6 +78,7 @@ export type OrderResponse = {
   customer: CheckoutCustomer;
   items: OrderLineItem[];
   shipping: number;
+  returnInfo?: ReturnInfo | null;
   meta?: Record<string, unknown>;
 };
 
@@ -76,7 +91,7 @@ export type OrderProductCount = {
 /**
  * Single-round-trip status breakdown for the admin/employee orders list —
  * see OrdersService.counts(). `total` is the "Normal" tab total (pending +
- * confirmed + every tentative attempt + cancelled), matching the tab split
+ * confirmed + every tentative attempt + cancelled + returned), matching the tab split
  * already used elsewhere; abandoned/trash are separate buckets on purpose.
  */
 export type OrderStatusCounts = {
@@ -92,6 +107,7 @@ export type OrderStatusCounts = {
     attempt5: number;
   };
   cancelled: number;
+  returned?: number;
   abandoned: number;
   trash: number;
   products?: OrderProductCount[];

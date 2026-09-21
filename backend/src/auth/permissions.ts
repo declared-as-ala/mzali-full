@@ -17,6 +17,9 @@ export const ALL_PERMISSIONS = [
   'orders.print',
   'orders.export',
   'orders.bulk_update',
+  'orders.return',
+  'orders.return.view',
+  'orders.return.override',
   'customers.read',
   'customers.delete',
   'coupons.read',
@@ -85,7 +88,8 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
   super_admin: ALL,
   admin: ALL,
   order_manager: [
-    'orders.read', 'orders.write', 'orders.print', 'orders.export', 'orders.bulk_update',
+    'orders.read', 'orders.write', 'orders.delete', 'orders.print', 'orders.export', 'orders.bulk_update',
+    'orders.return', 'orders.return.view', 'orders.return.override',
     'customers.read', 'products.read', 'categories.read',
     'shipping.push', 'stats.read',
     'documents.manage', 'documents.finalize',
@@ -100,7 +104,7 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
     'inventory.read', 'inventory.adjust',
   ],
   viewer: [
-    'products.read', 'categories.read', 'orders.read',
+    'products.read', 'categories.read', 'orders.read', 'orders.return.view',
     'customers.read', 'inventory.read', 'stats.read',
     'pos.analytics.read',
   ],
@@ -111,6 +115,7 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
    *  account needs both. */
   cashier: [
     'orders.read', 'orders.write', 'orders.delete', 'shipping.push',
+    'orders.return', 'orders.return.view',
     'pos.open_session', 'pos.close_session', 'pos.sell',
     'pos.view_boutique_stock', 'pos.view_depot_stock',
     'pos.apply_basic_discount', 'pos.reprint_ticket',
@@ -121,6 +126,7 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
   ],
   /** All cashier permissions plus approvals/refunds/adjustments. */
   store_manager: [
+    'orders.return', 'orders.return.view', 'orders.return.override',
     'pos.open_session', 'pos.close_session', 'pos.sell',
     'pos.view_boutique_stock', 'pos.view_depot_stock',
     'pos.apply_basic_discount', 'pos.apply_advanced_discount',

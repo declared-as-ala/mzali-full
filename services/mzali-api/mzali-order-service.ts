@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CheckoutPayload, OrderResponse, OrderStatusCounts } from '@/types';
-import type { OrderCountsQuery, OrderListQuery, OrderListResult, OrderService, OrderUpdate } from '../order-service';
+import type { OrderCountsQuery, OrderListQuery, OrderListResult, OrderReturnPayload, OrderSearchResult, OrderService, OrderUpdate } from '../order-service';
 import { apiRequest } from './client';
 import { withAuthRetry } from './with-auth-retry';
 
@@ -72,5 +72,24 @@ export class MzaliApiOrderService implements OrderService {
 
   async remove(id: string): Promise<void> {
     await withAuthRetry((bearer) => apiRequest(`/admin/orders/${id}`, { method: 'DELETE', bearer }));
+  }
+
+  async searchByShipment(code: string): Promise<OrderSearchResult> {
+    return withAuthRetry((bearer) =>
+      apiRequest<OrderSearchResult>('/admin/orders/search-by-shipment', {
+        bearer,
+        query: { code },
+      }),
+    );
+  }
+
+  async returnOrder(id: string, payload: OrderReturnPayload): Promise<OrderResponse> {
+    return withAuthRetry((bearer) =>
+      apiRequest<OrderResponse>(`/admin/orders/${id}/return`, {
+        method: 'POST',
+        bearer,
+        body: payload,
+      }),
+    );
   }
 }

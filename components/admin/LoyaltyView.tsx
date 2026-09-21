@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { CreditCard, Download, FileArchive, Gift, Layers, Package, Printer, RefreshCw, Search, Settings2, ShieldOff, Users, X } from 'lucide-react';
 import { useToast } from './Toast';
@@ -79,6 +80,7 @@ function AccountsTab() {
       setLoading(false);
     }
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { refresh(''); }, []);
 
   return (
@@ -148,6 +150,7 @@ function AccountDetailDrawer({ account, onClose, onChanged, toast }: { account: 
       setLoading(false);
     }
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadTransactions(); }, [account.id]);
 
   async function suspend() {
@@ -449,9 +452,9 @@ function BatchDetailDrawer({ batch, onClose, onChanged, toast }: { batch: CardBa
           ) : !firstCardId ? (
             <p className="text-sm text-ink-500">Aucune carte dans ce lot pour l&apos;aperçu.</p>
           ) : previewMode === 'front' ? (
-            <img src={`/api/admin/loyalty/cards/${firstCardId}/preview/front.png`} alt="Aperçu recto" className="w-full rounded-xl border border-ink-200" />
+            <Image src={`/api/admin/loyalty/cards/${firstCardId}/preview/front.png`} alt="Aperçu recto" width={800} height={500} className="w-full rounded-xl border border-ink-200" unoptimized />
           ) : previewMode === 'back' ? (
-            <img src={`/api/admin/loyalty/cards/${firstCardId}/preview/back.png`} alt="Aperçu verso" className="w-full rounded-xl border border-ink-200" />
+            <Image src={`/api/admin/loyalty/cards/${firstCardId}/preview/back.png`} alt="Aperçu verso" width={800} height={500} className="w-full rounded-xl border border-ink-200" unoptimized />
           ) : previewMode === 'print' ? (
             <iframe src={`/api/admin/loyalty/cards/${firstCardId}/preview/print.pdf`} className="h-72 w-full rounded-xl border border-ink-200" title="Aperçu impression" />
           ) : (

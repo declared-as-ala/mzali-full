@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, Award, BarChart3, Boxes, CreditCard, Download, Gift, Package,
@@ -722,7 +723,7 @@ function TopProductsTable({ data, categoryName }: { data: ProductPerformanceRow[
               <td className="px-3 py-3">
                 <div className="flex items-center gap-2.5">
                   {p.imageUrl ? (
-                    <img src={p.imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover border border-slate-200" />
+                    <Image src={p.imageUrl} alt="" width={36} height={36} className="h-9 w-9 shrink-0 rounded-lg object-cover border border-slate-200" unoptimized />
                   ) : (
                     <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100"><Package size={15} className="text-ink-500" /></div>
                   )}

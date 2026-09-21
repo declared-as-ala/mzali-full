@@ -18,6 +18,7 @@ import { CurrentUser } from '@/auth/current-user.decorator';
 import { AuthedRequest, JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePermissions } from '@/auth/guards/permissions.guard';
 import { CheckoutDto } from './dto/checkout.dto';
+import { ProcessOrderReturnDto } from './dto/order-return.dto';
 import { UpdateOrderDto, UpdateStatusDto } from './dto/order-update.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
 import { ALLOWED_FOR_EMPLOYEE } from './order-status';
@@ -32,6 +33,12 @@ export class OrdersEmployeeController {
     private readonly orders: OrdersService,
     private readonly audit: AuditService,
   ) {}
+
+  @Get('search-by-shipment')
+  @RequirePermissions('orders.read')
+  searchByShipment(@Query('code') code: string) {
+    return this.orders.findOrderByShipmentCode(code ?? '');
+  }
 
   @Get()
   @RequirePermissions('orders.read')
@@ -78,6 +85,17 @@ export class OrdersEmployeeController {
       throw new BadRequestException('Statut non autorisé');
     }
     return this.orders.changeStatus(id, dto.status, { type: 'employee', id: user.userId, name: user.name });
+  }
+
+  @Post(':id/return')
+  @RequirePermissions('orders.return')
+  async returnOrder(
+    @Param('id') id: string,
+    @Body() dto: ProcessOrderReturnDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    await this.requireOrder(id);
+    return this.orders.processReturn(id, dto, { type: 'employee', id: user.userId, name: user.name });
   }
 
   @Delete(':id')

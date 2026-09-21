@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { CheckCircle2, RefreshCw, Search, ShieldAlert, ShieldOff, UserPlus, X } from 'lucide-react';
 import { useToast } from './Toast';
@@ -159,11 +160,11 @@ function CardDetailDrawer({ card, onClose, onChanged, toast }: { card: LoyaltyCa
 
         <div className="mb-5 grid grid-cols-2 gap-2">
           <div>
-            <img src={`/api/admin/loyalty/cards/${card.id}/preview/front.png`} alt="Recto" className="w-full rounded-lg border border-ink-200" />
+            <Image src={`/api/admin/loyalty/cards/${card.id}/preview/front.png`} alt="Recto" width={400} height={250} className="w-full rounded-lg border border-ink-200" unoptimized />
             <p className="mt-1 text-center text-[10px] font-bold uppercase text-ink-500">Recto</p>
           </div>
           <div>
-            <img src={`/api/admin/loyalty/cards/${card.id}/preview/back.png`} alt="Verso" className="w-full rounded-lg border border-ink-200" />
+            <Image src={`/api/admin/loyalty/cards/${card.id}/preview/back.png`} alt="Verso" width={400} height={250} className="w-full rounded-lg border border-ink-200" unoptimized />
             <p className="mt-1 text-center text-[10px] font-bold uppercase text-ink-500">Verso</p>
           </div>
         </div>

@@ -266,6 +266,7 @@ function SupplierDetailDrawer({ id, onClose, onChanged }: { id: string; onClose:
       setLoading(false);
     }
   }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [id]);
 
   const visible = useMemo(() => products.filter((p) => {

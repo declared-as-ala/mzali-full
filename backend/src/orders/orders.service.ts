@@ -3,7 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Queue } from 'bullmq';
-import { ClientSession, Connection, Model, Types } from 'mongoose';
+import { ClientSession, Connection, FilterQuery, Model, Types } from 'mongoose';
 import type { AuditActor, CheckoutPayload, OrderResponse, OrderStatusCounts } from '@contracts';
 import { AuditService } from '@/audit/audit.service';
 import { Product } from '@/catalog/product.schema';
@@ -23,11 +23,12 @@ import { SettingsService } from '@/settings/settings.service';
 import { priceExplicitBundle } from '@/catalog/product-pricing';
 import { CheckoutDto } from './dto/checkout.dto';
 import { OrderListQueryDto } from './dto/order-list-query.dto';
+import { ProcessOrderReturnDto } from './dto/order-return.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
 import { computeOrderTotals, computeStockDeltas } from './order-calc';
 import { diffCustomer, diffItems, hasItemChanges, ItemSnapshot, OrderSnapshot, snapshotCustomer, snapshotItems } from './order-diff';
 import { toOrderContract } from './order.mapper';
-import { DEFAULT_STATUS, DRAFT_STATUS, getAttemptNumber, planStockTransition, stockEffectForStatus } from './order-status';
+import { COMMIT_STATUSES, DEFAULT_STATUS, DRAFT_STATUS, getAttemptNumber, planStockTransition, stockEffectForStatus } from './order-status';
 import { Order, OrderDocument } from './order.schema';
 
 const ORDER_NUMBER_SEQUENCE = 'orderNumber';
@@ -349,6 +350,10 @@ export class OrdersService {
           { 'customer.firstName': { $regex: query.search, $options: 'i' } },
           { 'customer.phone': { $regex: query.search, $options: 'i' } },
           { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
+          { 'carrier.navex.tracking': { $regex: query.search, $options: 'i' } },
+          { 'carrier.firstdelivery.tracking': { $regex: query.search, $options: 'i' } },
+          { 'carrier.axess.tracking': { $regex: query.search, $options: 'i' } },
+          { 'returnInfo.trackingNumber': { $regex: query.search, $options: 'i' } },
         ],
       });
     }
@@ -425,6 +430,10 @@ export class OrdersService {
             { 'customer.firstName': { $regex: query.search, $options: 'i' } },
             { 'customer.phone': { $regex: query.search, $options: 'i' } },
             { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
+            { 'carrier.navex.tracking': { $regex: query.search, $options: 'i' } },
+            { 'carrier.firstdelivery.tracking': { $regex: query.search, $options: 'i' } },
+            { 'carrier.axess.tracking': { $regex: query.search, $options: 'i' } },
+            { 'returnInfo.trackingNumber': { $regex: query.search, $options: 'i' } },
           ],
         }
       : null;
@@ -476,7 +485,7 @@ export class OrdersService {
         }
       } else {
         productScopeAnds.push({
-          status: { $in: ['en-attente', 'confirme', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5', 'annule'] },
+          status: { $in: ['en-attente', 'confirme', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5', 'annule', 'retourne'] },
         });
       }
     }
@@ -534,6 +543,7 @@ export class OrdersService {
           attempt4: countBranch('tentative-4'),
           attempt5: countBranch('tentative-5'),
           cancelled: countBranch('annule'),
+          returned: countBranch('retourne'),
           abandoned: countBranch('checkout-draft'),
           trash: countBranch('trash'),
           products: productBranch as never,
@@ -551,6 +561,7 @@ export class OrdersService {
     const pending = n('pending');
     const confirmed = n('confirmed');
     const cancelled = n('cancelled');
+    const returned = n('returned');
 
     const products = Array.isArray(facets?.products)
       ? facets.products.map((p) => ({
@@ -560,11 +571,12 @@ export class OrdersService {
       : [];
 
     return {
-      total: pending + confirmed + attemptsTotal + cancelled,
+      total: pending + confirmed + attemptsTotal + cancelled + returned,
       pending,
       confirmed,
       attempts: { total: attemptsTotal, attempt1, attempt2, attempt3, attempt4, attempt5 },
       cancelled,
+      returned,
       abandoned: n('abandoned'),
       trash: n('trash'),
       products,
@@ -950,7 +962,13 @@ export class OrdersService {
       } else if (action === 'release') {
         await this.inventory.release(item.productId, item.qty, doc.id, actor, session);
       } else if (action === 'restock') {
-        await this.inventory.adjust(item.productId, item.qty, `Annulation commande #${doc.orderNumber}`, actor, session, undefined, variantId, { type: 'refund_restock', orderId: doc.id });
+        const reason = nextStatus === 'retourne'
+          ? `Retour colis commande #${doc.orderNumber}`
+          : `Annulation commande #${doc.orderNumber}`;
+        await this.inventory.adjust(item.productId, item.qty, reason, actor, session, undefined, variantId, {
+          type: nextStatus === 'retourne' ? 'return_restock' : 'refund_restock',
+          orderId: doc.id,
+        });
       }
     }
 
@@ -1051,6 +1069,182 @@ export class OrdersService {
       }
     } catch (err) {
       this.logger.warn(`Failed to enqueue carrier auto-push for order ${doc.id}: ${String(err)}`);
+    }
+  }
+
+  /**
+   * Search an order unambiguously by carrier tracking number, order number,
+   * legacy ID, or document ID for the Retour Colis scanning station.
+   */
+  async findOrderByShipmentCode(rawCode: string) {
+    const code = (rawCode || '').trim();
+    if (!code) throw new BadRequestException('Code colis ou tracking requis');
+
+    const normalizedNumber = Number(code.replace(/^#/, '').trim());
+    const orConditions: FilterQuery<Order>[] = [
+      { 'carrier.navex.tracking': code },
+      { 'carrier.firstdelivery.tracking': code },
+      { 'carrier.axess.tracking': code },
+      { 'returnInfo.trackingNumber': code },
+      { legacyId: code },
+    ];
+
+    if (Number.isSafeInteger(normalizedNumber) && normalizedNumber > 0) {
+      orConditions.push({ orderNumber: normalizedNumber });
+    }
+    if (Types.ObjectId.isValid(code)) {
+      orConditions.push({ _id: code });
+    }
+
+    // Also case-insensitive regex for carrier tracking barcodes
+    const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    orConditions.push({ 'carrier.navex.tracking': { $regex: `^${escaped}$`, $options: 'i' } });
+    orConditions.push({ 'carrier.firstdelivery.tracking': { $regex: `^${escaped}$`, $options: 'i' } });
+    orConditions.push({ 'carrier.axess.tracking': { $regex: `^${escaped}$`, $options: 'i' } });
+
+    const matches = await this.model.find({ $or: orConditions }).limit(10);
+    return {
+      query: code,
+      count: matches.length,
+      order: matches.length === 1 ? toOrderContract(matches[0]) : null,
+      matches: matches.map((m) => toOrderContract(m)),
+    };
+  }
+
+  /**
+   * Validates a parcel return with idempotent stock restoration to DEPOT.
+   * - Only restores stock if stock was previously deducted (wasCommitted === true).
+   * - Idempotent: scanning or validating twice aborts with 409 Conflict.
+   * - Restores exact variant stock in VARIANT mode, global stock in SIMPLE mode.
+   * - Leaves stock untouched in Mode Sans Stock.
+   * - Logs complete audit trail, stock movements, and returnInfo subdocument.
+   */
+  async processReturn(
+    id: string,
+    dto: ProcessOrderReturnDto,
+    actor: AuditActor,
+  ): Promise<OrderResponse> {
+    const session = await this.connection.startSession();
+    try {
+      let result!: OrderResponse;
+      await session.withTransaction(async () => {
+        const doc = await this.model.findById(id).session(session);
+        if (!doc) throw new NotFoundException('Commande introuvable');
+
+        // 1. Idempotency check: Cannot return twice!
+        if (doc.status === 'retourne' || doc.returnInfo != null) {
+          const dateStr = doc.returnInfo?.returnedAt
+            ? new Date(doc.returnInfo.returnedAt).toLocaleString('fr-FR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : '';
+          const byStr = doc.returnInfo?.returnedBy?.name || 'un employé';
+          throw new ConflictException(
+            `Ce colis a déjà été enregistré comme retourné${dateStr ? ` le ${dateStr}` : ''} par ${byStr}.`,
+          );
+        }
+
+        // 2. Check if stock was actually committed.
+        // Orders in pending, tentative, or drafts never deducted stock.
+        // Orders already cancelled were already restocked.
+        const wasCommitted = doc.stockCommitted === true || (doc.stockCommitted === null && COMMIT_STATUSES.has(doc.status));
+        const inventorySettings = await this.settings.getInventorySettings();
+        const inventoryEnabled = inventorySettings.enabled !== false;
+        const shouldRestoreStock = wasCommitted && inventoryEnabled;
+
+        const returnLines = dto.items && dto.items.length > 0
+          ? dto.items
+          : doc.items.map((i) => ({ productId: i.productId, variantId: i.variantId, name: i.name, qty: i.qty }));
+
+        // 3. Stock restoration to DEPOT
+        if (shouldRestoreStock) {
+          for (const line of returnLines) {
+            const matchingDocItem = doc.items.find(
+              (i) => i.productId === line.productId && (!line.variantId || i.variantId === line.variantId),
+            );
+            const variantId = await this.inventory.resolveHistoricalVariant(
+              line.productId,
+              line.variantId || matchingDocItem?.variantId,
+              matchingDocItem?.variation,
+            );
+
+            await this.inventory.adjust(
+              line.productId,
+              line.qty,
+              `Retour colis commande #${doc.orderNumber}${dto.reason ? ` - ${dto.reason}` : ''}`,
+              actor,
+              session,
+              'DEPOT',
+              variantId,
+              { type: 'return_restock', orderId: doc.id },
+            );
+          }
+        }
+
+        // 4. Update order status and return record
+        const previousStatus = doc.status;
+        doc.status = 'retourne';
+        doc.stockCommitted = false;
+
+        const trackingNumber = dto.trackingNumber?.trim()
+          || doc.carrier.navex?.tracking
+          || doc.carrier.firstdelivery?.tracking
+          || doc.carrier.axess?.tracking
+          || null;
+
+        const carrierName = dto.carrier?.trim()
+          || doc.deliveryCompany
+          || (doc.carrier.navex?.tracking ? 'Navex' : doc.carrier.firstdelivery?.tracking ? 'First Delivery' : doc.carrier.axess?.tracking ? 'Axess' : null);
+
+        doc.returnInfo = {
+          returnedAt: new Date(),
+          returnedBy: { type: actor.type, id: actor.id, name: actor.name },
+          trackingNumber,
+          carrier: carrierName,
+          reason: dto.reason?.trim() || null,
+          note: dto.note?.trim() || null,
+          stockRestored: shouldRestoreStock,
+          itemsReturned: returnLines.map((l) => ({
+            productId: l.productId,
+            variantId: l.variantId ?? null,
+            name: l.name,
+            qty: l.qty,
+          })),
+          stockMovementIds: [],
+        } as Order['returnInfo'];
+
+        doc.statusHistory.push({
+          from: previousStatus,
+          to: 'retourne',
+          by: actor,
+          at: new Date(),
+          note: `Colis retourné${dto.reason ? ` - Motif: ${dto.reason}` : ''}`,
+        } as Order['statusHistory'][number]);
+
+        doc.version = (doc.version ?? 0) + 1;
+        await doc.save({ session });
+
+        // 5. Audit log
+        await this.audit.log({
+          actor,
+          action: 'order.return',
+          entityType: 'order',
+          entityId: doc.id,
+          summary: `Retour colis pour la commande #${doc.orderNumber}${shouldRestoreStock ? ` (${returnLines.reduce((s, i) => s + i.qty, 0)} unité(s) restaurée(s) au Dépôt)` : ' (sans mouvement de stock)'}`,
+          before: { status: previousStatus, stockCommitted: wasCommitted },
+          after: { status: 'retourne', stockRestored: shouldRestoreStock, trackingNumber, carrier: carrierName },
+          ip: null,
+        });
+
+        result = toOrderContract(doc);
+      });
+      return result;
+    } finally {
+      await session.endSession();
     }
   }
 

@@ -56,6 +56,8 @@ const STATUS_LABEL_FR: Record<string, string> = {
   annule: 'Annulée',
   refunded: 'Remboursée',
   failed: 'Échouée',
+  retourne: 'Retournée',
+  returned: 'Retournée',
   'auto-draft': 'Brouillon',
   'checkout-draft': 'Abandonnée',
   abandoned: 'Abandonnée',
@@ -85,6 +87,7 @@ export const ORDER_STATUS_VALUES: readonly string[] = [
   'on-hold', ...TENTATIVE_STATUSES,
   'confirme', 'completed',
   'cancelled', 'annule',
+  'retourne', 'returned',
   'refunded', 'failed',
   'auto-draft', 'checkout-draft', 'abandoned', 'abondonne',
   'trash',
@@ -96,6 +99,7 @@ export const ALLOWED_FOR_EMPLOYEE = new Set([
   'on-hold', ...TENTATIVE_STATUSES,
   'completed',
   'cancelled', 'annule',
+  'retourne',
 ]);
 
 /**
@@ -103,7 +107,7 @@ export const ALLOWED_FOR_EMPLOYEE = new Set([
  * - none:    no stock effect (draft — nothing was reserved yet)
  * - reserve: units are held (reserved) against on-hand stock
  * - commit:  units have been physically shipped/confirmed (on-hand decremented)
- * - release: the order was cancelled — any hold/commit must be undone
+ * - release: the order was cancelled or returned — any hold/commit must be undone
  */
 export type StockEffect = 'none' | 'reserve' | 'commit' | 'release';
 
@@ -111,7 +115,7 @@ export type StockEffect = 'none' | 'reserve' | 'commit' | 'release';
  *  real sale actually happened" without duplicating this list — this is the
  *  exact same set that triggers a Depot stock deduction. */
 export const COMMIT_STATUSES = new Set(['confirme', 'completed']);
-const RELEASE_STATUSES = new Set(['annule', 'cancelled']);
+const RELEASE_STATUSES = new Set(['annule', 'cancelled', 'retourne', 'returned']);
 
 /**
  * This store does not reserve stock while an order is awaiting phone

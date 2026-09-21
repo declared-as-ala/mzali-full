@@ -25,7 +25,7 @@ export const TENTATIVE_STATUSES: readonly string[] = Array.from(
 /** The "Normal" tab's statuses (excludes abandoned checkout-draft + trash),
  *  used both for the list-query status filter and to describe what the
  *  header total actually counts. */
-export const NORMAL_STATUSES: readonly string[] = ['en-attente', 'confirme', ...TENTATIVE_STATUSES, 'annule'];
+export const NORMAL_STATUSES: readonly string[] = ['en-attente', 'confirme', ...TENTATIVE_STATUSES, 'annule', 'retourne'];
 
 export function attemptStatus(n: number): string {
   return `tentative-${Math.min(MAX_ATTEMPT, Math.max(MIN_ATTEMPT, Math.round(n)))}`;
@@ -51,6 +51,8 @@ const STATUS_LABEL_FR: Record<string, string> = {
   completed: 'Terminée',
   cancelled: 'Annulée',
   annule: 'Annulée',
+  retourne: 'Retournée',
+  returned: 'Retournée',
   refunded: 'Remboursée',
   failed: 'Échouée',
   tentative: 'Tentative', // legacy flat status — still rendered gracefully if a stray one slips through
@@ -79,6 +81,8 @@ const STATUS_TONE: Record<string, string> = {
   completed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
   cancelled: 'bg-red-50 text-red-700 ring-1 ring-red-200',
   annule: 'bg-red-50 text-red-700 ring-1 ring-red-200',
+  retourne: 'bg-purple-50 text-purple-700 ring-1 ring-purple-200',
+  returned: 'bg-purple-50 text-purple-700 ring-1 ring-purple-200',
   failed: 'bg-red-50 text-red-700 ring-1 ring-red-200',
   refunded: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
   tentative: 'bg-orange-50 text-orange-700 ring-1 ring-orange-200',
@@ -104,6 +108,8 @@ const STATUS_CHART_COLOR: Record<string, string> = {
   completed: '#059669',
   cancelled: '#dc2626',
   annule: '#dc2626',
+  retourne: '#9333ea',
+  returned: '#9333ea',
   failed: '#dc2626',
   refunded: '#64748b',
   tentative: '#ea580c',

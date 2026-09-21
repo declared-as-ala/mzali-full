@@ -31,7 +31,8 @@ const NumberField = forwardRef<HTMLInputElement, Props>(function NumberField(
   const [text, setText] = useState<string>(display(value));
 
   // Sync from outside when the parent updates value (e.g. bundle switch).
-  useEffect(() => { setText(display(value)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [value]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setText(display(value)); }, [value]);
 
   function commit(raw: string) {
     if (raw.trim() === '' || raw === '-' || raw === '.') {
