@@ -692,14 +692,6 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           </button>
         </div>
       </header>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-sm"
-          >
-            <LogOut size={14} /> Déconnexion
-          </button>
-        </div>
-      </header>
 
       {drawerFeedback && (
         <div

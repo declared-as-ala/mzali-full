@@ -93,6 +93,29 @@ wait_for_container api "fetch('http://127.0.0.1:4000/health/ready').then(r=>{if(
 wait_for_container storefront "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 wait_for_container pos "fetch('http://127.0.0.1:3001/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
+# One-time data migrations, run automatically on every deploy. Each command
+# is itself idempotent AND self-guarding — it checks a persisted completion
+# marker (in the `settings` collection) and returns instantly once it has
+# already done real work, so invoking it on every deploy costs one cheap
+# read on every run after the first, never a repeated full-collection
+# rewrite. See backend/src/migration/commands/migrate-order-variation-keys.command.ts.
+# A migration failure is logged but never fails the deploy or triggers a
+# rollback: the app already runs correctly without the backfill (every
+# code path that reads itemId/variationKey tolerates them being absent),
+# the migration only completes/optimizes that data — so it should never
+# roll back an otherwise-healthy release. Run it by hand
+# (`compose exec api node dist/cli.js migrate:order-variation-keys`) if
+# this ever needs attention.
+run_migration() {
+  local name="$1"
+  if compose exec -T api node dist/cli.js "$name"; then
+    echo "migration $name: ok" >&2
+  else
+    echo "migration $name FAILED (non-fatal, deploy continues) — check logs and re-run manually: compose exec api node dist/cli.js $name" >&2
+  fi
+}
+run_migration migrate:order-variation-keys
+
 # Domain smoke tests require DNS to already point here (and a live TLS cert).
 # During pre-DNS bring-up, set SKIP_DOMAIN_SMOKE_TESTS=true in deploy/.env —
 # the container-internal health checks above already prove the app itself

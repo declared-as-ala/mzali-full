@@ -2,12 +2,22 @@ import { randomUUID } from 'node:crypto';
 import { Command, CommandRunner, Option } from 'nest-commander';
 import { InjectModel } from '@nestjs/mongoose';
 import { AnyBulkWriteOperation, Model } from 'mongoose';
+import { SettingsService } from '@/settings/settings.service';
 import { computeVariationKey } from '@/orders/order-variation-key';
 import { Order } from '@/orders/order.schema';
 
-type Options = { dryRun?: boolean };
+type Options = { dryRun?: boolean; force?: boolean };
 
 const BATCH_SIZE = 500;
+
+/** Persisted completion marker key (settings collection — same generic
+ *  getRaw/setRaw store the round-robin pointer already uses for internal
+ *  operational state). Lets this command be invoked unconditionally on
+ *  every deploy (see deploy/scripts/deploy.sh) while only ever doing real
+ *  work once: after the first successful non-dry-run pass it records
+ *  completedAt here and every later invocation short-circuits instantly
+ *  instead of re-scanning the whole orders collection. */
+const COMPLETION_KEY = 'migration:order-variation-keys';
 
 /**
  * One-off backfill for two fields added to `items[]` after this
@@ -40,9 +50,12 @@ const BATCH_SIZE = 500;
  * repeated migration runs. Never touches any field other than
  * `items[].variationKey` / `items[].itemId`.
  */
-@Command({ name: 'migrate:order-variation-keys', description: 'Backfill items[].itemId and items[].variationKey on existing orders' })
+@Command({ name: 'migrate:order-variation-keys', description: 'Backfill items[].itemId and items[].variationKey on existing orders (runs once — safe to invoke on every deploy)' })
 export class MigrateOrderVariationKeysCommand extends CommandRunner {
-  constructor(@InjectModel(Order.name) private readonly orders: Model<Order>) {
+  constructor(
+    @InjectModel(Order.name) private readonly orders: Model<Order>,
+    private readonly settings: SettingsService,
+  ) {
     super();
   }
 
@@ -51,7 +64,23 @@ export class MigrateOrderVariationKeysCommand extends CommandRunner {
     return true;
   }
 
+  @Option({ flags: '--force', description: 'Re-run even if already marked complete (e.g. after a normalization rule change)' })
+  parseForce(): boolean {
+    return true;
+  }
+
   async run(_params: string[], options: Options): Promise<void> {
+    // Dry-run always runs fresh (it's read-only and useful for inspection
+    // regardless of completion state) — only a real run consults/sets the
+    // marker, so "already done" is a statement about actual writes.
+    if (!options.dryRun && !options.force) {
+      const marker = await this.settings.getRaw(COMPLETION_KEY);
+      if (marker?.completedAt) {
+        console.log(`migrate:order-variation-keys — already completed at ${marker.completedAt} (orders_updated=${marker.ordersUpdated ?? '?'}). Skipping. Pass --force to re-run anyway.`);
+        return;
+      }
+    }
+
     const cursor = this.orders.find({}, { items: 1, orderNumber: 1 }).lean().cursor();
 
     let scanned = 0;
@@ -102,5 +131,15 @@ export class MigrateOrderVariationKeysCommand extends CommandRunner {
         `variation_keys_changed=${variationKeysChanged} item_ids_assigned=${itemIdsAssigned}` +
         `${options.dryRun ? ' (dry-run, no writes)' : ''}`,
     );
+
+    if (!options.dryRun) {
+      await this.settings.setRaw(COMPLETION_KEY, {
+        completedAt: new Date().toISOString(),
+        scanned,
+        ordersUpdated,
+        variationKeysChanged,
+        itemIdsAssigned,
+      });
+    }
   }
 }
