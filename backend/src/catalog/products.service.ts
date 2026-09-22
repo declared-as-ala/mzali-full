@@ -312,7 +312,7 @@ export class ProductsService {
     return docs.map((doc, index) => {
       const rows = variants.filter(v => v.productId === doc.id).map(v => ({ id: v.id, sku: v.sku, size: v.attributes.size ?? '', color: v.attributes.color ?? '', active: v.active, available: stock.get(v.id) ?? 0, price: (v.sellingPriceMinor ?? doc.salePriceMinor ?? doc.regularPriceMinor) / 1000 }));
       const available = rows.filter(v => v.active).reduce((sum, v) => sum + v.available, 0);
-      return { ...(contracts?.[index] ?? toProductContract(doc)), inventoryModel: doc.inventoryModel ?? 'LEGACY', inventoryEnabled: enabled, variants: rows, stockQuantity: enabled ? available : null, inStock: rows.some(v => v.active && (!enabled || v.available > 0)) };
+      return { ...(contracts?.[index] ?? toProductContract(doc)), inventoryModel: doc.inventoryModel ?? 'LEGACY', depotTrackingMode: doc.depotTrackingMode ?? (doc.inventoryModel === 'MATRIX' ? 'VARIANT' : 'SIMPLE'), boutiqueTrackingMode: doc.boutiqueTrackingMode ?? 'SIMPLE', manageStock: doc.manageStock !== false, inventoryEnabled: enabled, variants: rows, stockQuantity: enabled ? available : null, inStock: rows.some(v => v.active && (!enabled || v.available > 0)) };
     });
   }
 

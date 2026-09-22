@@ -1,4 +1,5 @@
 import Sidebar from '@/components/admin/Sidebar';
+import MobileHeader from '@/components/admin/MobileHeader';
 import { ToastProvider } from '@/components/admin/Toast';
 import { ConfirmModalProvider } from '@/components/admin/ConfirmModal';
 import { getSession } from '@/lib/auth';
@@ -28,9 +29,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <ConfirmModalProvider>
           <div className="flex h-screen w-screen overflow-hidden bg-[#0A0D14] text-slate-900 font-sans antialiased">
             <Sidebar role={session.role} />
-            <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-[#F4F6F9] min-h-screen">
-              {children}
-            </main>
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <MobileHeader role={session.role} />
+              <main className="relative flex-1 overflow-y-auto overflow-x-hidden bg-[#F4F6F9] min-h-screen pb-safe">
+                {children}
+              </main>
+            </div>
           </div>
         </ConfirmModalProvider>
       </ToastProvider>

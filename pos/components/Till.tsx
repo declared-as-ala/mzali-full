@@ -14,6 +14,8 @@ import ProductGrid from './ProductGrid';
 import ProductOfferModal from './ProductOfferModal';
 import QuickPickRail from './QuickPickRail';
 import Cart from './Cart';
+import MobileCartSummary from './MobileCartSummary';
+import MobileCartDrawer from './MobileCartDrawer';
 import TicketPreview from './TicketPreview';
 import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosPrinterSettings, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 
@@ -55,6 +57,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const [saleFeedback, setSaleFeedback] = useState<{ tone: 'success' | 'warning'; message: string } | null>(null);
   const [printFailure, setPrintFailure] = useState<{ sale: PosSale; message: string } | null>(null);
   const [retryingPrint, setRetryingPrint] = useState(false);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const idempotencyKeyRef = useRef<string>(crypto.randomUUID());
   const paymentRequestInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -638,47 +641,57 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   }
 
   return (
-    <div className="flex h-screen flex-col bg-[#F4F6F9] text-slate-900 selection:bg-blue-600 selection:text-white">
+    <div className="flex h-full flex-col bg-[#F4F6F9] text-slate-900 selection:bg-blue-600 selection:text-white overflow-hidden">
       {/* Top Light Header */}
-      <header className="flex flex-none flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 py-2.5 shadow-sm pr-36 sm:pr-44">
-        <div className="flex flex-wrap items-center gap-3.5">
+      <header className="flex flex-none flex-wrap items-center justify-between gap-2 sm:gap-3 border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3.5 min-w-0">
           <NavBar />
           <CashSummary />
-          <div className="flex items-center gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 px-3.5 py-1.5 text-xs font-black text-blue-700">
+          <div className="hidden lg:flex items-center gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 px-3.5 py-1.5 text-xs font-black text-blue-700">
             <UserCheck size={14} />
             <span>Caissier: {cashierName}</span>
           </div>
-          <span className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ${
+          <span className={`hidden md:flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-extrabold ${
             online ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
           }`}>
             {online ? <Wifi size={13} /> : <WifiOff size={13} />} {online ? 'Terminal En ligne' : 'Hors ligne'}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 flex-none">
           {canOpenDrawer(role) && (
             <button
               type="button"
               disabled={manualDrawerBusy}
               onClick={handleManualDrawer}
-              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2 text-xs font-black text-emerald-900 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:cursor-wait disabled:opacity-60"
+              className="flex min-h-9 sm:min-h-11 cursor-pointer items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-black text-emerald-900 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:cursor-wait disabled:opacity-60 whitespace-nowrap"
             >
-              <Banknote size={16} /> {manualDrawerBusy ? 'Ouverture…' : 'Ouvrir le tiroir'}
+              <Banknote size={14} className="hidden sm:block" /> <span className="hidden sm:inline">{manualDrawerBusy ? 'Ouverture…' : 'Ouvrir le tiroir'}</span><span className="sm:hidden">Tiroir</span>
             </button>
           )}
           <button
             onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition shadow-2xs"
+            className="flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition shadow-sm whitespace-nowrap"
           >
             <ArrowLeft size={14} />
-            <span>Tableau de bord</span>
+            <span className="hidden sm:inline">Tableau de bord</span>
           </button>
           <button
             onClick={() => router.push('/sessions/close')}
-            className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm"
+            className="hidden sm:flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3.5 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm"
           >
             <Wallet size={14} className="text-amber-600" /> Fermer la caisse
           </button>
+          <button
+            onClick={logout}
+            className="grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 transition"
+            title="Déconnexion"
+            aria-label="Déconnexion"
+          >
+            <LogOut size={15} />
+          </button>
+        </div>
+      </header>
           <button
             onClick={logout}
             className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 transition shadow-sm"
@@ -774,24 +787,24 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       )}
 
       {/* Main Content Area */}
-      <div className="flex min-h-0 flex-1">
-        <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row bg-slate-50">
+        <main className="flex min-w-0 flex-1 flex-col gap-3 sm:gap-4 overflow-y-auto p-3 sm:p-4 lg:p-5 pb-24 lg:pb-5">
           {/* Search bar */}
           <div className="relative">
-            <Search size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={18} className="pointer-events-none absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               ref={searchInputRef}
-              className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-12 pr-16 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm"
-              placeholder="Rechercher un produit par nom, SKU ou code-barres..."
+              className="w-full rounded-xl sm:rounded-2xl border border-slate-200 bg-white py-2.5 sm:py-3.5 pl-10 sm:pl-12 pr-12 sm:pr-16 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm"
+              placeholder="Rechercher un produit..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
             {query ? (
-              <button onClick={() => setQuery('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Effacer">
+              <button onClick={() => setQuery('')} className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Effacer">
                 <X size={18} />
               </button>
             ) : (
-              <kbd className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">/</kbd>
+              <kbd className="pointer-events-none absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 hidden sm:block">/</kbd>
             )}
           </div>
 
@@ -814,6 +827,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
           )}
         </main>
 
+        {/* Desktop Cart Sidebar */}
         <Cart
           lines={cart}
           quote={quote}
@@ -850,6 +864,24 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
             onAssignCard: assignCard,
             cardAssigning,
           }}
+        />
+
+        {/* Mobile Cart Summary & Drawer */}
+        <MobileCartSummary
+          itemCount={cart.reduce((sum, l) => sum + l.qty, 0)}
+          totalMinor={totalMinor}
+          onClick={() => setMobileCartOpen(true)}
+        />
+        <MobileCartDrawer
+          open={mobileCartOpen}
+          onClose={() => setMobileCartOpen(false)}
+          lines={cart}
+          quote={quote}
+          quoting={quoting}
+          onQtyChange={changeQty}
+          onRemove={removeLine}
+          onEditLine={openLineEditor}
+          discountMinor={redeemPreview?.discountMinor}
         />
       </div>
 

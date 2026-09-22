@@ -147,33 +147,45 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
   }, [stats, adminHref]);
 
   return (
-    <div className="min-h-full bg-[#F4F6F9] p-6 lg:p-8 space-y-8">
+    <div className="min-h-full bg-[#F4F6F9] p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8">
       {/* ── LUXE HEADER ─────────────────────────────────────────────────── */}
-      <header className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between border-b border-slate-200/80 pb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-600 border border-blue-500/20">
-              <Sparkles size={13} /> Luxe Executive Dashboard
-            </span>
-            <span className="text-xs text-slate-500 font-medium">Mzali Enterprise</span>
+      <header className="flex flex-col gap-4 lg:gap-5 border-b border-slate-200/80 pb-4 lg:pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-600 border border-blue-500/20">
+                <Sparkles size={13} /> Dashboard
+              </span>
+              <span className="text-xs text-slate-500 font-medium hidden sm:inline">Mzali Enterprise</span>
+            </div>
+            <h1 className="mt-2 text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 tracking-tight">
+              Vue d&apos;ensemble
+            </h1>
+            <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-xl">
+              Indicateurs financiers, mouvements de stock et performance commerciale en temps réel.
+            </p>
           </div>
-          <h1 className="mt-2 text-3xl font-black text-slate-900 tracking-tight sm:text-4xl">
-            Vue d&apos;ensemble
-          </h1>
-          <p className="mt-1 text-sm text-slate-500 max-w-xl">
-            Indicateurs financiers, mouvements de stock et performance commerciale en temps réel.
-          </p>
+
+          <button
+            type="button"
+            onClick={() => dashboard.retry()}
+            className="sm:self-start grid h-10 w-10 flex-none place-items-center rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm transition"
+            title="Actualiser"
+            aria-label="Actualiser"
+          >
+            <RefreshCw size={15} className={dashboard.loading ? 'animate-spin' : ''} />
+          </button>
         </div>
 
-        {/* Date Selector & Action buttons */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-2xl bg-white p-1 shadow-sm border border-slate-200" aria-label="Période">
+        {/* Date Selector */}
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 scrollbar-thin">
+          <div className="inline-flex min-w-max rounded-2xl bg-white p-1 shadow-sm border border-slate-200" aria-label="Période">
             {RANGE_OPTIONS.map((option) => (
               <button
                 key={option.days}
                 type="button"
                 onClick={() => setDays(option.days)}
-                className={`rounded-xl px-3.5 py-2 text-xs font-extrabold transition-all duration-150 ${
+                className={`whitespace-nowrap rounded-xl px-3 sm:px-3.5 py-2 text-xs font-extrabold transition-all duration-150 ${
                   days === option.days
                     ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20'
                     : 'text-slate-600 hover:bg-slate-50'
@@ -183,37 +195,29 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
               </button>
             ))}
           </div>
-
-          <button
-            type="button"
-            onClick={() => dashboard.retry()}
-            className="grid h-10 w-10 place-items-center rounded-2xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm transition"
-            title="Actualiser"
-          >
-            <RefreshCw size={15} className={dashboard.loading ? 'animate-spin' : ''} />
-          </button>
         </div>
       </header>
 
       {/* ── ALERT BANNER ────────────────────────────────────────────────── */}
       {alertVisible && alert && (
-        <div className="flex items-center justify-between rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-amber-900 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-amber-500/10 p-2 text-amber-600">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 text-amber-900 shadow-sm">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="rounded-xl bg-amber-500/10 p-2 text-amber-600 flex-none">
               <AlertTriangle size={18} />
             </div>
-            <p className="text-sm font-bold">{alert.text}</p>
+            <p className="text-xs sm:text-sm font-bold break-words">{alert.text}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-none">
             <Link
               href={alert.href}
-              className="inline-flex items-center gap-1 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-amber-700 shadow-sm transition"
+              className="inline-flex items-center gap-1 rounded-xl bg-amber-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-amber-700 shadow-sm transition whitespace-nowrap"
             >
               {alert.action} <ArrowRight size={13} />
             </Link>
             <button
               onClick={() => setAlertVisible(false)}
-              className="grid h-8 w-8 place-items-center rounded-lg text-amber-700 hover:bg-amber-100 transition"
+              className="grid h-8 w-8 flex-none place-items-center rounded-lg text-amber-700 hover:bg-amber-100 transition"
+              aria-label="Fermer"
             >
               <X size={15} />
             </button>
@@ -231,10 +235,10 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
       />
 
       {/* ── MAIN CHARTS & PANELS GRID ───────────────────────────────────── */}
-      <div className="grid gap-6 xl:grid-cols-12">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
         {/* Revenue & Orders Chart */}
         <LuxePanel
-          className="xl:col-span-8"
+          className="lg:col-span-12 xl:col-span-8"
           title="Tendance des revenus"
           eyebrow={`Performance sur ${days} jour${days > 1 ? 's' : ''}`}
           action={
@@ -242,45 +246,45 @@ export default function DashboardCommandCenter({ initialDashboard }: { initialDa
               <button
                 type="button"
                 onClick={() => exportRevenueCsv(revenue.data ?? [])}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-sm whitespace-nowrap"
               >
-                <Download size={14} /> Exporter CSV
+                <Download size={14} /> <span className="hidden sm:inline">Exporter CSV</span><span className="sm:hidden">CSV</span>
               </button>
             ) : null
           }
         >
-          <ReportState state={revenue} minHeight="h-80">
+          <ReportState state={revenue} minHeight="h-64 sm:h-80">
             {(data) => <RevenueChart data={data} />}
           </ReportState>
         </LuxePanel>
 
         {/* Order Status Funnel */}
-        <LuxePanel className="xl:col-span-4" title="Parcours des commandes" eyebrow="Répartition par statut">
-          <ReportState state={funnel} minHeight="h-80">
+        <LuxePanel className="lg:col-span-12 xl:col-span-4" title="Parcours des commandes" eyebrow="Répartition par statut">
+          <ReportState state={funnel} minHeight="h-64 sm:h-80">
             {(data) => <StatusFunnel data={data} />}
           </ReportState>
         </LuxePanel>
 
         {/* Top Selling Products */}
-        <LuxePanel className="xl:col-span-5" title="Top Produits" eyebrow="Classement par ventes">
+        <LuxePanel className="lg:col-span-6 xl:col-span-5" title="Top Produits" eyebrow="Classement par ventes">
           <TopProducts products={stats.topProducts} />
         </LuxePanel>
 
         {/* Low Stock Watchlist */}
-        <LuxePanel className="xl:col-span-7" title="Stock à surveiller" eyebrow="Alertes de réapprovisionnement">
+        <LuxePanel className="lg:col-span-6 xl:col-span-7" title="Stock à surveiller" eyebrow="Alertes de réapprovisionnement">
           <LowStock products={stats.lowStock} />
         </LuxePanel>
 
         {/* Carrier Performance */}
-        <LuxePanel className="xl:col-span-7" title="Expéditions & Transporteurs" eyebrow="Taux de livraison réussi">
-          <ReportState state={carriers} minHeight="h-64">
+        <LuxePanel className="lg:col-span-12 xl:col-span-7" title="Expéditions & Transporteurs" eyebrow="Taux de livraison réussi">
+          <ReportState state={carriers} minHeight="h-48 sm:h-64">
             {(data) => <CarrierPanel data={data} />}
           </ReportState>
         </LuxePanel>
 
         {/* Geography Panel */}
-        <LuxePanel className="xl:col-span-5" title="Top Gouvernorats" eyebrow="Zones les plus rentables">
-          <ReportState state={geography} minHeight="h-64">
+        <LuxePanel className="lg:col-span-12 xl:col-span-5" title="Top Gouvernorats" eyebrow="Zones les plus rentables">
+          <ReportState state={geography} minHeight="h-48 sm:h-64">
             {(data) => <GeographyPanel data={data} />}
           </ReportState>
         </LuxePanel>
@@ -365,25 +369,25 @@ function KpiStrip({
   ];
 
   return (
-    <section className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 ${loading ? 'opacity-75' : ''}`}>
+    <section className={`grid gap-3 sm:gap-4 grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6 ${loading ? 'opacity-75' : ''}`}>
       {cards.map((card, idx) => {
         const content = (
-          <div className={`relative flex flex-col justify-between overflow-hidden rounded-3xl ${card.bg} p-5 shadow-xl border border-white/10 transition-transform duration-200 hover:-translate-y-0.5`}>
+          <div className={`relative flex flex-col justify-between overflow-hidden rounded-2xl sm:rounded-3xl ${card.bg} p-4 sm:p-5 shadow-xl border border-white/10 transition-transform duration-200 hover:-translate-y-0.5 min-h-[120px]`}>
             <div className="flex items-center justify-between">
-              <div className="rounded-2xl bg-white/15 p-2.5 backdrop-blur-md">
-                <card.icon size={20} />
+              <div className="rounded-xl sm:rounded-2xl bg-white/15 p-2 sm:p-2.5 backdrop-blur-md">
+                <card.icon size={18} className="sm:w-5 sm:h-5" />
               </div>
               {card.delta !== undefined && (
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-white/20 px-2 py-0.5 text-xs font-black backdrop-blur-md">
-                  {card.delta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-white/20 px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-black backdrop-blur-md">
+                  {card.delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
                   {Math.abs(card.delta)}%
                 </span>
               )}
             </div>
-            <div className="mt-4">
-              <p className="text-2xl font-black tracking-tight">{card.value}</p>
-              <p className="text-xs font-bold text-white/90 mt-0.5">{card.label}</p>
-              <p className="text-[10px] text-white/70 mt-1">{card.detail}</p>
+            <div className="mt-3 sm:mt-4">
+              <p className="text-xl sm:text-2xl font-black tracking-tight truncate">{card.value}</p>
+              <p className="text-[11px] sm:text-xs font-bold text-white/90 mt-0.5 truncate">{card.label}</p>
+              <p className="text-[9px] sm:text-[10px] text-white/70 mt-1 line-clamp-1">{card.detail}</p>
             </div>
           </div>
         );
@@ -406,11 +410,11 @@ function LuxePanel({
   title: string; eyebrow: string; action?: React.ReactNode; className?: string; children: React.ReactNode;
 }) {
   return (
-    <section className={`rounded-3xl bg-white border border-slate-200/80 p-6 shadow-sm ${className}`}>
-      <header className="mb-5 flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
-        <div>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">{eyebrow}</span>
-          <h2 className="text-lg font-black text-slate-900 tracking-tight mt-0.5">{title}</h2>
+    <section className={`rounded-2xl sm:rounded-3xl bg-white border border-slate-200/80 p-4 sm:p-6 shadow-sm ${className}`}>
+      <header className="mb-4 sm:mb-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 border-b border-slate-100 pb-3 sm:pb-4">
+        <div className="min-w-0">
+          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">{eyebrow}</span>
+          <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight mt-0.5 truncate">{title}</h2>
         </div>
         {action}
       </header>
@@ -457,21 +461,21 @@ function EmptyState({ className = '' }: { className?: string }) {
 // ─── Revenue Chart ────────────────────────────────────────────────────────────
 function RevenueChart({ data }: { data: RevenueSeriesPoint[] }) {
   return (
-    <div className="h-80 w-full">
+    <div className="h-64 sm:h-80 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: 10, right: 5, left: -15, bottom: 0 }}>
           <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-          <YAxis yAxisId="revenue" tickFormatter={compactNumber} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-          <YAxis yAxisId="orders" orientation="right" allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+          <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+          <YAxis yAxisId="revenue" tickFormatter={compactNumber} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} width={40} />
+          <YAxis yAxisId="orders" orientation="right" allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} width={30} />
           <Tooltip
             labelFormatter={(lbl) => shortDate(String(lbl))}
             formatter={(val, name) => [name === 'Revenu' ? formatPrice(Number(val)) : Number(val), name]}
-            contentStyle={{ borderRadius: '16px', borderColor: '#e2e8f0', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}
+            contentStyle={{ borderRadius: '12px', borderColor: '#e2e8f0', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontSize: '12px' }}
           />
-          <Legend verticalAlign="top" height={32} />
-          <Bar yAxisId="orders" dataKey="orders" name="Commandes" fill="#93c5fd" radius={[6, 6, 0, 0]} maxBarSize={28} />
-          <Line yAxisId="revenue" type="monotone" dataKey="revenue" name="Revenu" stroke="#1d4ed8" strokeWidth={3.5} dot={false} activeDot={{ r: 6 }} />
+          <Legend verticalAlign="top" height={32} wrapperStyle={{ fontSize: '11px' }} />
+          <Bar yAxisId="orders" dataKey="orders" name="Commandes" fill="#93c5fd" radius={[4, 4, 0, 0]} maxBarSize={24} />
+          <Line yAxisId="revenue" type="monotone" dataKey="revenue" name="Revenu" stroke="#1d4ed8" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -481,16 +485,16 @@ function RevenueChart({ data }: { data: RevenueSeriesPoint[] }) {
 // ─── Status Funnel ────────────────────────────────────────────────────────────
 function StatusFunnel({ data }: { data: StatusFunnelPoint[] }) {
   const visible = data.filter((r) => r.count > 0);
-  if (!visible.length) return <EmptyState className="h-80" />;
+  if (!visible.length) return <EmptyState className="h-64 sm:h-80" />;
   return (
-    <div className="h-80">
+    <div className="h-64 sm:h-80">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={visible} layout="vertical" margin={{ left: 10, right: 10 }}>
+        <BarChart data={visible} layout="vertical" margin={{ left: 5, right: 5, top: 5, bottom: 5 }}>
           <CartesianGrid stroke="#f1f5f9" strokeDasharray="3 3" horizontal={false} />
           <XAxis type="number" allowDecimals={false} hide />
-          <YAxis type="category" dataKey="status" width={95} tickFormatter={(st) => getOrderStatusLabel(st)} tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(v) => [Number(v), 'Commandes']} labelFormatter={(st) => getOrderStatusLabel(String(st))} />
-          <Bar dataKey="count" name="Commandes" radius={[0, 8, 8, 0]}>
+          <YAxis type="category" dataKey="status" width={80} tickFormatter={(st) => getOrderStatusLabel(st)} tick={{ fontSize: 10, fill: '#475569' }} axisLine={false} tickLine={false} />
+          <Tooltip formatter={(v) => [Number(v), 'Commandes']} labelFormatter={(st) => getOrderStatusLabel(String(st))} contentStyle={{ fontSize: '12px' }} />
+          <Bar dataKey="count" name="Commandes" radius={[0, 6, 6, 0]}>
             {visible.map((row) => (
               <Cell key={row.status} fill={getOrderStatusChartColor(row.status)} />
             ))}
@@ -581,33 +585,33 @@ function CarrierPanel({ data }: { data: CarrierPerformance[] }) {
   const adminHref = useAdminHref();
   const failures = data.flatMap((c) => c.recentFailures.map((f) => ({ ...f, carrier: c.carrier })));
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_.9fr]">
-      <div className="space-y-4">
+    <div className="grid gap-4 sm:gap-6 lg:grid-cols-[1fr_.9fr]">
+      <div className="space-y-3 sm:space-y-4">
         {data.map((carrier) => (
-          <div key={carrier.carrier} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+          <div key={carrier.carrier} className="rounded-xl sm:rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:p-4">
             <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="font-extrabold text-slate-900 text-sm">{CARRIER_LABEL[carrier.carrier]}</p>
-                <p className="text-xs text-slate-500">{carrier.pushed} envois · {carrier.averagePushMinutes == null ? 'délai N/A' : `${carrier.averagePushMinutes}m moy.`}</p>
+              <div className="min-w-0">
+                <p className="font-extrabold text-slate-900 text-xs sm:text-sm truncate">{CARRIER_LABEL[carrier.carrier]}</p>
+                <p className="text-[10px] sm:text-xs text-slate-500">{carrier.pushed} envois · {carrier.averagePushMinutes == null ? 'N/A' : `${carrier.averagePushMinutes}m`}</p>
               </div>
-              <p className="text-xl font-black text-blue-600">{carrier.successRate}%</p>
+              <p className="text-lg sm:text-xl font-black text-blue-600 flex-none">{carrier.successRate}%</p>
             </div>
-            <div className="h-2.5 overflow-hidden rounded-full bg-rose-100">
+            <div className="h-2 sm:h-2.5 overflow-hidden rounded-full bg-rose-100">
               <div className="h-full rounded-full bg-emerald-500" style={{ width: `${carrier.successRate}%` }} />
             </div>
           </div>
         ))}
       </div>
-      <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100">
+      <div className="rounded-xl sm:rounded-2xl bg-slate-50 p-3 sm:p-4 border border-slate-100">
         <div className="flex items-center gap-2 mb-3">
-          <Truck size={16} className="text-rose-600" />
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Échecs récents</h3>
+          <Truck size={14} className="text-rose-600 flex-none" />
+          <h3 className="text-[10px] sm:text-xs font-black text-slate-900 uppercase tracking-wider">Échecs récents</h3>
         </div>
         {failures.length ? (
-          <ul className="space-y-2 text-xs">
+          <ul className="space-y-2 text-[11px] sm:text-xs">
             {failures.slice(0, 5).map((failure) => (
               <li key={`${failure.carrier}-${failure.orderId}`} className="border-b border-slate-200/60 pb-2 last:border-0">
-                <Link href={adminHref(`/commandes?orderId=${failure.orderId}`)} className="font-bold text-blue-600 hover:underline">
+                <Link href={adminHref(`/commandes?orderId=${failure.orderId}`)} className="font-bold text-blue-600 hover:underline break-words">
                   #{failure.orderNumber} ({CARRIER_LABEL[failure.carrier]})
                 </Link>
                 <p className="text-rose-600 truncate">{failure.error ?? 'Erreur non spécifiée'}</p>
@@ -615,7 +619,7 @@ function CarrierPanel({ data }: { data: CarrierPerformance[] }) {
             ))}
           </ul>
         ) : (
-          <p className="text-xs font-bold text-emerald-600">Aucun échec sur la période.</p>
+          <p className="text-[11px] sm:text-xs font-bold text-emerald-600">Aucun échec.</p>
         )}
       </div>
     </div>

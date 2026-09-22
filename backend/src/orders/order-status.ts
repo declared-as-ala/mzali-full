@@ -127,6 +127,7 @@ const RELEASE_STATUSES = new Set(['annule', 'cancelled', 'retourne', 'returned']
 export function stockEffectForStatus(status: string): StockEffect {
   if (COMMIT_STATUSES.has(status)) return 'commit';
   if (RELEASE_STATUSES.has(status)) return 'release';
+  if (['pending', 'en-attente', 'on-hold', 'processing', ...TENTATIVE_STATUSES].includes(status)) return 'reserve';
   return 'none';
 }
 

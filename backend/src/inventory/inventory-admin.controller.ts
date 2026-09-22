@@ -87,4 +87,26 @@ export class InventoryAdminController {
     });
     return { ok: true };
   }
+
+  @Post('validate-availability')
+  @RequirePermissions('inventory.read')
+  async validateAvailability(
+    @Body() body: {
+      channel?: 'ONLINE' | 'ADMIN' | 'POS';
+      productId: string;
+      variantId?: string | null;
+      variation?: Record<string, string> | null;
+      quantity: number;
+      existingQuantity?: number;
+    },
+  ) {
+    return this.inventory.validateOrderAvailability({
+      channel: body.channel ?? 'ADMIN',
+      productId: body.productId,
+      variantId: body.variantId,
+      variation: body.variation,
+      quantity: body.quantity,
+      existingQuantity: body.existingQuantity,
+    });
+  }
 }

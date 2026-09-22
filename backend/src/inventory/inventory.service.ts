@@ -5,6 +5,7 @@ import type { StockMovementType, AuditActor, InventoryItem as InventoryItemContr
 import { clampPagination, paginate } from '@/common/pagination';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
 import { LocationsService } from '@/catalog/locations.service';
+import { SettingsService } from '@/settings/settings.service';
 import { Product } from '@/catalog/product.schema';
 import { primaryProductImage } from '@/catalog/product-media';
 import { ProductVariantsService } from '@/catalog/product-variants.service';
@@ -32,6 +33,7 @@ export class InventoryService {
     private readonly ledger: StockLedgerService,
     private readonly variants: ProductVariantsService,
     private readonly locations: LocationsService,
+    private readonly settings: SettingsService,
     @InjectModel(Product.name) private readonly products: Model<Product>,
     @InjectModel(PurchaseOrder.name) private readonly purchaseOrders: Model<PurchaseOrder>,
     @InjectConnection() private readonly connection: Connection,
@@ -46,8 +48,9 @@ export class InventoryService {
     actor: AuditActor,
     strict: boolean,
     session?: ClientSession,
+    exactVariantId?: string | null,
   ): Promise<ReserveResult> {
-    const variantId = await this.resolveVariantId(productId);
+    const variantId = await this.resolveExact(productId, exactVariantId);
     const { item } = await this.ledger.applyMovement({
       variantId,
       locationId: await this.locations.getDefaultOnlineLocationCode(),
@@ -68,13 +71,18 @@ export class InventoryService {
     orderId: string,
     actor: AuditActor,
     session?: ClientSession,
+    exactVariantId?: string | null,
   ): Promise<void> {
-    const variantId = await this.resolveVariantId(productId);
+    const variantId = await this.resolveExact(productId, exactVariantId);
+    const locationId = await this.locations.getDefaultOnlineLocationCode();
+    const current = await this.ledger.stockAt(variantId, locationId);
+    const releaseQty = Math.min(qty, current?.quantityReserved ?? 0);
+    if (releaseQty <= 0) return;
     const { item } = await this.ledger.applyMovement({
       variantId,
-      locationId: await this.locations.getDefaultOnlineLocationCode(),
+      locationId,
       type: 'order_release',
-      reservedDelta: -qty,
+      reservedDelta: -releaseQty,
       orderId,
       actor,
       session,
@@ -83,12 +91,9 @@ export class InventoryService {
   }
 
   /**
-   * The single point where an online order's stock actually moves — this
-   * store does not reserve on creation, so `commit()` both is the
-   * availability check (when `strict`) and the deduction, in one movement.
-   * `reservedDelta: -qty` is a no-op clamp for orders that never reserved
-   * (see StockLedgerService's negative-reserved clamp) — harmless if a
-   * future flow ever does reserve first.
+   * The single point where an online order's stock actually moves.
+   * If units were already reserved (wasReserved = true), reservedDelta unreserves
+   * them and onHandDelta decrements the physical stock atomically.
    */
   async commit(
     productId: string,
@@ -98,14 +103,19 @@ export class InventoryService {
     session?: ClientSession,
     strict = true,
     exactVariantId?: string | null,
+    wasReserved = false,
   ): Promise<void> {
     const variantId = await this.resolveExact(productId, exactVariantId);
+    const locationId = await this.locations.getDefaultOnlineLocationCode();
+    const current = await this.ledger.stockAt(variantId, locationId);
+    const reservedToRelease = wasReserved ? Math.min(qty, current?.quantityReserved ?? 0) : 0;
     const { item } = await this.ledger.applyMovement({
       variantId,
-      locationId: await this.locations.getDefaultOnlineLocationCode(),
+      locationId,
       type: 'order_commit',
       onHandDelta: -qty,
-      requireAvailableAtLeast: strict ? qty : undefined,
+      reservedDelta: -reservedToRelease,
+      requireAvailableAtLeast: strict && !wasReserved ? qty : undefined,
       orderId,
       actor,
       session,
@@ -259,11 +269,189 @@ export class InventoryService {
     return this.variants.resolveForSale(productId, variantId);
   }
 
-  async validateAvailable(productId: string, variantId: string, qty: number) {
+  async validateOrderAvailability(params: {
+    channel?: 'ONLINE' | 'ADMIN' | 'POS';
+    productId: string;
+    variantId?: string | null;
+    variation?: Record<string, string> | null;
+    quantity: number;
+    existingQuantity?: number;
+  }) {
+    const { channel = 'ONLINE', productId, variantId, variation, quantity, existingQuantity = 0 } = params;
+    if (quantity <= 0) {
+      throw new BadRequestException('La quantité doit être supérieure à zéro.');
+    }
+
+    const inventorySettings = await this.settings.getInventorySettings();
+    const inventoryEnabled = inventorySettings.enabled !== false;
+
     const product = await this.products.findById(productId);
-    if (!product) throw new BadRequestException('Produit introuvable');
-    const stock = await this.ledger.stockAt(variantId, 'DEPOT');
-    if ((stock?.quantityOnHand ?? 0) - (stock?.quantityReserved ?? 0) < qty) throw new BadRequestException('La variante sélectionnée n’est plus disponible.');
+    if (!product || product.deletedAt) {
+      throw new BadRequestException('Produit introuvable');
+    }
+
+    const locationId: 'DEPOT' | 'BOUTIQUE' = channel === 'POS' ? 'BOUTIQUE' : 'DEPOT';
+
+    // Mode sans stock
+    if (!inventoryEnabled || product.manageStock === false) {
+      return {
+        valid: true,
+        available: true,
+        stock: Infinity,
+        mode: 'UNTRACKED',
+        location: locationId,
+        requiredDelta: Math.max(0, quantity - existingQuantity),
+      };
+    }
+
+    const trackingMode = locationId === 'BOUTIQUE'
+      ? (product.boutiqueTrackingMode ?? 'SIMPLE')
+      : (product.depotTrackingMode ?? (product.inventoryModel === 'MATRIX' ? 'VARIANT' : 'SIMPLE'));
+
+    const requiredDelta = Math.max(0, quantity - existingQuantity);
+
+    if (trackingMode === 'SIMPLE') {
+      let available = 0;
+      if (locationId === 'BOUTIQUE') {
+        const balance = await this.ledger.boutiqueBalance(productId);
+        available = Math.max(0, balance.onHand - balance.reserved);
+      } else {
+        const variants = await this.variants.allForProducts([productId]);
+        const activeVariants = variants.filter((v) => v.active);
+        const rows = await this.ledger.stockForVariants(activeVariants.map((v) => v.id), 'DEPOT');
+        available = rows.reduce((sum, r) => sum + Math.max(0, r.quantityOnHand - r.quantityReserved), 0);
+      }
+
+      if (available <= 0 && requiredDelta > 0) {
+        return {
+          valid: false,
+          available: false,
+          stock: 0,
+          mode: 'SIMPLE',
+          location: locationId,
+          requiredDelta,
+          error: 'Ce produit est actuellement épuisé.',
+        };
+      }
+
+      if (requiredDelta > available) {
+        return {
+          valid: false,
+          available: false,
+          stock: available,
+          mode: 'SIMPLE',
+          location: locationId,
+          requiredDelta,
+          error: `Stock insuffisant pour ${product.name} (disponible : ${available}).`,
+        };
+      }
+
+      return {
+        valid: true,
+        available: true,
+        stock: available,
+        mode: 'SIMPLE',
+        location: locationId,
+        requiredDelta,
+      };
+    }
+
+    // VARIANT mode
+    let targetVariantId = variantId;
+    if (!targetVariantId && variation) {
+      try {
+        targetVariantId = await this.resolveHistoricalVariant(productId, null, variation);
+      } catch {
+        targetVariantId = null;
+      }
+    }
+
+    if (!targetVariantId) {
+      return {
+        valid: false,
+        available: false,
+        stock: 0,
+        mode: 'VARIANT',
+        location: locationId,
+        requiredDelta,
+        error: 'Veuillez sélectionner une taille et une couleur.',
+      };
+    }
+
+    const variant = await this.variants.findById(targetVariantId);
+    if (!variant || variant.productId !== productId || !variant.active || variant.retired) {
+      return {
+        valid: false,
+        available: false,
+        stock: 0,
+        mode: 'VARIANT',
+        location: locationId,
+        requiredDelta,
+        error: 'Cette variante est inactive ou indisponible.',
+      };
+    }
+
+    const variantLabel = [variant.attributes?.size, variant.attributes?.color].filter(Boolean).join(' / ') || variant.sku || 'Variante';
+    const stockItem = await this.ledger.stockAt(variant.id, locationId);
+    const available = stockItem ? Math.max(0, stockItem.quantityOnHand - stockItem.quantityReserved) : 0;
+
+    if (available <= 0 && requiredDelta > 0) {
+      return {
+        valid: false,
+        available: false,
+        stock: 0,
+        mode: 'VARIANT',
+        location: locationId,
+        resolvedVariantId: variant.id,
+        variantLabel,
+        requiredDelta,
+        error: `${variantLabel} — ÉPUISÉ`,
+      };
+    }
+
+    if (requiredDelta > available) {
+      return {
+        valid: false,
+        available: false,
+        stock: available,
+        mode: 'VARIANT',
+        location: locationId,
+        resolvedVariantId: variant.id,
+        variantLabel,
+        requiredDelta,
+        error: `Stock insuffisant pour ${variantLabel}.`,
+      };
+    }
+
+    return {
+      valid: true,
+      available: true,
+      stock: available,
+      mode: 'VARIANT',
+      location: locationId,
+      resolvedVariantId: variant.id,
+      variantLabel,
+      requiredDelta,
+    };
+  }
+
+  async assertOrderAvailability(params: {
+    channel?: 'ONLINE' | 'ADMIN' | 'POS';
+    productId: string;
+    variantId?: string | null;
+    variation?: Record<string, string> | null;
+    quantity: number;
+    existingQuantity?: number;
+  }) {
+    const res = await this.validateOrderAvailability(params);
+    if (!res.valid) {
+      throw new BadRequestException(res.error || 'Stock insuffisant');
+    }
+    return res;
+  }
+
+  async validateAvailable(productId: string, variantId: string, qty: number, channel: 'ONLINE' | 'ADMIN' | 'POS' = 'ONLINE') {
+    await this.assertOrderAvailability({ channel, productId, variantId, quantity: qty });
   }
 
   private async resolveVariantId(productId: string): Promise<string> {

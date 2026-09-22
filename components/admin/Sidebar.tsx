@@ -106,7 +106,7 @@ export default function Sidebar({ role }: { role?: string }) {
       ];
 
   return (
-    <aside className="flex h-screen w-64 flex-none flex-col border-r border-slate-800/80 bg-slate-900 p-4 text-slate-300 select-none overflow-y-auto custom-scrollbar">
+    <aside className="hidden lg:flex h-screen w-64 flex-none flex-col border-r border-slate-800/80 bg-slate-900 p-4 text-slate-300 select-none overflow-y-auto custom-scrollbar">
       {/* Brand Header */}
       <div className="mb-6 flex items-center gap-3 rounded-2xl bg-gradient-to-r from-slate-800/90 to-slate-800/40 p-3.5 border border-slate-700/50 shadow-lg">
         <div className="relative grid h-10 w-10 flex-none place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-lg font-black text-white shadow-md shadow-blue-500/20">

@@ -17,14 +17,14 @@ const TABS = [
 export default function NavBar() {
   const pathname = usePathname();
   return (
-    <nav className="flex items-center gap-1.5">
+    <nav className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto pb-1 scrollbar-none">
       {TABS.map(({ href, label, icon: Icon }) => {
         const active = pathname === href;
         return (
           <Link
             key={href}
             href={href}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition ${
+            className={`flex items-center gap-1.5 rounded-lg sm:rounded-xl px-2.5 sm:px-3 py-2 text-xs font-bold transition whitespace-nowrap ${
               active
                 ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
                 : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'

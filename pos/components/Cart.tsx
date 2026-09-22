@@ -60,7 +60,7 @@ export default function Cart({
   const itemCount = lines.reduce((sum, l) => sum + l.qty, 0);
 
   return (
-    <aside className="flex h-full w-full max-w-sm flex-none flex-col border-l border-slate-200 bg-white text-slate-900 shadow-sm">
+    <aside className="hidden lg:flex h-full w-full max-w-sm flex-none flex-col border-l border-slate-200 bg-white text-slate-900 shadow-sm">
       <CustomerPanel {...customerPanelProps} />
 
       <div className="flex-1 overflow-y-auto p-4">

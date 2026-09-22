@@ -40,8 +40,12 @@ export default function CashSummary() {
     ['Sorties manuelles', -session.cashMovementsRemoveMinor], ['Solde attendu', session.expectedCashMinor],
   ];
   return <>
-    <button onClick={() => setExpanded(true)} className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-900" aria-label="Détail du solde de caisse">
-      <Wallet size={18} /><span>Fond : {formatMinor(session.openingCashMinor)}<strong className="block">Caisse : {formatMinor(session.expectedCashMinor)}</strong></span>
+    <button onClick={() => setExpanded(true)} className="flex items-center gap-1.5 sm:gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 sm:px-3 py-1.5 sm:py-2 text-left text-[11px] sm:text-xs text-emerald-900" aria-label="Détail du solde de caisse">
+      <Wallet size={14} className="flex-none hidden sm:block" />
+      <span className="min-w-0">
+        <span className="hidden sm:inline">Fond : {formatMinor(session.openingCashMinor)}</span>
+        <strong className="block truncate">Caisse : {formatMinor(session.expectedCashMinor)}</strong>
+      </span>
     </button>
     {expanded && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setExpanded(false)}>
       <section role="dialog" aria-modal="true" aria-labelledby="cash-summary-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') setExpanded(false); }}>

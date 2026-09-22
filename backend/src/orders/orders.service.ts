@@ -87,9 +87,20 @@ export class OrdersService {
 
     const lines = await this.resolveLines(dto);
     if ((await this.settings.getInventorySettings()).enabled !== false && dto.status !== DRAFT_STATUS) {
-      const quantities = new Map<string, { productId: string; qty: number }>();
-      for (const l of lines) quantities.set(l.variantId!, { productId: l.productId, qty: (quantities.get(l.variantId!)?.qty ?? 0) + l.qty });
-      for (const [id, l] of quantities) await this.inventory.validateAvailable(l.productId, id, l.qty);
+      const quantities = new Map<string, { productId: string; qty: number; variation?: Record<string, string> | null }>();
+      for (const l of lines) {
+        const key = l.variantId ?? l.productId;
+        quantities.set(key, { productId: l.productId, qty: (quantities.get(key)?.qty ?? 0) + l.qty, variation: l.variation });
+      }
+      for (const [key, l] of quantities) {
+        await this.inventory.assertOrderAvailability({
+          channel: 'ONLINE',
+          productId: l.productId,
+          variantId: key !== l.productId ? key : undefined,
+          variation: l.variation,
+          quantity: l.qty,
+        });
+      }
     }
     const inventoryEnabled = (await this.settings.getInventorySettings()).enabled !== false;
     const shippingMinor = status === DRAFT_STATUS ? toMinor(dto.shipping ?? 0) : toMinor(commerce.shippingFlat);
@@ -130,19 +141,29 @@ export class OrdersService {
         const orderNumber = await this.counters.next(ORDER_NUMBER_SEQUENCE, session);
         const now = new Date();
 
-        // No stock effect on creation for the normal 'en-attente' path —
-        // this store confirms COD orders by phone before stock ever moves
-        // (see order-status.ts). Only a rare direct-to-confirmed creation
-        // (e.g. an admin backdating an already-confirmed sale) commits here.
-        if (inventoryEnabled && stockEffectForStatus(status) === 'commit') {
-          for (const line of lines) {
-            try {
-              await this.inventory.commit(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, session, strict, line.variantId);
-            } catch (err) {
-              if (err instanceof InsufficientStockError) {
-                throw new BadRequestException(`Stock insuffisant pour ${line.name}`);
+        if (inventoryEnabled) {
+          const effect = stockEffectForStatus(status);
+          if (effect === 'commit') {
+            for (const line of lines) {
+              try {
+                await this.inventory.commit(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, session, strict, line.variantId);
+              } catch (err) {
+                if (err instanceof InsufficientStockError) {
+                  throw new BadRequestException(`Cette variante vient d’être épuisée.`);
+                }
+                throw err;
               }
-              throw err;
+            }
+          } else if (effect === 'reserve') {
+            for (const line of lines) {
+              try {
+                await this.inventory.reserve(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, strict, session, line.variantId);
+              } catch (err) {
+                if (err instanceof InsufficientStockError) {
+                  throw new BadRequestException(`Cette variante vient d’être épuisée.`);
+                }
+                throw err;
+              }
             }
           }
         }
@@ -231,9 +252,20 @@ export class OrdersService {
 
     const lines = await this.resolveLines(dto);
     if ((await this.settings.getInventorySettings()).enabled !== false && dto.status !== DRAFT_STATUS) {
-      const quantities = new Map<string, { productId: string; qty: number }>();
-      for (const l of lines) quantities.set(l.variantId!, { productId: l.productId, qty: (quantities.get(l.variantId!)?.qty ?? 0) + l.qty });
-      for (const [id, l] of quantities) await this.inventory.validateAvailable(l.productId, id, l.qty);
+      const quantities = new Map<string, { productId: string; qty: number; variation?: Record<string, string> | null }>();
+      for (const l of lines) {
+        const key = l.variantId ?? l.productId;
+        quantities.set(key, { productId: l.productId, qty: (quantities.get(key)?.qty ?? 0) + l.qty, variation: l.variation });
+      }
+      for (const [key, l] of quantities) {
+        await this.inventory.assertOrderAvailability({
+          channel: 'ONLINE',
+          productId: l.productId,
+          variantId: key !== l.productId ? key : undefined,
+          variation: l.variation,
+          quantity: l.qty,
+        });
+      }
     }
     const commerce = await this.settings.getCommerce();
     const shippingMinor = nextStatus === DRAFT_STATUS ? toMinor(dto.shipping ?? 0) : toMinor(commerce.shippingFlat);
@@ -689,7 +721,11 @@ export class OrdersService {
         if (wasCommitted && itemsChanged && (await this.settings.getInventorySettings()).enabled === false) {
           throw new BadRequestException('Réactivez le mode avec stock pour modifier les articles de cette commande déjà déduite.');
         }
-        if (wasCommitted && itemsChanged) {
+        const wasReserved = stockEffectForStatus(doc.status) === 'reserve';
+        if ((wasCommitted || wasReserved) && itemsChanged && (await this.settings.getInventorySettings()).enabled === false) {
+          throw new BadRequestException('Réactivez le mode avec stock pour modifier les articles de cette commande déjà suivie.');
+        }
+        if ((wasCommitted || wasReserved) && itemsChanged) {
           const exactBefore = await Promise.all(beforeItems.map(async line => ({ ...line, variantId: await this.inventory.resolveHistoricalVariant(line.productId, line.variantId, line.variation) })));
           const exactAfter = await Promise.all(afterItems.map(async line => ({ ...line, variantId: await this.inventory.resolveHistoricalVariant(line.productId, line.variantId, line.variation) })));
           const deltas = computeStockDeltas(exactBefore, exactAfter);
@@ -698,17 +734,33 @@ export class OrdersService {
             const stockLine = [...exactAfter, ...exactBefore].find(l => (l.variantId ?? l.productId) === identity)!;
             const productId = stockLine.productId;
             const variantId = stockLine.variantId;
-            if (delta > 0) {
-              try {
-                await this.inventory.commit(productId, delta, id, actor, session, strict, variantId);
-              } catch (err) {
-                if (err instanceof InsufficientStockError) {
-                  throw new BadRequestException('Stock insuffisant pour augmenter la quantité.');
+            const variantLabel = stockLine.variation ? Object.values(stockLine.variation).filter(Boolean).join(' / ') || 'cette variante' : 'cette variante';
+            if (wasCommitted) {
+              if (delta > 0) {
+                try {
+                  await this.inventory.commit(productId, delta, id, actor, session, strict, variantId);
+                } catch (err) {
+                  if (err instanceof InsufficientStockError) {
+                    throw new BadRequestException(`Stock insuffisant pour ${variantLabel}.`);
+                  }
+                  throw err;
                 }
-                throw err;
+              } else if (delta < 0) {
+                await this.inventory.adjust(productId, -delta, `Modification de commande #${doc.orderNumber}`, actor, session, undefined, variantId, { type: 'correction', orderId: id });
               }
-            } else {
-              await this.inventory.adjust(productId, -delta, `Modification de commande #${doc.orderNumber}`, actor, session, undefined, variantId, { type: 'correction', orderId: id });
+            } else if (wasReserved) {
+              if (delta > 0) {
+                try {
+                  await this.inventory.reserve(productId, delta, id, actor, strict, session, variantId);
+                } catch (err) {
+                  if (err instanceof InsufficientStockError) {
+                    throw new BadRequestException(`Stock insuffisant pour ${variantLabel}.`);
+                  }
+                  throw err;
+                }
+              } else if (delta < 0) {
+                await this.inventory.release(productId, -delta, id, actor, session, variantId);
+              }
             }
           }
         }
@@ -934,7 +986,7 @@ export class OrdersService {
     // order was already in untouched (moving to/from trash never reserves,
     // commits, or releases anything).
     const isTrashTransition = from === 'trash' || nextStatus === 'trash';
-    const fromEffect = (doc.stockCommitted ?? (stockEffectForStatus(from) === 'commit')) ? 'commit' : 'none';
+    const fromEffect = doc.stockCommitted ? 'commit' : stockEffectForStatus(from);
     const toEffect = stockEffectForStatus(nextStatus);
     const remainsUntracked = doc.stockCommitted === false && stockEffectForStatus(from) === 'commit' && toEffect === 'commit';
     const action = isTrashTransition || remainsUntracked ? 'none' : planStockTransition(fromEffect, toEffect);
@@ -946,13 +998,11 @@ export class OrdersService {
     for (const item of inventoryEnabled || action === 'restock' ? doc.items : []) {
       const variantId = action === 'commit' || action === 'restock' ? await this.inventory.resolveHistoricalVariant(item.productId, item.variantId, item.variation) : item.variantId;
       if (action === 'reserve') {
-        await this.inventory.reserve(item.productId, item.qty, doc.id, actor, false, session);
+        await this.inventory.reserve(item.productId, item.qty, doc.id, actor, true, session, variantId);
       } else if (action === 'commit') {
-        // The normal path: 'en-attente' (fromEffect 'none') → 'confirme'.
-        // Nothing was reserved earlier, so this single commit() call is
-        // both the availability check (in strict mode) and the deduction.
         try {
-          await this.inventory.commit(item.productId, item.qty, doc.id, actor, session, strict, variantId);
+          const wasReserved = fromEffect === 'reserve';
+          await this.inventory.commit(item.productId, item.qty, doc.id, actor, session, strict, variantId, wasReserved);
         } catch (err) {
           if (err instanceof InsufficientStockError) {
             throw new BadRequestException(`Stock insuffisant pour ${item.name}`);
@@ -960,7 +1010,7 @@ export class OrdersService {
           throw err;
         }
       } else if (action === 'release') {
-        await this.inventory.release(item.productId, item.qty, doc.id, actor, session);
+        await this.inventory.release(item.productId, item.qty, doc.id, actor, session, variantId);
       } else if (action === 'restock') {
         const reason = nextStatus === 'retourne'
           ? `Retour colis commande #${doc.orderNumber}`
