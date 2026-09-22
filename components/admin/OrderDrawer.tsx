@@ -7,11 +7,18 @@ import { useToast } from './Toast';
 import { Save, Trash2, Plus, Check, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { SITE, formatPrice, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
-import { attemptStatus, getAttemptNumber, getOrderStatusLabel, isAttemptStatus, MAX_ATTEMPT, MIN_ATTEMPT } from '@/lib/order-status';
+import { attemptStatus, getAttemptNumber, getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, MAX_ATTEMPT, MIN_ATTEMPT } from '@/lib/order-status';
 import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/types';
 
 type ProductPickerItem = { id: string; name: string; price: number; image?: string; status?: string; posOnly?: boolean };
 type LineDraft = {
+  /** Stable per-line identity for this drawer session — either the real
+   *  server `itemId` (an existing, already-saved line) or a client-only
+   *  placeholder ("temp:...") for a line added in this session that
+   *  hasn't been saved yet. Every edit/removal targets this key, never
+   *  array position — see order.schema.ts's OrderItem.itemId doc for why
+   *  index-based targeting is unsafe once lines can be reordered/grouped. */
+  key: string;
   productId: string;
   variantId?: string | null;
   name: string;
@@ -22,6 +29,22 @@ type LineDraft = {
   bundleName?: string;                   // groups slots together under one bundle row
   slotIndex?: number;                    // 1-based slot index within the bundle
 };
+
+/** Mirrors app/api/admin/firstdelivery/preview's response shape (see
+ *  ShippingService.previewFirstDeliveryLocality on the backend). */
+type FirstDeliveryPreviewState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'resolved'; governorate: string; delegation: string; locality: string; localityId: number; address: string }
+  | { status: 'ambiguous'; address: string; candidates: { localityId: number; label: string }[] }
+  | { status: 'not_found'; address: string }
+  | { status: 'error'; message: string };
+
+const TEMP_KEY_PREFIX = 'temp:';
+function newClientKey(): string {
+  const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  return `${TEMP_KEY_PREFIX}${rand}`;
+}
 
 type ProductInfo = {
   variants?: { id: string; size: string; color: string; active: boolean }[];
@@ -60,6 +83,7 @@ function numberFromMeta(value: unknown): number | null {
  *   [{ key: 'size', value: 'm' }, { key: 'color', value: 'noir' }]
  */
 function parseLine(i: {
+  itemId?: string | null;
   productId: string;
   variantId?: string | null; name: string; quantity: number; price: number;
   imageUrl?: string; attributes?: { key: string; value: string }[];
@@ -86,6 +110,11 @@ function parseLine(i: {
   }
 
   return {
+    // A pre-migration order whose item still lacks a server itemId gets a
+    // fresh client-only key so it's still individually editable this
+    // session — it will receive a real itemId on the next save regardless
+    // (the schema default fires since `itemId` is omitted from the payload).
+    key: i.itemId || newClientKey(),
     productId: i.productId,
     variantId: i.variantId,
     name: i.name,
@@ -173,6 +202,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [fdTracking, setFdTracking] = useState<string>('');
   const [fdStatus, setFdStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
   const [fdMsg, setFdMsg] = useState<string>('');
+  /** Read-only resolved-destination preview shown before an actual send —
+   *  see previewFirstDeliveryDestination(). */
+  const [fdPreview, setFdPreview] = useState<FirstDeliveryPreviewState>({ status: 'idle' });
+  /** Admin's choice among fdPreview's candidates when status is 'ambiguous'. */
+  const [fdSelectedLocalityId, setFdSelectedLocalityId] = useState<number | null>(null);
   const [axessTracking, setAxessTracking] = useState<string>('');
   const [axessStatus, setAxessStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
   const [axessMsg, setAxessMsg] = useState<string>('');
@@ -183,6 +217,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [customer, setCustomer] = useState({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string | null>(null);
+  const [statusHistory, setStatusHistory] = useState<OrderResponse['statusHistory']>([]);
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [productInfo, setProductInfo] = useState<Record<string, ProductInfo>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -327,6 +363,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setFdTracking(String((o.meta?._fd_tracking as string) ?? ''));
       setFdStatus(((o.meta?._fd_status as 'sent' | 'failed') ?? 'idle'));
       setFdMsg(String((o.meta?._fd_error as string) ?? ''));
+      setFdPreview({ status: 'idle' }); // re-fetched by the effect below once this order's fdTracking is known
+      setFdSelectedLocalityId(null);
       setAxessTracking(String((o.meta?._axess_tracking as string) ?? ''));
       setAxessStatus(((o.meta?._axess_status as 'sent' | 'failed') ?? 'idle'));
       setAxessMsg(String((o.meta?._axess_error as string) ?? ''));
@@ -337,6 +375,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setPrivateNote(String((o.meta?._mzem_private_note as string) ?? ''));
       setCreatedAt(o.createdAt ?? null);
       setConfirmedAt(o.confirmedAt ?? null);
+      setOrderNumber(o.number ?? null);
+      setStatusHistory(o.statusHistory ?? []);
       const loadedCustomer = {
         firstName: o.customer?.firstName ?? '',
         phone: o.customer?.phone ?? '',
@@ -404,6 +444,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     setFdTracking('');
     setFdStatus('idle');
     setFdMsg('');
+    setFdPreview({ status: 'idle' });
+    setFdSelectedLocalityId(null);
     setAxessTracking('');
     setAxessStatus('idle');
     setAxessMsg('');
@@ -413,6 +455,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     setPrivateNote('');
     setCreatedAt(null);
     setConfirmedAt(null);
+    setOrderNumber(null);
+    setStatusHistory([]);
     setCustomer({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
     setLines([]);
     setVersion(undefined);
@@ -452,6 +496,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       // Add one slot row per bundle item — user can switch to another bundle via the dropdown.
       const perSlotPrice = defaultBundle.price / Math.max(1, defaultBundle.quantity);
       const slots: LineDraft[] = Array.from({ length: defaultBundle.quantity }, (_, k) => ({
+        key: newClientKey(),
         productId: p.id,
         name: p.name,
         image: p.image,
@@ -465,21 +510,23 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     } else if (defaultBundle && defaultBundle.quantity === 1) {
       // Single-item bundle: still tag the line so it shows the bundle dropdown header.
       setLines((prev) => [...prev, {
+        key: newClientKey(),
         productId: p.id, name: p.name, image: p.image, qty: 1, unitPrice: defaultBundle.price,
         variation: {}, bundleName: defaultBundle.name, slotIndex: 1,
       }]);
     } else {
       setLines((prev) => [...prev, {
+        key: newClientKey(),
         productId: p.id, name: p.name, image: p.image, qty: 1, unitPrice: p.price, variation: {},
       }]);
     }
   }
-  function setLine(idx: number, patch: Partial<LineDraft>) {
-    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  function setLine(key: string, patch: Partial<LineDraft>) {
+    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
-  function setLineVariation(idx: number, attrName: string, value: string) {
-    setLines((prev) => prev.map((l, i) => {
-      if (i !== idx) return l;
+  function setLineVariation(key: string, attrName: string, value: string) {
+    setLines((prev) => prev.map((l) => {
+      if (l.key !== key) return l;
       const cleanVariation: Record<string, string> = {};
       const targetKey = attrName.toLowerCase().trim();
       for (const [k, v] of Object.entries(l.variation)) {
@@ -491,8 +538,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       return { ...l, variation: cleanVariation };
     }));
   }
-  function removeLine(idx: number) {
-    setLines((prev) => prev.filter((_, i) => i !== idx));
+  function removeLine(key: string) {
+    setLines((prev) => prev.filter((l) => l.key !== key));
   }
   function removeBundleGroup(productId: string, bundleName: string) {
     setLines((prev) => prev.filter((l) => !(l.productId === productId && l.bundleName === bundleName)));
@@ -505,6 +552,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       const first = groupLines[0];
       if (!first) return prev;
       const newSlots = Array.from({ length: newBundle.quantity }, (_, k) => ({
+        // Reuse the slot that was already at this position's key when one
+        // exists, so switching bundles doesn't spuriously re-key a slot
+        // whose variation is being carried over unchanged.
+        key: groupLines[k]?.key ?? newClientKey(),
         productId,
         name: first.name,
         image: first.image,
@@ -620,6 +671,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         ? {
             customer,
             items: lines.map((l) => ({
+              // Only echo a REAL server itemId back — a client-only
+              // "temp:" placeholder (a line added this session, never
+              // saved) must stay omitted so the backend assigns a fresh
+              // one, rather than trying to look up a placeholder as if it
+              // were a real existing line's id.
+              itemId: l.key.startsWith(TEMP_KEY_PREFIX) ? undefined : l.key,
               productId: l.productId,
               variantId: l.variantId ?? undefined,
               qty: l.qty,
@@ -758,7 +815,44 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     }
   }
 
-  async function sendToFirstDelivery(force = false) {
+  /** Manual per-carrier send, shared by the Navex/Axess cards (First
+   *  Delivery has its own function above — it additionally needs the
+   *  resolved/confirmed localityId). */
+  async function sendCarrier(
+    carrier: 'navex' | 'axess',
+    label: string,
+    setTracking: (v: string) => void,
+    setCarrierStatus: (v: 'idle' | 'sent' | 'failed') => void,
+    setMsg: (v: string) => void,
+  ) {
+    if (!orderId) return;
+    setCarrierStatus('idle');
+    setMsg('');
+    try {
+      const r = await fetch(`${apiBase}/${carrier}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d?.ok) {
+        setTracking(d.barcode ?? '');
+        setCarrierStatus('sent');
+        setMsg('');
+        toast.success(`Envoyé à ${label} avec succès.`);
+      } else {
+        setCarrierStatus('failed');
+        setMsg(d?.error ?? `HTTP ${r.status}`);
+        toast.error(`Échec d'envoi ${label}: ${d?.error ?? `HTTP ${r.status}`}`);
+      }
+    } catch (e) {
+      toast.error(`Erreur réseau: ${e instanceof Error ? e.message : 'inconnu'}`);
+    }
+  }
+  const sendToNavex = () => sendCarrier('navex', 'Navex', setNavexTracking, setNavexStatus, setNavexMsg);
+  const sendToAxess = () => sendCarrier('axess', 'Axess', setAxessTracking, setAxessStatus, setAxessMsg);
+
+  async function sendToFirstDelivery(force = false, localityId?: number) {
     if (!orderId) return;
     setFdStatus('idle');
     setFdMsg('');
@@ -766,7 +860,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       const r = await fetch(`${apiBase}/firstdelivery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, force }),
+        body: JSON.stringify({ orderId, force, ...(localityId ? { localityId } : {}) }),
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d?.ok) {
@@ -777,18 +871,90 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       } else {
         setFdStatus('failed');
         setFdMsg(d?.error ?? `HTTP ${r.status}`);
-        toast.error(`Échec d'envoi First Delivery: ${d?.error ?? `HTTP ${r.status}`}`);
+        // An ambiguous resolution re-surfaces the candidate list rather
+        // than a bare error, so the admin can pick and retry immediately.
+        if (d?.needsConfirmation && Array.isArray(d?.candidates)) {
+          setFdPreview({ status: 'ambiguous', address: '', candidates: d.candidates });
+        } else {
+          toast.error(`Échec d'envoi First Delivery: ${d?.error ?? `HTTP ${r.status}`}`);
+        }
       }
     } catch (e) {
       toast.error(`Erreur réseau: ${e instanceof Error ? e.message : 'inconnu'}`);
     }
   }
 
+  /**
+   * Read-only preview of the First Delivery destination — resolves the
+   * governorate/delegation/locality the order would currently send to (or
+   * an ambiguous candidate list) without ever calling the carrier API, so
+   * the admin can confirm/correct it before "Envoyer" actually sends
+   * anything (see backend/src/shipping/first-delivery.service.ts).
+   */
+  async function previewFirstDeliveryDestination() {
+    if (!orderId) return;
+    setFdPreview({ status: 'loading' });
+    setFdSelectedLocalityId(null);
+    try {
+      const r = await fetch(`${apiBase}/firstdelivery/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d?.status) {
+        setFdPreview(d);
+        if (d.status === 'resolved') setFdSelectedLocalityId(d.localityId);
+      } else {
+        setFdPreview({ status: 'error', message: d?.error ?? `HTTP ${r.status}` });
+      }
+    } catch (e) {
+      setFdPreview({ status: 'error', message: e instanceof Error ? e.message : 'Erreur réseau' });
+    }
+  }
+
+  // Preview the First Delivery destination automatically once an existing,
+  // not-yet-sent order is loaded — so the confirm UI is already populated
+  // the moment the admin looks at the card, never a silent surprise at
+  // send time.
+  useEffect(() => {
+    if (isEdit && orderId && !fdTracking) void previewFirstDeliveryDestination();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, orderId, fdTracking === '']);
+
+  const resolvedStatusForBadge = status === 'tentative' ? attemptStatus(attempts) : status;
+
   return (
     <Drawer
       open={open}
       onClose={() => { setReasonModalOpen(false); setReasonError(null); onClose(); }}
-      title={isEdit ? `Modifier la commande` : 'Créer une commande'}
+      width="max-w-[900px]"
+      title={
+        isEdit ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-lg font-black text-ink-900 md:text-xl">
+                Commande {orderNumber ? `#${orderNumber}` : ''}
+              </span>
+              {resolvedStatusForBadge && (
+                <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${getOrderStatusTone(resolvedStatusForBadge)}`}>
+                  {labelFor(resolvedStatusForBadge)}
+                </span>
+              )}
+            </div>
+            {!loading && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-medium text-ink-700">
+                {customer.firstName && <span className="font-bold text-ink-900">{customer.firstName}</span>}
+                <span className="font-black text-brand-600">{formatPrice(total)}</span>
+                {createdAt && <span>Créée : {formatDateTime(createdAt)}</span>}
+                {confirmedAt && <span className="font-bold text-emerald-700">Confirmée : {formatDateTime(confirmedAt)}</span>}
+              </div>
+            )}
+          </div>
+        ) : (
+          'Créer une commande'
+        )
+      }
       actions={
         <button onClick={save} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white shadow-soft hover:bg-brand-600 disabled:opacity-50">
           <Save size={14} /> {saving ? 'Enregistrement…' : 'Enregistrer'}
@@ -879,96 +1045,46 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
             </Field>
           </Card>
 
-          {/* Détails du client */}
+          {/* Transporteurs — compact per-carrier cards, not three large
+              always-expanded "not yet sent" blocks. */}
           {isEdit && (
-            <div className="space-y-2">
-              {/* Navex panel */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm">
-                <div className="flex flex-wrap items-center gap-3">
-                  {navexTracking && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                        <Check size={12} /> Envoyé à Navex
-                      </span>
-                      <span className="text-xs text-ink-700">
-                        Code à barre : <code className="rounded bg-ink-100 px-2 py-0.5 font-mono">{navexTracking}</code>
-                      </span>
-                    </>
-                  )}
-                  {!navexTracking && navexStatus === 'failed' && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
-                        <AlertTriangle size={12} /> Échec d&apos;envoi Navex
-                      </span>
-                      <span className="text-xs text-red-700">{navexMsg || 'Erreur inconnue'}</span>
-                    </>
-                  )}
-                  {!navexTracking && navexStatus !== 'failed' && (
-                    <span className="text-xs text-ink-700">Pas encore envoyé à Navex.</span>
-                  )}
-                </div>
+            <Card title="Transporteurs">
+              <div className="space-y-2">
+                <CarrierCard
+                  name="Navex"
+                  tracking={navexTracking}
+                  status={navexStatus}
+                  message={navexMsg}
+                  onSend={sendToNavex}
+                />
+                {/* Axess is admin-only — matches the backend's
+                    ShippingEmployeeController, which never exposes it. */}
+                {apiBase === '/api/admin' && (
+                  <CarrierCard
+                    name="Axess"
+                    tracking={axessTracking}
+                    status={axessStatus}
+                    message={axessMsg}
+                    onSend={sendToAxess}
+                  />
+                )}
+                <FirstDeliveryCard
+                  tracking={fdTracking}
+                  status={fdStatus}
+                  message={fdMsg}
+                  preview={fdPreview}
+                  selectedLocalityId={fdSelectedLocalityId}
+                  onSelectLocality={setFdSelectedLocalityId}
+                  onSend={() => {
+                    const localityId =
+                      fdPreview.status === 'resolved' ? fdPreview.localityId
+                      : fdPreview.status === 'ambiguous' ? fdSelectedLocalityId ?? undefined
+                      : undefined;
+                    void sendToFirstDelivery(fdStatus === 'failed', localityId);
+                  }}
+                />
               </div>
-              {/* Axess Logistique panel */}
-              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm">
-                {axessTracking && (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                      <Check size={12} /> Envoyé à Axess
-                    </span>
-                    <span className="text-xs text-ink-700">
-                      N° suivi : <code className="rounded bg-ink-100 px-2 py-0.5 font-mono">{axessTracking}</code>
-                    </span>
-                  </>
-                )}
-                {!axessTracking && axessStatus === 'failed' && (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
-                      <AlertTriangle size={12} /> Échec d&apos;envoi Axess
-                    </span>
-                    <span className="text-xs text-red-700">{axessMsg || 'Erreur inconnue'}</span>
-                  </>
-                )}
-                {!axessTracking && axessStatus !== 'failed' && (
-                  <span className="text-xs text-ink-700">Pas encore envoyé à Axess Logistique.</span>
-                )}
-              </div>
-              {/* First Delivery panel */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm">
-                <div className="flex flex-wrap items-center gap-3">
-                  {fdTracking && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                        <Check size={12} /> Envoyé à First Delivery
-                      </span>
-                      <span className="text-xs text-ink-700">
-                        Code à barre : <code className="rounded bg-ink-100 px-2 py-0.5 font-mono">{fdTracking}</code>
-                      </span>
-                    </>
-                  )}
-                  {!fdTracking && fdStatus === 'failed' && (
-                    <>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">
-                        <AlertTriangle size={12} /> Échec d&apos;envoi First Delivery
-                      </span>
-                      <span className="text-xs text-red-700">{fdMsg || 'Erreur inconnue'}</span>
-                    </>
-                  )}
-                  {!fdTracking && fdStatus !== 'failed' && (
-                    <span className="text-xs text-ink-700">Pas encore envoyé à First Delivery.</span>
-                  )}
-                </div>
-                {/* Resend button — shown when previous attempt failed */}
-                {!fdTracking && fdStatus === 'failed' && (
-                  <button
-                    type="button"
-                    onClick={() => sendToFirstDelivery(true)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-100 px-3 py-1.5 text-[11px] font-bold text-red-700 hover:bg-red-200 transition-colors"
-                  >
-                    Renvoyer
-                  </button>
-                )}
-              </div>
-            </div>
+            </Card>
           )}
 
           <Card title="Détails du client">
@@ -1093,6 +1209,35 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               </table>
             </div>
           </Card>
+
+          {isEdit && statusHistory && statusHistory.length > 0 && (
+            <Card title="Historique">
+              <ol className="space-y-2.5">
+                {[...statusHistory].reverse().map((h, idx) => (
+                  <li key={`${h.at}-${idx}`} className="flex items-start gap-3 text-xs">
+                    <span className="mt-0.5 h-2 w-2 flex-none rounded-full bg-brand-400" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5 font-bold text-ink-900">
+                        {h.from ? (
+                          <>
+                            <span className="text-ink-600">{labelFor(h.from)}</span>
+                            <span className="text-ink-400">→</span>
+                            <span>{labelFor(h.to)}</span>
+                          </>
+                        ) : (
+                          <span>Création — {labelFor(h.to)}</span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-ink-600">
+                        {formatDateTime(h.at)} · {h.by?.name || 'Système'}
+                      </div>
+                      {h.note && <div className="mt-0.5 italic text-ink-600">{h.note}</div>}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          )}
         </div>
       )}
 
@@ -1123,25 +1268,25 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
 function renderSummaryRows(args: {
   lines: LineDraft[];
   productInfo: Record<string, ProductInfo>;
-  setLine: (idx: number, patch: Partial<LineDraft>) => void;
-  setLineVariation: (idx: number, attrName: string, value: string) => void;
-  removeLine: (idx: number) => void;
+  setLine: (key: string, patch: Partial<LineDraft>) => void;
+  setLineVariation: (key: string, attrName: string, value: string) => void;
+  removeLine: (key: string) => void;
   removeBundleGroup: (productId: string, bundleName: string) => void;
   switchBundle: (productId: string, oldBundleName: string, b: { name: string; quantity: number; price: number }) => void;
 }): React.ReactNode {
   const { lines, productInfo, setLine, setLineVariation, removeLine, removeBundleGroup, switchBundle } = args;
 
-  // Build groups while preserving original indices for setLine/removeLine.
-  type Indexed = LineDraft & { _i: number };
-  const indexed: Indexed[] = lines.map((l, i) => ({ ...l, _i: i }));
-  const groups: { key: string; productId: string; bundleName?: string; items: Indexed[] }[] = [];
-  for (const l of indexed) {
-    const key = `${l.productId}|${l.bundleName ?? ''}`;
+  // Group consecutive same-bundle lines for display — grouping is purely
+  // visual ordering; every actual edit below targets `l.key`, never array
+  // position (see LineDraft.key doc).
+  const groups: { key: string; productId: string; bundleName?: string; items: LineDraft[] }[] = [];
+  for (const l of lines) {
+    const groupKey = `${l.productId}|${l.bundleName ?? ''}`;
     const last = groups[groups.length - 1];
-    if (last && last.key === key && l.bundleName) {
+    if (last && last.key === groupKey && l.bundleName) {
       last.items.push(l);
     } else {
-      groups.push({ key, productId: l.productId, bundleName: l.bundleName, items: [l] });
+      groups.push({ key: groupKey, productId: l.productId, bundleName: l.bundleName, items: [l] });
     }
   }
 
@@ -1193,7 +1338,7 @@ function renderSummaryRows(args: {
         const isFirst = k === 0;
         const isLast = k === g.items.length - 1;
         rows.push(
-          <tr key={`${g.key}-${l._i}`} className={isLast ? 'border-b-2 border-brand-100/40' : ''}>
+          <tr key={`${g.key}-${l.key}`} className={isLast ? 'border-b-2 border-brand-100/40' : ''}>
             <td className={`px-4 py-3 align-middle ${isFirst ? '' : 'pt-0'}`}>
               {isFirst ? (
                 <div className="flex items-center gap-3">
@@ -1216,7 +1361,7 @@ function renderSummaryRows(args: {
             <td className="px-3 py-3 align-middle">
               <NumberField
                 value={l.qty}
-                onChange={(v) => setLine(l._i, { qty: Math.max(1, v) })}
+                onChange={(v) => setLine(l.key, { qty: Math.max(1, v) })}
                 min={1}
                 blankOnZero={false}
                 live
@@ -1227,16 +1372,16 @@ function renderSummaryRows(args: {
               <VariationSelects
                 variants={info?.matrix ? info.variants : undefined}
                 variantId={l.variantId ?? undefined}
-                onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l._i, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
+                onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l.key, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
                 attrs={attrs}
                 value={l.variation}
-                onChange={(name, v) => setLineVariation(l._i, name, v)}
+                onChange={(name, v) => setLineVariation(l.key, name, v)}
               />
             </td>
             <td className="px-3 py-3 align-middle text-right">
               <NumberField
                 value={l.unitPrice}
-                onChange={(v) => setLine(l._i, { unitPrice: v })}
+                onChange={(v) => setLine(l.key, { unitPrice: v })}
                 step={0.01}
                 decimals={2}
                 live
@@ -1248,7 +1393,7 @@ function renderSummaryRows(args: {
               {!isFirst && (
                 <button
                   type="button"
-                  onClick={() => removeLine(l._i)}
+                  onClick={() => removeLine(l.key)}
                   className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"
                   title="Retirer cet item"
                 >
@@ -1263,7 +1408,7 @@ function renderSummaryRows(args: {
       // Solo line
       const l = g.items[0];
       rows.push(
-        <tr key={`${g.key}-${l._i}`} className="border-t border-ink-200">
+        <tr key={`${g.key}-${l.key}`} className="border-t border-ink-200">
           <td className="px-4 py-3 align-middle">
             <div className="flex items-center gap-3">
               {l.image ? (
@@ -1278,7 +1423,7 @@ function renderSummaryRows(args: {
           <td className="px-3 py-3 align-middle">
             <NumberField
               value={l.qty}
-              onChange={(v) => setLine(l._i, { qty: Math.max(1, v) })}
+              onChange={(v) => setLine(l.key, { qty: Math.max(1, v) })}
               min={1}
               blankOnZero={false}
               live
@@ -1289,16 +1434,16 @@ function renderSummaryRows(args: {
             <VariationSelects
                 variants={info?.matrix ? info.variants : undefined}
                 variantId={l.variantId ?? undefined}
-                onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l._i, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
+                onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l.key, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
               attrs={attrs}
               value={l.variation}
-              onChange={(name, v) => setLineVariation(l._i, name, v)}
+              onChange={(name, v) => setLineVariation(l.key, name, v)}
             />
           </td>
           <td className="px-3 py-3 align-middle text-right">
             <NumberField
               value={l.unitPrice}
-              onChange={(v) => setLine(l._i, { unitPrice: v })}
+              onChange={(v) => setLine(l.key, { unitPrice: v })}
               step={0.01}
               decimals={2}
               live
@@ -1309,7 +1454,7 @@ function renderSummaryRows(args: {
           <td className="px-3 py-3 align-middle text-right">
             <button
               type="button"
-              onClick={() => removeLine(l._i)}
+              onClick={() => removeLine(l.key)}
               className="rounded-lg p-1.5 text-red-500 hover:bg-red-50"
               title="Retirer"
             >
@@ -1397,6 +1542,148 @@ function Card({ title, right, children }: { title: string; right?: React.ReactNo
       </header>
       <div className="p-5">{children}</div>
     </section>
+  );
+}
+
+/** Compact status + send-button row for one carrier — replaces what used
+ *  to be a full-width "Pas encore envoyé à X." block repeated three times. */
+function CarrierCard({
+  name, tracking, status, message, onSend,
+}: {
+  name: string;
+  tracking: string;
+  status: 'idle' | 'sent' | 'failed';
+  message: string;
+  onSend: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-ink-200 bg-white p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-black uppercase tracking-wide text-ink-900">{name}</span>
+        {tracking ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+            <Check size={11} /> Envoyé — <code className="font-mono">{tracking}</code>
+          </span>
+        ) : status === 'failed' ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700">
+            <AlertTriangle size={11} /> Échec{message ? ` — ${message}` : ''}
+          </span>
+        ) : (
+          <span className="text-[11px] font-medium text-ink-700">Non envoyé</span>
+        )}
+      </div>
+      {!tracking && (
+        <button
+          type="button"
+          onClick={onSend}
+          className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-[11px] font-bold transition-colors ${
+            status === 'failed' ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-brand-500 text-white hover:bg-brand-600'
+          }`}
+        >
+          {status === 'failed' ? 'Renvoyer' : 'Envoyer'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * First Delivery's card — same compact header as CarrierCard, plus the
+ * resolved-destination preview and, when ambiguous, the "Localité First
+ * Delivery à confirmer" selector the fix for the Akouda bug relies on
+ * (see backend/src/shipping/first-delivery.service.ts). The Envoyer
+ * button is disabled while ambiguous and unconfirmed — never sends a
+ * possibly-wrong destination silently.
+ */
+function FirstDeliveryCard({
+  tracking, status, message, preview, selectedLocalityId, onSelectLocality, onSend,
+}: {
+  tracking: string;
+  status: 'idle' | 'sent' | 'failed';
+  message: string;
+  preview: FirstDeliveryPreviewState;
+  selectedLocalityId: number | null;
+  onSelectLocality: (id: number | null) => void;
+  onSend: () => void;
+}) {
+  const blockedByAmbiguity = preview.status === 'ambiguous' && !selectedLocalityId;
+  return (
+    <div className="rounded-xl border border-ink-200 bg-white p-3 text-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-black uppercase tracking-wide text-ink-900">First Delivery</span>
+          {tracking ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+              <Check size={11} /> Envoyé — <code className="font-mono">{tracking}</code>
+            </span>
+          ) : status === 'failed' ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-bold text-red-700">
+              <AlertTriangle size={11} /> Échec{message ? ` — ${message}` : ''}
+            </span>
+          ) : (
+            <span className="text-[11px] font-medium text-ink-700">Non envoyé</span>
+          )}
+        </div>
+        {!tracking && (
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={blockedByAmbiguity}
+            title={blockedByAmbiguity ? 'Confirmez la localité ci-dessous avant d\'envoyer' : undefined}
+            className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              status === 'failed' ? 'bg-red-100 text-red-700 hover:enabled:bg-red-200' : 'bg-brand-500 text-white hover:enabled:bg-brand-600'
+            }`}
+          >
+            {status === 'failed' ? 'Renvoyer' : 'Envoyer'}
+          </button>
+        )}
+      </div>
+
+      {!tracking && (
+        <div className="mt-2 rounded-lg bg-ink-100/70 p-2.5 text-xs">
+          {preview.status === 'idle' && <span className="text-ink-700">—</span>}
+          {preview.status === 'loading' && <span className="text-ink-700">Résolution de la localité…</span>}
+          {preview.status === 'resolved' && (
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4">
+              <PreviewField label="Gouvernorat" value={preview.governorate} />
+              <PreviewField label="Ville / délégation" value={preview.delegation} />
+              <PreviewField label="Localité" value={preview.locality} />
+              <PreviewField label="Adresse" value={preview.address} />
+            </div>
+          )}
+          {preview.status === 'ambiguous' && (
+            <div className="space-y-1.5">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                <AlertTriangle size={11} /> Localité First Delivery à confirmer
+              </span>
+              <select
+                className="input h-8 py-0 text-xs"
+                value={selectedLocalityId ?? ''}
+                onChange={(e) => onSelectLocality(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Sélectionner la localité…</option>
+                {preview.candidates.map((c) => (
+                  <option key={c.localityId} value={c.localityId}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {preview.status === 'not_found' && (
+            <span className="text-red-700">Localité introuvable — vérifiez la ville et l&apos;adresse de la commande.</span>
+          )}
+          {preview.status === 'error' && <span className="text-red-700">{preview.message}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PreviewField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <span className="block text-[9px] font-bold uppercase tracking-wider text-ink-600">{label}</span>
+      <span className="block truncate font-bold text-ink-900" title={value}>{value || '—'}</span>
+    </div>
   );
 }
 

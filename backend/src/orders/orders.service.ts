@@ -8,6 +8,7 @@ import type { AuditActor, CheckoutPayload, OrderResponse, OrderStatusCounts } fr
 import { AuditService } from '@/audit/audit.service';
 import { Product } from '@/catalog/product.schema';
 import { primaryProductImage } from '@/catalog/product-media';
+import { ProductVariantsService } from '@/catalog/product-variants.service';
 import { toMinor } from '@/common/money';
 import { clampPagination, paginate } from '@/common/pagination';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
@@ -27,6 +28,7 @@ import { ProcessOrderReturnDto } from './dto/order-return.dto';
 import { UpdateOrderDto } from './dto/order-update.dto';
 import { computeOrderTotals, computeStockDeltas } from './order-calc';
 import { diffCustomer, diffItems, hasItemChanges, ItemSnapshot, OrderSnapshot, snapshotCustomer, snapshotItems } from './order-diff';
+import { computeVariantVariationKey } from './order-variation-key';
 import { toOrderContract } from './order.mapper';
 import { COMMIT_STATUSES, DEFAULT_STATUS, DRAFT_STATUS, getAttemptNumber, planStockTransition, stockEffectForStatus } from './order-status';
 import { Order, OrderDocument } from './order.schema';
@@ -35,6 +37,10 @@ const ORDER_NUMBER_SEQUENCE = 'orderNumber';
 const SYSTEM_ACTOR: AuditActor = { type: 'system', id: null, name: 'checkout' };
 
 type ResolvedLine = {
+  /** Carried through from an existing line on edit (OrderUpdateItemDto.itemId);
+   *  left undefined for a genuinely new line so the schema default
+   *  (`randomUUID()`) assigns it on save — see order.schema.ts. */
+  itemId?: string;
   productId: string;
   variantId?: string | null;
   name: string;
@@ -60,6 +66,7 @@ export class OrdersService {
     @InjectConnection() private readonly connection: Connection,
     private readonly counters: CountersService,
     private readonly inventory: InventoryService,
+    private readonly variantsCatalog: ProductVariantsService,
     private readonly coupons: CouponsService,
     private readonly customers: CustomersService,
     private readonly settings: SettingsService,
@@ -190,6 +197,7 @@ export class OrdersService {
               },
               customerId: customerDoc?.id ?? null,
               items: lines.map((l) => ({
+                itemId: l.itemId,
                 productId: l.productId,
                 variantId: l.variantId,
                 legacyProductId: null,
@@ -321,6 +329,7 @@ export class OrdersService {
           note: dto.customer.note ?? '',
         } as Order['customer'];
         doc.items = lines.map((l) => ({
+          itemId: l.itemId,
           productId: l.productId,
           variantId: l.variantId,
           legacyProductId: null,
@@ -390,11 +399,16 @@ export class OrdersService {
       });
     }
 
-    // Product filter — matches any order whose line items contain this product.
-    // Filtered at the DB level so count() and pagination are correct. Uses the
-    // stable productId reference (not the name snapshot) for historical accuracy.
+    // Product (+ optional variant) filter — matches any order whose line
+    // items contain this product, optionally narrowed to one exact variant
+    // across both new (variantId) and legacy (size/color snapshot) orders.
+    // Filtered at the DB level so count() and pagination are correct. Uses
+    // stable productId/variantId references (not name/label snapshots) for
+    // historical accuracy. See buildVariantCondition for the legacy-match
+    // details.
     if (query.productId) {
-      andConditions.push({ 'items.productId': query.productId });
+      const variantCondition = await this.buildVariantCondition(query.productId, query.variantId);
+      andConditions.push(variantCondition ?? { 'items.productId': query.productId });
     }
 
     if (query.after || query.before) {
@@ -440,6 +454,117 @@ export class OrdersService {
   }
 
   /**
+   * Builds the Mongo condition for a product(+variant) filter. Returns
+   * `null` when no variant refinement applies (callers fall back to the
+   * plain `items.productId` match in that case). Matches items across
+   * BOTH storage generations:
+   *  - new orders: `items.variantId` equal to the given variant.
+   *  - legacy orders (no variantId): a normalized size/color snapshot
+   *    (`items.variationKey`) equal to that variant's own attributes —
+   *    see order-variation-key.ts for the shared normalization.
+   *
+   * `variantId` also accepts two sentinel forms from the variant filter
+   * UI (see OrderListQueryDto.variantId): `'none'` (items with no
+   * resolvable variant identity at all — non-matrix products, or
+   * unparseable legacy snapshots) and `'legacy:<size>|<color>'` (a legacy
+   * snapshot that doesn't uniquely map to any current variant).
+   */
+  private async buildVariantCondition(productId: string, variantId?: string): Promise<Record<string, unknown> | null> {
+    if (!variantId) return null;
+    if (variantId === 'none') {
+      return { items: { $elemMatch: { productId, variantId: { $in: [null, undefined] }, variationKey: null } } };
+    }
+    if (variantId.startsWith('legacy:')) {
+      const key = variantId.slice('legacy:'.length);
+      if (!key) return null;
+      return { items: { $elemMatch: { productId, variantId: { $in: [null, undefined] }, variationKey: key } } };
+    }
+    const variant = await this.variantsCatalog.findById(variantId);
+    if (!variant || variant.productId !== productId) {
+      // Unknown/mismatched variant (e.g. a bookmarked URL for a since-
+      // deleted variant) — match nothing rather than silently falling
+      // back to "all variants of this product".
+      return { _id: { $in: [] } };
+    }
+    const key = computeVariantVariationKey(variant.attributes);
+    return {
+      items: {
+        $elemMatch: {
+          productId,
+          $or: [
+            { variantId },
+            ...(key ? [{ variantId: { $in: [null, undefined] }, variationKey: key }] : []),
+          ],
+        },
+      },
+    };
+  }
+
+  /**
+   * Variant breakdown for the Orders product filter's second step — one
+   * row per distinct variant identity found among this product's order
+   * lines (both new variantId-based and legacy size/color-snapshot
+   * lines), with an order count (an order with 2 lines of the same
+   * variant counts once), respecting the same tab/status/search/date
+   * scope as `counts()`'s per-product breakdown. Labels are resolved
+   * against the CURRENT variant catalog on a best-effort basis — a
+   * legacy snapshot that doesn't map to exactly one current variant is
+   * still returned (as a `legacy:` value, see OrderListQueryDto), never
+   * dropped.
+   */
+  async variantFilterOptions(
+    productId: string,
+    query: Pick<OrderListQueryDto, 'search' | 'after' | 'before' | 'status' | 'tab'> = {},
+  ): Promise<{ value: string; label: string; orderCount: number }[]> {
+    const scopeAnds = this.buildProductScopeAnds(query);
+    scopeAnds.push({ 'items.productId': productId });
+
+    const rows = await this.model.aggregate<{ _id: string; orderCount: number }>([
+      { $match: { $and: scopeAnds } },
+      {
+        $project: {
+          identities: {
+            $setUnion: [
+              {
+                $map: {
+                  input: { $filter: { input: { $ifNull: ['$items', []] }, as: 'i', cond: { $eq: ['$$i.productId', productId] } } },
+                  as: 'item',
+                  in: { $ifNull: ['$$item.variantId', { $ifNull: ['$$item.variationKey', '__none__'] }] },
+                },
+              },
+              [],
+            ],
+          },
+        },
+      },
+      { $unwind: '$identities' },
+      { $group: { _id: '$identities', orderCount: { $sum: 1 } } },
+    ]);
+
+    const variants = await this.variantsCatalog.allForProducts([productId]);
+    const byId = new Map(variants.map((v) => [v.id, v]));
+    const byKey = new Map<string, typeof variants>();
+    for (const v of variants) {
+      const key = computeVariantVariationKey(v.attributes);
+      if (!key) continue;
+      byKey.set(key, [...(byKey.get(key) ?? []), v]);
+    }
+    const attrLabel = (v: (typeof variants)[number]) => [v.attributes.size, v.attributes.color].filter(Boolean).join(' / ') || v.sku;
+    const legacyLabel = (key: string) => key.split('|').map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(' / ');
+
+    return rows
+      .map((r) => {
+        if (r._id === '__none__') return { value: 'none', label: 'Sans variante', orderCount: r.orderCount };
+        const direct = byId.get(r._id);
+        if (direct) return { value: direct.id, label: attrLabel(direct), orderCount: r.orderCount };
+        const candidates = byKey.get(r._id) ?? [];
+        if (candidates.length === 1) return { value: candidates[0].id, label: attrLabel(candidates[0]), orderCount: r.orderCount };
+        return { value: `legacy:${r._id}`, label: `${legacyLabel(r._id)} (historique)`, orderCount: r.orderCount };
+      })
+      .sort((a, b) => b.orderCount - a.orderCount);
+  }
+
+  /**
    * Single round-trip status breakdown, replacing what used to be 6
    * separate list({perPage:1}) calls (one per status) just to read their
    * totals. One $facet aggregation scans the (search/date-filtered)
@@ -453,8 +578,65 @@ export class OrdersService {
    * intentionally-excluded buckets, exactly like the tab split already
    * works; see OrderStatusCounts in contracts/order.ts for the exact shape.
    */
+  /**
+   * Scope conditions shared by `counts()`'s per-product breakdown and
+   * `variantFilterOptions()` — respects tab, active status, date range
+   * and search, exactly like `list()`/`counts()` do, so counts shown in
+   * the filter UI always agree with what the list itself returns for the
+   * same filters.
+   */
+  private buildProductScopeAnds(
+    query: Pick<OrderListQueryDto, 'search' | 'after' | 'before' | 'status' | 'tab'>,
+  ): Record<string, unknown>[] {
+    const ands: Record<string, unknown>[] = [];
+    const activeTab = query.tab || 'normal';
+    if (activeTab === 'trash') {
+      ands.push({ status: 'trash' });
+    } else if (activeTab === 'abandoned') {
+      ands.push({ status: { $in: ['checkout-draft', 'abandoned', 'abondonne'] } });
+    } else if (query.status) {
+      ands.push({
+        status: query.status === 'tentative'
+          ? { $in: ['tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5'] }
+          : query.status,
+      });
+    } else {
+      ands.push({
+        status: { $in: ['en-attente', 'confirme', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5', 'annule', 'retourne'] },
+      });
+    }
+
+    if (query.search) {
+      ands.push({
+        $or: [
+          { 'customer.firstName': { $regex: query.search, $options: 'i' } },
+          { 'customer.phone': { $regex: query.search, $options: 'i' } },
+          { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
+          { 'carrier.navex.tracking': { $regex: query.search, $options: 'i' } },
+          { 'carrier.firstdelivery.tracking': { $regex: query.search, $options: 'i' } },
+          { 'carrier.axess.tracking': { $regex: query.search, $options: 'i' } },
+          { 'returnInfo.trackingNumber': { $regex: query.search, $options: 'i' } },
+        ],
+      });
+    }
+
+    if (query.after || query.before) {
+      const dateRange = {
+        ...(query.after ? { $gte: new Date(query.after) } : {}),
+        ...(query.before ? { $lte: new Date(query.before) } : {}),
+      };
+      if (query.status === 'confirme') {
+        ands.push({ $or: [{ confirmedAt: dateRange }, { confirmedAt: null, createdAt: dateRange }] });
+      } else {
+        ands.push({ createdAt: dateRange });
+      }
+    }
+
+    return ands;
+  }
+
   async counts(
-    query: Pick<OrderListQueryDto, 'search' | 'after' | 'before' | 'productId' | 'status' | 'tab'> = {},
+    query: Pick<OrderListQueryDto, 'search' | 'after' | 'before' | 'productId' | 'variantId' | 'status' | 'tab'> = {},
   ): Promise<OrderStatusCounts> {
     const searchCondition = query.search
       ? {
@@ -478,9 +660,13 @@ export class OrdersService {
         }
       : null;
 
+    const productCondition = query.productId
+      ? (await this.buildVariantCondition(query.productId, query.variantId)) ?? { 'items.productId': query.productId }
+      : null;
+
     const countBranch = (status: string) => {
       const ands: Record<string, unknown>[] = [{ status }];
-      if (query.productId) ands.push({ 'items.productId': query.productId });
+      if (productCondition) ands.push(productCondition);
       if (searchCondition) ands.push(searchCondition);
       if (dateRange) {
         if (status === 'confirme') {
@@ -497,44 +683,9 @@ export class OrdersService {
       return [{ $match: { $and: ands } }, { $count: 'n' }];
     };
 
-    // Scope conditions for product order count aggregation:
-    // Respects current tab, active status, date range, and search query.
-    const productScopeAnds: Record<string, unknown>[] = [];
-    const activeTab = query.tab || 'normal';
-    if (activeTab === 'trash') {
-      productScopeAnds.push({ status: 'trash' });
-    } else if (activeTab === 'abandoned') {
-      productScopeAnds.push({ status: { $in: ['checkout-draft', 'abandoned', 'abondonne'] } });
-    } else {
-      // Normal tab
-      if (query.status) {
-        if (query.status === 'tentative') {
-          productScopeAnds.push({
-            status: { $in: ['tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5'] },
-          });
-        } else {
-          productScopeAnds.push({ status: query.status });
-        }
-      } else {
-        productScopeAnds.push({
-          status: { $in: ['en-attente', 'confirme', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5', 'annule', 'retourne'] },
-        });
-      }
-    }
-
-    if (searchCondition) productScopeAnds.push(searchCondition);
-    if (dateRange) {
-      if (query.status === 'confirme') {
-        productScopeAnds.push({
-          $or: [
-            { confirmedAt: dateRange },
-            { confirmedAt: null, createdAt: dateRange },
-          ],
-        });
-      } else {
-        productScopeAnds.push({ createdAt: dateRange });
-      }
-    }
+    // Scope conditions for product order count aggregation: respects
+    // current tab, active status, date range, and search query.
+    const productScopeAnds = this.buildProductScopeAnds(query);
 
     const productBranch: unknown[] = [
       { $match: productScopeAnds.length > 0 ? { $and: productScopeAnds } : {} },
@@ -845,7 +996,7 @@ export class OrdersService {
   /** Resolves admin-edited order lines against the current catalog —
    *  same field shape as resolveLines() but driven by OrderUpdateItemDto
    *  (productId/qty/unitPrice override/variation), used only from update(). */
-  private async resolveUpdateItems(items: { productId: string; variantId?: string; qty: number; unitPrice?: number; variation?: Record<string, string>; bundleName?: string; bundleSlot?: number }[]): Promise<ResolvedLine[]> {
+  private async resolveUpdateItems(items: { itemId?: string; productId: string; variantId?: string; qty: number; unitPrice?: number; variation?: Record<string, string>; bundleName?: string; bundleSlot?: number }[]): Promise<ResolvedLine[]> {
     if (items.some((i) => i.qty <= 0)) throw new BadRequestException('La quantité doit être supérieure à zéro');
     const productIds = [...new Set(items.map((i) => i.productId))];
     const productDocs = await this.products.find({ _id: { $in: productIds } });
@@ -857,6 +1008,7 @@ export class OrdersService {
       const variant = await this.inventory.resolveSaleVariant(product.id, item.variantId);
       const unitPriceMinor = item.unitPrice != null ? toMinor(item.unitPrice) : (variant.sellingPriceMinor ?? product.salePriceMinor ?? product.regularPriceMinor);
       return {
+        itemId: item.itemId,
         productId: product.id,
         variantId: variant.id,
         name: product.name,

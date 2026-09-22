@@ -40,6 +40,13 @@ export type StandardOrderStatus =
 export type OrderStatus = StandardOrderStatus | (string & {});
 
 export type OrderLineItem = {
+  /** Stable per-item identity, unique within the order — added so line
+   *  edits/removals never have to rely on array position (bundle
+   *  grouping, drag-reorder, concurrent edits). Null only for a line on
+   *  an order created before this field existed and not yet touched by
+   *  `migrate:order-variation-keys` (which backfills it alongside
+   *  variationKey) — never rely on it being present without a null check. */
+  itemId?: string | null;
   productId: string;
   variantId?: string | null;
   name: string;
@@ -62,6 +69,14 @@ export type ReturnInfo = {
   stockMovementIds?: string[];
 };
 
+export type OrderStatusHistoryEntry = {
+  from: string | null;
+  to: string;
+  by: { type: string; id: string | null; name: string };
+  at: string; // ISO
+  note?: string | null;
+};
+
 export type OrderResponse = {
   id: string;
   number: string;
@@ -80,6 +95,9 @@ export type OrderResponse = {
   shipping: number;
   returnInfo?: ReturnInfo | null;
   meta?: Record<string, unknown>;
+  /** Chronological status transitions — oldest first. Read-only, shown in
+   *  the Order Drawer's Historique section. */
+  statusHistory?: OrderStatusHistoryEntry[];
 };
 
 export type OrderProductCount = {

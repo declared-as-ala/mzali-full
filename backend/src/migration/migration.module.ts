@@ -28,6 +28,7 @@ import { MigrateGenerateVariantsCommand } from './commands/migrate-generate-vari
 import { MigrateInventoryFoundationCommand } from './commands/migrate-inventory-foundation.command';
 import { MigrateMediaCommand } from './commands/migrate-media.command';
 import { MigrateOrdersCommand } from './commands/migrate-orders.command';
+import { MigrateOrderVariationKeysCommand } from './commands/migrate-order-variation-keys.command';
 import { MigrateProductsCommand } from './commands/migrate-products.command';
 import { MigratePurchasePricesCommand } from './commands/migrate-purchase-prices.command';
 import { MigrateSeedLocationsCommand } from './commands/migrate-seed-locations.command';
@@ -90,6 +91,7 @@ import { VerifyInventoryFoundationCommand } from './commands/verify-inventory-fo
     CleanupOrphanMediaCommand,
     RepairEmployeeRolesCommand,
     MigrateTentativeStatusCommand,
+    MigrateOrderVariationKeysCommand,
   ],
 })
 export class MigrationModule {}

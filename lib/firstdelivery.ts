@@ -134,6 +134,18 @@ function normStr(s: string | undefined | null): string {
   return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
+/**
+ * KNOWN BUG, not fixed here: this legacy path is only reachable when
+ * `COMMERCE_PROVIDER=woocommerce`, which is not the current production
+ * setting (`mzali-api` is — see backend/src/shipping/first-delivery.service.ts,
+ * which has the real fix). This copy still has the original priority bug
+ * where a free-text address substring match against every locality in the
+ * governorate is tried BEFORE the exact city/delegation match, which can
+ * silently resolve to the wrong delegation (e.g. "Akouda" for a customer
+ * who only entered "Sousse"). If this provider is ever reactivated, port
+ * the fixed `resolveLocalityDetailed`/`addressContains` logic from the
+ * backend service here before relying on it again.
+ */
 async function resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
   const localities = await getLocalities();
   const g = normGov(gov);

@@ -17,9 +17,22 @@ export type FirstDeliveryShipmentInput = {
   note?: string;
   estFragile?: 'oui' | 'non';
   ouvrirColis?: 'oui' | 'non';
+  /**
+   * Admin-confirmed First Delivery locality id, bypassing automatic
+   * resolution entirely. Set this once the admin has confirmed the
+   * destination (see `previewLocality`) to guarantee the exact locality
+   * the admin picked is the one actually sent — never re-resolved from
+   * free text on the way out.
+   */
+  localityId?: number;
 };
 
-type FDLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
+export type FDLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
+
+export type LocalityResolution =
+  | { status: 'resolved'; locality: FDLocality }
+  | { status: 'ambiguous'; candidates: FDLocality[] }
+  | { status: 'not_found' };
 
 const ARABIC_LOCALITIES: Record<string, string> = {
   'بجاوة': 'bjeoua',
@@ -155,6 +168,12 @@ export class FirstDeliveryService {
     }
   }
 
+  /**
+   * Normalizes for comparison while preserving word boundaries (single
+   * spaces between words) instead of collapsing everything into one
+   * blob. Word-boundary-safe matching is what `addressContains` below
+   * relies on to avoid false substring hits across word boundaries.
+   */
   private normGov(s: string | undefined | null): string {
     if (!s) return '';
     let str = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -163,14 +182,36 @@ export class FirstDeliveryService {
     }
     const clean = str
       .replace(/^(la|le|les|el)\s+/, '')
-      .replace(/[^a-z0-9]/g, '')
-      .trim();
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
     if (clean === 'manouba' || clean === 'mannouba') return 'manouba';
     if (clean === 'kef') return 'kef';
     return clean;
   }
 
-  private async resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
+  /** Whole-word-boundary substring check: does `haystack` contain `needle` as a contiguous run of whole words? */
+  private addressContains(haystack: string, needle: string): boolean {
+    if (!needle || needle.length < 3) return false;
+    return ` ${haystack} `.includes(` ${needle} `);
+  }
+
+  /**
+   * Resolves a First Delivery locality from the order's governorate, city
+   * and free-text address.
+   *
+   * Priority — explicit, structured signals always win over fuzzy
+   * free-text matching, and the free-text address is only used to
+   * DISAMBIGUATE within an already-narrowed set of candidates, never to
+   * override an exact city/delegation selection with an unrelated
+   * delegation found by a loose substring match. When more than one
+   * locality remains equally plausible, the result is `ambiguous` rather
+   * than silently picking the first array entry — callers must surface
+   * that to the admin for manual confirmation instead of guessing (this
+   * is what previously caused an unrelated delegation such as "Akouda"
+   * to be silently inserted for a "Sousse" + free-text address order).
+   */
+  private async resolveLocalityDetailed(gov: string, city = '', address = ''): Promise<LocalityResolution> {
     const localities = await this.getLocalities();
     const g = this.normGov(gov);
     const c = this.normGov(city);
@@ -179,21 +220,51 @@ export class FirstDeliveryService {
     const sameGov = localities.filter((l) => g && this.normGov(l.governorate_name) === g);
     const pool = sameGov.length > 0 ? sameGov : localities;
 
-    const hit =
-      pool.find((l) => {
-        const name = this.normGov(l.locality_name);
-        return name.length >= 3 && addr.includes(name);
-      })
-      ?? pool.find((l) => {
-        const del = this.normGov(l.delegation_name);
-        return del.length >= 3 && addr.includes(del);
-      })
-      ?? pool.find((l) => c && this.normGov(l.locality_name) === c)
-      ?? pool.find((l) => c && this.normGov(l.delegation_name) === c)
-      ?? pool.find((l) => g && this.normGov(l.delegation_name) === g)
-      ?? sameGov[0];
+    // 1) Explicit, exact match: the customer's city IS a real delegation or
+    //    locality name (not just the governorate) — the strongest signal.
+    const delegationMatches = c ? pool.filter((l) => this.normGov(l.delegation_name) === c) : [];
+    const localityMatches = c ? pool.filter((l) => this.normGov(l.locality_name) === c) : [];
+    const explicit = delegationMatches.length > 0 ? delegationMatches : localityMatches;
 
-    return hit ?? null;
+    if (explicit.length === 1) return { status: 'resolved', locality: explicit[0] };
+    if (explicit.length > 1) {
+      // City matched a delegation with several localities in it — use the
+      // address to pick ONE of THOSE localities, never one from a
+      // different, unselected delegation.
+      const withinExplicit = explicit.filter((l) => addr && this.addressContains(addr, this.normGov(l.locality_name)));
+      if (withinExplicit.length === 1) return { status: 'resolved', locality: withinExplicit[0] };
+      return { status: 'ambiguous', candidates: withinExplicit.length > 1 ? withinExplicit : explicit };
+    }
+
+    // 2) No explicit delegation/locality selection — fall back to matching
+    //    the free-text address against locality names within the governorate.
+    //    Prefer the longest (most specific) matching name; if several
+    //    equally-specific, distinct localities match, that is genuinely
+    //    ambiguous — do not guess which one the customer meant.
+    if (addr) {
+      const localityHits = pool.filter((l) => this.addressContains(addr, this.normGov(l.locality_name)));
+      if (localityHits.length > 0) {
+        const maxLen = Math.max(...localityHits.map((l) => this.normGov(l.locality_name).length));
+        const best = localityHits.filter((l) => this.normGov(l.locality_name).length === maxLen);
+        if (best.length === 1) return { status: 'resolved', locality: best[0] };
+        return { status: 'ambiguous', candidates: best };
+      }
+
+      const delegationHits = pool.filter((l) => this.addressContains(addr, this.normGov(l.delegation_name)));
+      if (delegationHits.length === 1) return { status: 'resolved', locality: delegationHits[0] };
+      if (delegationHits.length > 1) return { status: 'ambiguous', candidates: delegationHits };
+    }
+
+    // 3) Nothing in the address helped — only auto-resolve if the whole
+    //    governorate maps to a single locality; otherwise ask the admin.
+    if (sameGov.length === 1) return { status: 'resolved', locality: sameGov[0] };
+    if (sameGov.length > 1) return { status: 'ambiguous', candidates: sameGov };
+    return { status: 'not_found' };
+  }
+
+  /** Public, side-effect-free preview used by the admin UI before sending. */
+  async previewLocality(gov: string, city = '', address = ''): Promise<LocalityResolution> {
+    return this.resolveLocalityDetailed(gov, city, address);
   }
 
   async createShipment(s: FirstDeliveryShipmentInput): Promise<CarrierResult> {
@@ -203,8 +274,31 @@ export class FirstDeliveryService {
     const ville = (s.receiverCity ?? s.receiverGov ?? '').trim();
     const adresse = (s.receiverAddress ?? '').trim() || gov;
     if (!gov && !ville) return { ok: false, raw: null, error: 'First Delivery : sélectionnez une ville et enregistrez la commande avant de renvoyer.' };
-    const locality = await this.resolveLocality(gov, ville, adresse);
-    if (!locality) return { ok: false, raw: null, error: 'First Delivery : localité introuvable ou indisponible. Vérifiez la ville et le gouvernorat de la commande.' };
+
+    let locality: FDLocality | null = null;
+    if (s.localityId) {
+      const localities = await this.getLocalities();
+      locality = localities.find((l) => l.locality_id === s.localityId) ?? null;
+      if (!locality) return { ok: false, raw: null, error: "First Delivery : la localité confirmée est introuvable, veuillez la resélectionner." };
+    } else {
+      const resolution = await this.resolveLocalityDetailed(gov, ville, adresse);
+      if (resolution.status === 'ambiguous') {
+        return {
+          ok: false,
+          raw: null,
+          error: "First Delivery : localité à confirmer — plusieurs localités correspondent, sélectionnez la bonne avant d'envoyer.",
+          needsConfirmation: true,
+          candidates: resolution.candidates.map((l) => ({
+            localityId: l.locality_id,
+            label: `${l.locality_name} — ${l.delegation_name}, ${l.governorate_name}`,
+          })),
+        };
+      }
+      if (resolution.status === 'not_found') {
+        return { ok: false, raw: null, error: 'First Delivery : localité introuvable ou indisponible. Vérifiez la ville et le gouvernorat de la commande.' };
+      }
+      locality = resolution.locality;
+    }
 
     const body = {
       Client: {

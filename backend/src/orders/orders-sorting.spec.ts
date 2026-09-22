@@ -86,7 +86,7 @@ function mockOrdersModel(docs: MockDoc[]) {
   const service = new OrdersService(
     model as never, {} as never, {} as never, {} as never, {} as never,
     {} as never, {} as never, {} as never, {} as never, {} as never,
-    {} as never, {} as never, {} as never, {} as never,
+    {} as never, {} as never, {} as never, {} as never, {} as never,
   );
 
   return { service, model };

@@ -127,7 +127,15 @@ const RELEASE_STATUSES = new Set(['annule', 'cancelled', 'retourne', 'returned']
 export function stockEffectForStatus(status: string): StockEffect {
   if (COMMIT_STATUSES.has(status)) return 'commit';
   if (RELEASE_STATUSES.has(status)) return 'release';
-  if (['pending', 'en-attente', 'on-hold', 'processing', ...TENTATIVE_STATUSES].includes(status)) return 'reserve';
+  // Every other status — 'en-attente' (the default), 'pending', 'on-hold',
+  // 'processing', every tentative-N attempt — has NO stock effect, per the
+  // docstring above and the explicit SPRINT-04 decision (progress.md):
+  // COD orders are captured regardless of stock; a human confirms by
+  // phone; stock only moves at that confirmation. Returning 'reserve' for
+  // these was a live regression — it made every new 'en-attente' order
+  // reserve stock at creation time (see the `effect === 'reserve'` branch
+  // in OrdersService.create()), silently reintroducing the reserve-on-
+  // create behavior the business explicitly rejected.
   return 'none';
 }
 

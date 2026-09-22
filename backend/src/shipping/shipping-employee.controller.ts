@@ -23,6 +23,6 @@ export class ShippingEmployeeController {
   @Post('firstdelivery')
   @RequirePermissions('shipping.push')
   pushFirstDelivery(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
-    return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name }, dto.force);
+    return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name }, dto.force, dto.localityId);
   }
 }

@@ -42,6 +42,14 @@ export class OrdersAdminController {
     return this.orders.counts(query);
   }
 
+  /** Variant sub-filter options for one product — see OrdersService.variantFilterOptions. */
+  @Get('admin/orders/variant-options')
+  @RequirePermissions('orders.read')
+  variantOptions(@Query() query: OrderListQueryDto) {
+    if (!query.productId) return [];
+    return this.orders.variantFilterOptions(query.productId, query);
+  }
+
   @Post('admin/orders')
   @RequirePermissions('orders.write')
   create(@Body() dto: CheckoutDto) {

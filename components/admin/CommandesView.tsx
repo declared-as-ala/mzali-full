@@ -9,6 +9,8 @@ import { useToast } from './Toast';
 import { formatPrice, formatDate, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
 import { getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, NORMAL_STATUSES, TENTATIVE_STATUSES } from '@/lib/order-status';
+import { reconcileSearchQuery } from '@/lib/order-search-sync';
+import { computeDateRange } from '@/lib/order-date-range';
 import type { OrderResponse, OrderStatusCounts } from '@/types';
 
 const EMPTY_COUNTS: OrderStatusCounts = {
@@ -40,9 +42,11 @@ type Props = {
   apiBase?: '/api/admin' | '/api/employee';
   /** Product ID currently active in the filter (from URL param). */
   initialProductId?: string;
+  /** Variant sub-filter of initialProductId, currently active (from URL param). */
+  initialVariantId?: string;
 };
 
-export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, counts = EMPTY_COUNTS, apiBase = '/api/admin', initialProductId = '' }: Props) {
+export default function CommandesView({ initialOrders, total, totalPages = 1, page = 1, repeatCounts = {}, counts = EMPTY_COUNTS, apiBase = '/api/admin', initialProductId = '', initialVariantId = '' }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -54,6 +58,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
   const endDateParam = searchParams.get('endDate') || '';
   const sortOrderParam = searchParams.get('sortOrder') || 'desc';
   const productParam = searchParams.get('product') || '';
+  const variantParam = searchParams.get('variant') || '';
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -75,7 +80,14 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
 
   // Sync state with URL params
   useEffect(() => { setActiveTab(tabParam); }, [tabParam]);
-  useEffect(() => { setQuery(qParam); }, [qParam]);
+  // `query` is NOT synced from `qParam` here — see the dedicated,
+  // race-safe effect right after the debounce effect below. A plain
+  // `setQuery(qParam)` on every `qParam` change used to stomp whatever
+  // the user had typed since: search here drives a real Next.js
+  // navigation (a Server Component re-fetch), which can take longer
+  // than the gap between keystrokes on a fast-typed phone number, so an
+  // older, slower navigation's result could land and overwrite newer
+  // local input. See `agent.md` / `todo.md` item 2.
   useEffect(() => { setStatusFilter(statusParam); }, [statusParam]);
   useEffect(() => { setSortOrder(sortOrderParam === 'asc' ? 'asc' : 'desc'); }, [sortOrderParam]);
   useEffect(() => { setDatePreset(datePresetParam); }, [datePresetParam]);
@@ -94,19 +106,59 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     if (!('page' in newParams)) {
       params.delete('page');
     }
-    router.push(`?${params.toString()}`);
+    // Wrapped in a transition so this navigation never blocks the input
+    // from accepting more keystrokes while the Server Component refetch
+    // is in flight — the search box's own value is local state (see
+    // above) and is never affected by how long this takes either way.
+    startTransition(() => router.push(`?${params.toString()}`));
   }, [router]);
 
-  // Debounce search query updates to URL
+  // Debounce search query updates to URL. The input's own displayed value
+  // (`query`) is local state, updated synchronously on every keystroke by
+  // the input's onChange — this effect only decides WHEN to push the
+  // debounced value into the URL/backend; it never feeds back into the
+  // input itself.
   useEffect(() => {
     const timer = setTimeout(() => {
       const currentQ = searchParams.get('q') || '';
-      if (query !== currentQ) {
-        updateFilters({ q: query || null });
-      }
+      if (query !== currentQ) updateFilters({ q: query || null });
     }, 450);
     return () => clearTimeout(timer);
   }, [query, searchParams, updateFilters]);
+
+  // Always-current ref so the (rarely re-running) sync effect below never
+  // closes over a stale `query` value.
+  const queryRef = useRef(query);
+  useEffect(() => { queryRef.current = query; }, [query]);
+
+  // Once the user has typed into the search box, the box belongs to local
+  // state and the URL is only ever a write target for it, never a source
+  // of truth to read back from — this is what makes the fix race-safe.
+  // The old `useEffect(() => setQuery(qParam), [qParam])` synced on EVERY
+  // `qParam` change, including the (possibly slow, possibly
+  // out-of-order-resolving) navigation caused by this component's own
+  // debounced push — so a stale search's result could land after the user
+  // had already typed further and silently erase what they'd typed since.
+  // Tracking "ownership" this way removes the race entirely: we simply
+  // never again treat a `qParam` change as something to copy into `query`
+  // once the user owns the field, regardless of push/navigation timing.
+  const ownedByUserRef = useRef(false);
+  useEffect(() => {
+    const decision = reconcileSearchQuery({ qParam, currentQuery: queryRef.current, ownedByUser: ownedByUserRef.current });
+    if (decision.action === 'adopt') setQuery(decision.value);
+  }, [qParam]);
+
+  // Browser back/forward is a deliberate external navigation, not an echo
+  // of our own push — resync from the URL then, even after the user has
+  // typed (this is the one case where relinquishing "ownership" is correct).
+  useEffect(() => {
+    const onPopState = () => {
+      ownedByUserRef.current = false;
+      setQuery(new URLSearchParams(window.location.search).get('q') || '');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const handleTabChange = (tab: 'normal' | 'abandoned' | 'trash') => {
     updateFilters({ tab, status: null });
@@ -188,14 +240,56 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
 
   // Product filter dropdown: product name displayed, ID stored in URL.
   // This is intentionally separate from the OrderDrawer's products-picker
-  // (which includes POS-only for in-store edits).
+  // (which includes POS-only for in-store edits). Changing the product
+  // always clears any active variant sub-filter — a variant belongs to
+  // exactly one product, so a stale one from the previous selection would
+  // be meaningless (and, per buildVariantCondition, would just match zero
+  // results silently rather than "all variants of the new product").
   const handleProductChange = (productId: string) => {
-    updateFilters({ product: productId || null });
+    updateFilters({ product: productId || null, variant: null });
   };
 
-  // The current product filter value comes from the URL param, not local state,
-  // so it survives page reloads and is always in sync with the backend query.
+  const handleVariantChange = (variantId: string) => {
+    updateFilters({ variant: variantId || null });
+  };
+
+  // The current product/variant filter values come from the URL param, not
+  // local state, so they survive page reloads and stay in sync with the
+  // backend query.
   const activeProductId = productParam || initialProductId;
+  const activeVariantId = variantParam || initialVariantId;
+
+  // Variant sub-filter options for the currently selected product — fetched
+  // fresh whenever the product or the surrounding scope (status/date/
+  // search/tab) changes, via the backend aggregation
+  // (OrdersService.variantFilterOptions), never computed client-side from
+  // the currently loaded page of orders.
+  const [variantOptions, setVariantOptions] = useState<{ value: string; label: string; orderCount: number }[]>([]);
+  const [variantOptionsLoading, setVariantOptionsLoading] = useState(false);
+  useEffect(() => {
+    if (!activeProductId) { setVariantOptions([]); return; }
+    let cancelled = false;
+    setVariantOptionsLoading(true);
+    const params = new URLSearchParams({ productId: activeProductId });
+    if (statusFilter) params.set('status', statusFilter === 'tentative' ? TENTATIVE_STATUSES.join(',') : statusFilter);
+    if (query.trim()) params.set('q', query.trim());
+    if (activeTab !== 'normal') params.set('tab', activeTab);
+    const { after, before } = computeDateRange(datePreset, startDate, endDate);
+    if (after) params.set('after', after);
+    if (before) params.set('before', before);
+    fetch(`${apiBase}/orders/variant-options?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => { if (!cancelled && Array.isArray(d)) setVariantOptions(d); })
+      .catch(() => { if (!cancelled) setVariantOptions([]); })
+      .finally(() => { if (!cancelled) setVariantOptionsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeProductId, apiBase, statusFilter, query, activeTab, datePreset, startDate, endDate]);
+
+  // A product with either no options at all (single-variant catalog entry)
+  // or exactly one resolvable variant identity has nothing meaningful to
+  // narrow — hide the sub-filter rather than showing a dropdown with only
+  // "Toutes les variantes" in it.
+  const showVariantFilter = activeProductId && variantOptions.length > 1;
 
   // The main status selector shown when the sentinel 'tentative' is picked —
   // narrows to one specific attempt, or stays on every attempt.
@@ -272,37 +366,13 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
         params.set('status', 'checkout-draft');
       }
 
-      if (datePreset) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (datePreset === 'today') {
-          params.set('after', today.toISOString());
-        } else if (datePreset === 'yesterday') {
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          params.set('after', yesterday.toISOString());
-          params.set('before', today.toISOString());
-        } else if (datePreset === '7days') {
-          const sevenDaysAgo = new Date(today);
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          params.set('after', sevenDaysAgo.toISOString());
-        } else if (datePreset === 'month') {
-          const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-          params.set('after', firstOfMonth.toISOString());
-        } else if (datePreset === 'custom') {
-          if (startDate) {
-            const start = new Date(startDate);
-            start.setHours(0, 0, 0, 0);
-            params.set('after', start.toISOString());
-          }
-          if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            params.set('before', end.toISOString());
-          }
-        }
+      {
+        const { after, before } = computeDateRange(datePreset, startDate, endDate);
+        if (after) params.set('after', after);
+        if (before) params.set('before', before);
       }
 
+      if (activeVariantId) params.set('variantId', activeVariantId);
       if (sortOrder) params.set('sortOrder', sortOrder);
 
       const res = await fetch(`${apiBase}/orders?${params.toString()}`);
@@ -369,7 +439,9 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
     }
     if (activeProductId) {
       const matchedProd = allProducts.find((p) => p.id === activeProductId);
-      parts.push(matchedProd ? matchedProd.name : `Produit: ${activeProductId}`);
+      const productLabel = matchedProd ? matchedProd.name : `Produit: ${activeProductId}`;
+      const matchedVariant = activeVariantId ? variantOptions.find((v) => v.value === activeVariantId) : undefined;
+      parts.push(matchedVariant ? `${productLabel} — ${matchedVariant.label}` : productLabel);
     }
     if (datePreset) {
       const dateMap: Record<string, string> = {
@@ -385,9 +457,10 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       parts.push(`"${query.trim()}"`);
     }
     return parts;
-  }, [statusFilter, activeProductId, allProducts, datePreset, startDate, endDate, query, activeTab]);
+  }, [statusFilter, activeProductId, activeVariantId, allProducts, variantOptions, datePreset, startDate, endDate, query, activeTab]);
 
   const handleReset = () => {
+    ownedByUserRef.current = true;
     setQuery('');
     setStatusFilter('');
     setDatePreset('');
@@ -398,6 +471,7 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
       q: null,
       status: null,
       product: null,
+      variant: null,
       datePreset: null,
       startDate: null,
       endDate: null,
@@ -591,13 +665,13 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
           <input
             type="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => { ownedByUserRef.current = true; setQuery(e.target.value); }}
             placeholder="Rechercher (numéro, client, téléphone)…"
             className="input pl-9"
           />
           {query && (
             <button
-              onClick={() => setQuery('')}
+              onClick={() => { ownedByUserRef.current = true; setQuery(''); }}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-ink-700 hover:bg-ink-100"
               aria-label="Effacer"
             >
@@ -668,6 +742,23 @@ export default function CommandesView({ initialOrders, total, totalPages = 1, pa
             );
           })}
         </select>
+
+        {showVariantFilter && (
+          <select
+            value={activeVariantId}
+            onChange={(e) => handleVariantChange(e.target.value)}
+            className="input w-52 font-medium"
+            disabled={pending || variantOptionsLoading}
+            aria-label="Filtrer par variante"
+          >
+            <option value="">Toutes les variantes ({formatCount(productCountMap.get(activeProductId) ?? 0)})</option>
+            {variantOptions.map((v) => (
+              <option key={v.value} value={v.value}>
+                {v.label} ({formatCount(v.orderCount)})
+              </option>
+            ))}
+          </select>
+        )}
 
         <select
           value={datePreset}

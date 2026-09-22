@@ -16,6 +16,7 @@ export default async function Commandes(props: {
     endDate?: string;
     sortOrder?: string;
     product?: string;
+    variant?: string;
   }>;
 }) {
   const session = await getSession();
@@ -30,6 +31,8 @@ export default async function Commandes(props: {
   const startDate = sp?.startDate || undefined;
   const endDate = sp?.endDate || undefined;
   const productId = sp?.product?.trim() || undefined;
+  // Ignored server-side unless productId is also set — see OrderListQueryDto.variantId.
+  const variantId = sp?.variant?.trim() || undefined;
 
   // Determine date boundaries
   let after: string | undefined = undefined;
@@ -106,12 +109,14 @@ export default async function Commandes(props: {
       before,
       sortOrder,
       productId,
+      variantId,
     }).catch(() => ({ items: [] as any[], total: 0, totalPages: 0, page })),
     orderService.counts({
       search: q,
       after,
       before,
       productId,
+      variantId,
       status: resolvedStatus || status,
       tab,
     }).catch(() => ({
@@ -144,6 +149,7 @@ export default async function Commandes(props: {
       counts={statusCounts}
       apiBase={apiBase}
       initialProductId={productId}
+      initialVariantId={variantId}
     />
   );
 }

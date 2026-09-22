@@ -71,3 +71,146 @@ describe('FirstDeliveryService locality validation', () => {
     expect(request).not.toHaveBeenCalled();
   });
 });
+
+describe('FirstDeliveryService — Akouda regression (word-boundary matching)', () => {
+  let service: FirstDeliveryService;
+  let request: jest.SpyInstance;
+  beforeEach(() => {
+    service = new FirstDeliveryService(new ConfigService({ FIRST_DELIVERY_TOKEN: 'test-token' }));
+    request = jest.spyOn(global, 'fetch');
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  // A contrived-but-representative Sousse governorate: a real "Hay Saada"
+  // locality under Sousse Jawhara, plus an unrelated Akouda locality
+  // ("Aysaad") whose name is a naive substring of "Hay Saada" once spaces
+  // are stripped — exactly the class of false positive the old
+  // concatenate-and-`.includes()` matching produced.
+  const sousseLocalities = [
+    { locality_id: 40, locality_name: 'Aysaad', delegation_name: 'Akouda', governorate_name: 'Sousse' },
+    { locality_id: 41, locality_name: 'Hay Saada', delegation_name: 'Sousse Jawhara', governorate_name: 'Sousse' },
+  ];
+
+  function respond(rows: unknown, status = 200) {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: rows }), { status }));
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: { barCode: '123456789012' } }), { status: 201 }));
+  }
+
+  it('does NOT silently insert Akouda for a Sousse + "Hay Saada" order — resolves the real Hay Saada locality instead', async () => {
+    respond(sousseLocalities);
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Sousse',
+      receiverAddress: 'Hay Saada', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+    });
+    expect(result.ok).toBe(true);
+    const body = JSON.parse(request.mock.calls[1][1].body);
+    expect(body.Client.locality_id).toBe(41);
+    expect(body.Client.ville).toBe('Sousse Jawhara');
+    expect(body.Client.ville).not.toBe('Akouda');
+  });
+
+  it('resolves the same order correctly regardless of dataset array order (not "first match wins")', async () => {
+    respond([...sousseLocalities].reverse());
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Sousse',
+      receiverAddress: 'Hay Saada', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+    });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(request.mock.calls[1][1].body).Client.locality_id).toBe(41);
+  });
+
+  it('reports ambiguous (not an arbitrary guess) when the address equally matches two distinct localities', async () => {
+    const ambiguousSet = [
+      { locality_id: 50, locality_name: 'Centre', delegation_name: 'Msaken', governorate_name: 'Sousse' },
+      { locality_id: 51, locality_name: 'Centre', delegation_name: 'Hammam Sousse', governorate_name: 'Sousse' },
+    ];
+    respond(ambiguousSet);
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Sousse',
+      receiverAddress: 'Centre', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.needsConfirmation).toBe(true);
+    expect(result.candidates).toHaveLength(2);
+    expect(result.candidates?.map((c) => c.localityId).sort()).toEqual([50, 51]);
+    // No shipment was ever sent for an unconfirmed, ambiguous destination.
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports ambiguous when the city names a delegation with several localities and the address does not disambiguate', async () => {
+    const akoudaSet = [
+      { locality_id: 40, locality_name: 'Aysaad', delegation_name: 'Akouda', governorate_name: 'Sousse' },
+      { locality_id: 42, locality_name: 'Centre', delegation_name: 'Akouda', governorate_name: 'Sousse' },
+    ];
+    respond(akoudaSet);
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Akouda',
+      receiverAddress: 'Rue sans indice', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.needsConfirmation).toBe(true);
+    expect(result.candidates?.map((c) => c.localityId).sort()).toEqual([40, 42]);
+  });
+
+  it('explicit city="Akouda" IS honored when the customer/order data really says Akouda', async () => {
+    const akoudaSet = [{ locality_id: 40, locality_name: 'Aysaad', delegation_name: 'Akouda', governorate_name: 'Sousse' }];
+    respond(akoudaSet);
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Akouda',
+      receiverAddress: 'Rue sans indice', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+    });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(request.mock.calls[1][1].body).Client.ville).toBe('Akouda');
+  });
+
+  it('bypasses resolution entirely when an admin-confirmed localityId is supplied', async () => {
+    respond(sousseLocalities);
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Sousse',
+      receiverAddress: 'Hay Saada', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+      localityId: 40, // admin explicitly confirmed Akouda despite the free-text address
+    });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(request.mock.calls[1][1].body).Client.locality_id).toBe(40);
+  });
+
+  it('rejects a confirmed localityId that no longer exists in the First Delivery directory', async () => {
+    respond(sousseLocalities);
+    const result = await service.createShipment({
+      receiverName: 'Client', receiverGov: 'Sousse', receiverCity: 'Sousse',
+      receiverAddress: 'Hay Saada', receiverPhone: '20123456', codAmount: 30,
+      productLabel: 'Article', itemsCount: 1,
+      localityId: 999999,
+    });
+    expect(result.ok).toBe(false);
+    expect(request).toHaveBeenCalledTimes(1); // only the /localities lookup, no /create
+  });
+});
+
+describe('FirstDeliveryService.previewLocality (admin confirmation UX, no carrier call)', () => {
+  let service: FirstDeliveryService;
+  let request: jest.SpyInstance;
+  beforeEach(() => {
+    service = new FirstDeliveryService(new ConfigService({ FIRST_DELIVERY_TOKEN: 'test-token' }));
+    request = jest.spyOn(global, 'fetch');
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('previews the resolved locality without ever calling /create', async () => {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({
+      result: [{ locality_id: 41, locality_name: 'Hay Saada', delegation_name: 'Sousse Jawhara', governorate_name: 'Sousse' }],
+    }), { status: 200 }));
+    const resolution = await service.previewLocality('Sousse', 'Sousse', 'Hay Saada');
+    expect(resolution).toEqual({
+      status: 'resolved',
+      locality: { locality_id: 41, locality_name: 'Hay Saada', delegation_name: 'Sousse Jawhara', governorate_name: 'Sousse' },
+    });
+    expect(request).toHaveBeenCalledTimes(1); // /localities only, never /create
+  });
+});

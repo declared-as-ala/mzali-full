@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
 import { PermissionsGuard, RequirePermissions } from '@/auth/guards/permissions.guard';
-import { PushShipmentDto } from './dto/push.dto';
+import { PreviewFirstDeliveryDto, PushShipmentDto } from './dto/push.dto';
 import { ShippingService } from './shipping.service';
 
 @ApiTags('admin/shipping')
@@ -22,7 +22,18 @@ export class ShippingAdminController {
   @Post('firstdelivery')
   @RequirePermissions('shipping.push')
   push_firstdelivery(@Body() dto: PushShipmentDto, @CurrentUser() user: RequestUser) {
-    return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name }, dto.force);
+    return this.shipping.push('firstdelivery', dto.orderId, { type: 'employee', id: user.userId, name: user.name }, dto.force, dto.localityId);
+  }
+
+  /**
+   * Read-only: resolves what First Delivery destination this order would
+   * currently send to, so the admin can confirm it (or pick a locality
+   * from the candidate list) before an actual carrier push happens.
+   */
+  @Post('firstdelivery/preview')
+  @RequirePermissions('shipping.push')
+  preview_firstdelivery(@Body() dto: PreviewFirstDeliveryDto) {
+    return this.shipping.previewFirstDeliveryLocality(dto.orderId);
   }
 
   @Post('axess')

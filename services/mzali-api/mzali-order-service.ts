@@ -43,6 +43,7 @@ export class MzaliApiOrderService implements OrderService {
           before: query.before,
           sortOrder: query.sortOrder,
           productId: query.productId,
+          variantId: query.variantId,
         },
       }),
     );
@@ -57,6 +58,7 @@ export class MzaliApiOrderService implements OrderService {
           after: query.after,
           before: query.before,
           productId: query.productId,
+          variantId: query.variantId,
           status: query.status,
           tab: query.tab,
         },

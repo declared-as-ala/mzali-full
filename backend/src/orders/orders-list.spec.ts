@@ -6,8 +6,9 @@ import { OrdersService } from './orders.service';
  */
 
 /** Build a minimal service stub where list() can be exercised.
- *  Only model.find() / model.countDocuments() are called by list(). */
-function serviceWithModel(docs: unknown[], count: number) {
+ *  Only model.find() / model.countDocuments() (and, for variant-filter
+ *  tests, variantsCatalog.findById()) are called by list(). */
+function serviceWithModel(docs: unknown[], count: number, variantsCatalog: unknown = {}) {
   const findChain = {
     sort: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
@@ -19,8 +20,8 @@ function serviceWithModel(docs: unknown[], count: number) {
   };
   const service = new OrdersService(
     model as never, {} as never, {} as never, {} as never, {} as never,
+    variantsCatalog as never, {} as never, {} as never, {} as never, {} as never,
     {} as never, {} as never, {} as never, {} as never, {} as never,
-    {} as never, {} as never, {} as never, {} as never,
   );
   return { service, model, findChain };
 }
@@ -122,6 +123,69 @@ describe('OrdersService.list() — product filter', () => {
     const result = await service.list({ productId: 'prod-abc', perPage: 100 });
     expect(result.total).toBe(37);
     expect(result.totalPages).toBe(1); // 37 <= 100 → 1 page
+  });
+});
+
+describe('OrdersService.list() — product + variant filter', () => {
+  it('a real variantId matches items.variantId OR a legacy item with the matching normalized variationKey', async () => {
+    const variantsCatalog = { findById: jest.fn().mockResolvedValue({ productId: 'prod-djea', attributes: { size: 'XL', color: 'Noir' } }) };
+    const { service, model } = serviceWithModel([], 0, variantsCatalog);
+    await service.list({ productId: 'prod-djea', variantId: 'variant-xl-noir' });
+    expect(variantsCatalog.findById).toHaveBeenCalledWith('variant-xl-noir');
+    const filter = model.find.mock.calls[0][0];
+    const and: Record<string, unknown>[] = filter.$and;
+    const cond = and.find((c) => (c as Record<string, unknown>).items) as { items: { $elemMatch: Record<string, unknown> } };
+    expect(cond).toBeDefined();
+    expect(cond.items.$elemMatch.productId).toBe('prod-djea');
+    expect(cond.items.$elemMatch.$or).toEqual([
+      { variantId: 'variant-xl-noir' },
+      { variantId: { $in: [null, undefined] }, variationKey: 'xl|noir' },
+    ]);
+  });
+
+  it('a variant belonging to a different product matches nothing rather than falling back to "all variants"', async () => {
+    const variantsCatalog = { findById: jest.fn().mockResolvedValue({ productId: 'prod-other', attributes: {} }) };
+    const { service, model } = serviceWithModel([], 0, variantsCatalog);
+    await service.list({ productId: 'prod-djea', variantId: 'wrong-product-variant' });
+    const filter = model.find.mock.calls[0][0];
+    const and: Record<string, unknown>[] = filter.$and;
+    expect(and.some((c) => JSON.stringify(c) === JSON.stringify({ _id: { $in: [] } }))).toBe(true);
+  });
+
+  it('an unknown/deleted variantId matches nothing (never silently widens to the whole product)', async () => {
+    const variantsCatalog = { findById: jest.fn().mockResolvedValue(null) };
+    const { service, model } = serviceWithModel([], 0, variantsCatalog);
+    await service.list({ productId: 'prod-djea', variantId: 'gone' });
+    const filter = model.find.mock.calls[0][0];
+    const and: Record<string, unknown>[] = filter.$and;
+    expect(and.some((c) => JSON.stringify(c) === JSON.stringify({ _id: { $in: [] } }))).toBe(true);
+  });
+
+  it('variantId="none" matches items with no resolvable variant identity for that product', async () => {
+    const { service, model } = serviceWithModel([], 0);
+    await service.list({ productId: 'prod-casquette', variantId: 'none' });
+    const filter = model.find.mock.calls[0][0];
+    const and: Record<string, unknown>[] = filter.$and;
+    const cond = and.find((c) => (c as Record<string, unknown>).items) as { items: { $elemMatch: Record<string, unknown> } };
+    expect(cond.items.$elemMatch).toEqual({ productId: 'prod-casquette', variantId: { $in: [null, undefined] }, variationKey: null });
+  });
+
+  it('variantId="legacy:<key>" matches legacy orders directly by normalized key, without a catalog lookup', async () => {
+    const variantsCatalog = { findById: jest.fn() };
+    const { service, model } = serviceWithModel([], 0, variantsCatalog);
+    await service.list({ productId: 'prod-djea', variantId: 'legacy:xl|noir' });
+    expect(variantsCatalog.findById).not.toHaveBeenCalled();
+    const filter = model.find.mock.calls[0][0];
+    const and: Record<string, unknown>[] = filter.$and;
+    const cond = and.find((c) => (c as Record<string, unknown>).items) as { items: { $elemMatch: Record<string, unknown> } };
+    expect(cond.items.$elemMatch).toEqual({ productId: 'prod-djea', variantId: { $in: [null, undefined] }, variationKey: 'xl|noir' });
+  });
+
+  it('variantId without productId is ignored (no elemMatch, no crash)', async () => {
+    const { service, model } = serviceWithModel([], 0);
+    await service.list({ variantId: 'variant-xl-noir' });
+    const filter = model.find.mock.calls[0][0];
+    expect(filter).toEqual({});
   });
 });
 

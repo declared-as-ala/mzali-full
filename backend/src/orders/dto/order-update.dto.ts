@@ -14,6 +14,11 @@ class OrderUpdateCustomerDto {
 }
 
 class OrderUpdateItemDto {
+  /** Echoed back from the loaded order for an existing line so its
+   *  identity survives the save (see order.schema.ts's OrderItem.itemId
+   *  doc). Omitted (or unrecognized) means "this is a new line" — a
+   *  fresh id is generated for it. */
+  @IsOptional() @IsString() itemId?: string;
   @IsString() productId!: string;
   @IsOptional() @IsString() variantId?: string;
   @IsInt() qty!: number;

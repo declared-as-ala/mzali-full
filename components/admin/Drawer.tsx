@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 type Props = {
   open: boolean;
   onClose: () => void;
-  title: string;
+  title: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   width?: string; // tailwind max-w-*

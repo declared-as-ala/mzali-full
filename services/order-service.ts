@@ -11,6 +11,8 @@ export type OrderListQuery = {
   /** Filter to orders containing this product ID in their line items.
    *  Matched at the DB level — pagination and total reflect the filtered set. */
   productId?: string;
+  /** Optional variant refinement of `productId` — see OrderListQueryDto.variantId (backend) for the accepted forms. */
+  variantId?: string;
 };
 
 export type OrderCountsQuery = {
@@ -18,6 +20,7 @@ export type OrderCountsQuery = {
   after?: string;
   before?: string;
   productId?: string;
+  variantId?: string;
   status?: string;
   tab?: string;
 };

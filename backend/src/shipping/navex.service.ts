@@ -18,7 +18,15 @@ export type NavexShipmentInput = {
   echange?: boolean;
 };
 
-export type CarrierResult = { ok: boolean; barcode?: string; raw: unknown; error?: string };
+export type CarrierResult = {
+  ok: boolean;
+  barcode?: string;
+  raw: unknown;
+  error?: string;
+  /** First Delivery only: locality resolution was ambiguous, admin confirmation required before retrying. */
+  needsConfirmation?: boolean;
+  candidates?: { localityId: number; label: string }[];
+};
 
 function form(body: Record<string, string | number | undefined>): URLSearchParams {
   const p = new URLSearchParams();

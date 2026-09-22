@@ -26,6 +26,7 @@ export async function GET(req: Request) {
   const before = url.searchParams.get('before') || undefined;
   const sortOrder = (url.searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc';
   const productId = url.searchParams.get('productId') || url.searchParams.get('product') || undefined;
+  const variantId = url.searchParams.get('variantId') || url.searchParams.get('variant') || undefined;
 
   try {
     const result = await orderService.list({
@@ -37,6 +38,7 @@ export async function GET(req: Request) {
       before,
       sortOrder,
       productId,
+      variantId,
     });
     return NextResponse.json(result);
   } catch (e) {

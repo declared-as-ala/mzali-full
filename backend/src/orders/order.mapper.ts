@@ -19,6 +19,7 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
       for (const [k, v] of Object.entries(i.variation)) if (v) attributes.push({ key: k, value: v });
     }
     return {
+      itemId: i.itemId ?? null,
       productId: i.productId,
       variantId: i.variantId,
       name: i.name,
@@ -114,5 +115,12 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
     shipping: toDinars(doc.shippingMinor),
     returnInfo,
     meta,
+    statusHistory: (doc.statusHistory ?? []).map((e) => ({
+      from: e.from ?? null,
+      to: e.to,
+      by: e.by,
+      at: new Date(e.at).toISOString(),
+      note: e.note ?? null,
+    })),
   };
 }

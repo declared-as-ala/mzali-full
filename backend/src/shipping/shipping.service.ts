@@ -39,7 +39,13 @@ export class ShippingService {
    * against duplicate pushes from retries or concurrent requests, replacing
    * the legacy in-memory-only lock in lib/delivery-idempotency.ts).
    */
-  async push(carrier: CarrierName, orderId: string, actor: AuditActor, force = false): Promise<{ skipped: boolean; result: CarrierResult }> {
+  async push(
+    carrier: CarrierName,
+    orderId: string,
+    actor: AuditActor,
+    force = false,
+    localityId?: number,
+  ): Promise<{ skipped: boolean; result: CarrierResult }> {
     const existing = await this.orders.findById(orderId);
     if (!existing) throw new NotFoundException('Commande introuvable');
     // Skip idempotency check only when force=false AND the existing result succeeded
@@ -57,7 +63,7 @@ export class ShippingService {
         return { skipped: true, result: this.toCarrierResult(order.carrier[carrier]!) };
       }
 
-      const result = await this.dispatch(carrier, order);
+      const result = await this.dispatch(carrier, order, localityId);
       order.carrier[carrier] = {
         status: result.ok ? 'sent' : 'failed',
         response: typeof result.raw === 'string' ? result.raw : JSON.stringify(result.raw ?? null),
@@ -88,7 +94,45 @@ export class ShippingService {
     return order ? toOrderContract(order) : null;
   }
 
-  private async dispatch(carrier: CarrierName, order: OrderDocument): Promise<CarrierResult> {
+  /**
+   * Side-effect-free preview of the First Delivery destination the order
+   * would resolve to, for the admin to confirm before sending — never
+   * calls the carrier API. Returns the same governorate/delegation/
+   * locality breakdown a successful push would use, or the ambiguous
+   * candidate list when free-text resolution can't pick one confidently.
+   */
+  async previewFirstDeliveryLocality(orderId: string) {
+    const order = await this.orders.findById(orderId);
+    if (!order) throw new NotFoundException('Commande introuvable');
+    const resolution = await this.firstDelivery.previewLocality(
+      order.customer.city,
+      order.customer.city,
+      order.customer.address,
+    );
+    if (resolution.status === 'resolved') {
+      return {
+        status: 'resolved' as const,
+        governorate: resolution.locality.governorate_name,
+        delegation: resolution.locality.delegation_name,
+        locality: resolution.locality.locality_name,
+        localityId: resolution.locality.locality_id,
+        address: order.customer.address,
+      };
+    }
+    if (resolution.status === 'ambiguous') {
+      return {
+        status: 'ambiguous' as const,
+        address: order.customer.address,
+        candidates: resolution.candidates.map((l) => ({
+          localityId: l.locality_id,
+          label: `${l.locality_name} — ${l.delegation_name}, ${l.governorate_name}`,
+        })),
+      };
+    }
+    return { status: 'not_found' as const, address: order.customer.address };
+  }
+
+  private async dispatch(carrier: CarrierName, order: OrderDocument, localityId?: number): Promise<CarrierResult> {
     const codAmount = toDinars(order.manualTotalMinor ?? order.totalMinor);
     const { designation: productLabel, nbArticle: itemsCount } = buildCarrierDesignation(
       order.items.map((i) => ({
@@ -129,6 +173,7 @@ export class ShippingService {
           productLabel,
           itemsCount,
           note: order.customer.note || undefined,
+          localityId,
         });
       case 'axess':
         return this.axess.createShipment({

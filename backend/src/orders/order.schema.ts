@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { computeVariationKey } from './order-variation-key';
 
 @Schema({ _id: false })
 class OrderCustomer {
@@ -16,6 +18,20 @@ const OrderCustomerSchema = SchemaFactory.createForClass(OrderCustomer);
 
 @Schema({ _id: false })
 class OrderItem {
+  /**
+   * Stable per-item identity, unique within the order — lets the Order
+   * Drawer (and any future line-level edit/removal) target an exact line
+   * instead of relying on array position, which breaks under bundle
+   * grouping/reordering/concurrent edits. Generated once at item-creation
+   * time (`randomUUID()`), never regenerated or reused across edits — an
+   * item removed and a materially different item added later must never
+   * collide on identity. Existing orders predating this field get it via
+   * `migrate:order-variation-keys` (same pass that backfills
+   * `variationKey`), not retroactively by Mongoose (schema defaults only
+   * apply to newly-constructed subdocuments, not documents hydrated from
+   * already-stored data).
+   */
+  @Prop({ type: String, required: true, default: () => randomUUID() }) itemId!: string;
   @Prop({ type: String, required: true }) productId!: string;
   @Prop({ type: String, default: null }) legacyProductId!: string | null;
   /** Backfilled by migrate:inventory-foundation (Sprint 1); consumed starting Sprint 4. */
@@ -30,6 +46,16 @@ class OrderItem {
   @Prop({ type: String, default: null }) bundleName!: string | null;
   @Prop({ type: Number, default: null }) bundleSlot!: number | null;
   @Prop({ type: Number, default: 0 }) costMinor!: number;
+  /**
+   * Denormalized, normalized "size|color" key derived from `variation`
+   * (see order-variation-key.ts) — kept in sync automatically by the
+   * pre-save hook below, never set directly by callers. Lets the
+   * product+variant order filter match legacy items (no `variantId`) by
+   * an indexed equality check instead of re-normalizing free text per
+   * query. Null when `variation` isn't an unambiguous single size+color
+   * pair (e.g. a non-matrix product, or a snapshot missing one of the two).
+   */
+  @Prop({ type: String, default: null }) variationKey!: string | null;
 }
 const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 
@@ -165,6 +191,21 @@ export class Order {
 export type OrderDocument = HydratedDocument<Order>;
 export const OrderSchema = SchemaFactory.createForClass(Order);
 
+/**
+ * Keeps each item's `variationKey` in sync with its `variation` snapshot
+ * on every save, regardless of which code path wrote `items` (checkout
+ * create, draft upsert, admin update all end in `.save()`/`Model.create()`,
+ * both of which run `pre('save')`). Centralizing this here means no
+ * order-item-construction call site needs to remember to compute it —
+ * see order-variation-key.ts for the normalization this reuses.
+ */
+OrderSchema.pre('save', function (next) {
+  if (this.isModified('items')) {
+    for (const item of this.items) item.variationKey = computeVariationKey(item.variation);
+  }
+  next();
+});
+
 OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ status: 1, confirmedAt: -1, createdAt: -1 });
 OrderSchema.index({ status: 1, confirmedAt: 1, createdAt: 1 });
@@ -174,6 +215,13 @@ OrderSchema.index({ createdAt: -1 });
 // Combined with status and createdAt so the planner can use it for the most
 // common filtered+sorted queries without a separate collection scan.
 OrderSchema.index({ 'items.productId': 1, status: 1, createdAt: -1 });
+// Product+variant filter (new-format orders): matches items.variantId
+// directly. Sparse-equivalent in effect since most historical items have
+// variantId=null, but a plain index still serves the equality lookup fine.
+OrderSchema.index({ 'items.variantId': 1 });
+// Product+variant filter (legacy orders, no variantId): matches the
+// normalized size/color snapshot key instead — see order-variation-key.ts.
+OrderSchema.index({ 'items.variationKey': 1 });
 OrderSchema.index({ 'carrier.navex.tracking': 1 }, { sparse: true });
 OrderSchema.index({ 'carrier.firstdelivery.tracking': 1 }, { sparse: true });
 OrderSchema.index({ 'carrier.axess.tracking': 1 }, { sparse: true });
