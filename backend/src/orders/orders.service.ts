@@ -192,6 +192,7 @@ export class OrdersService {
                 phone2: dto.customer.phone2 ?? '',
                 email: dto.customer.email ?? '',
                 city: dto.customer.city ?? '',
+                locality: dto.customer.locality ?? '',
                 address: dto.customer.address ?? '',
                 note: dto.customer.note ?? '',
               },
@@ -325,6 +326,7 @@ export class OrdersService {
           phone2: dto.customer.phone2 ?? '',
           email: dto.customer.email ?? '',
           city: dto.customer.city ?? '',
+          locality: dto.customer.locality ?? '',
           address: dto.customer.address ?? '',
           note: dto.customer.note ?? '',
         } as Order['customer'];

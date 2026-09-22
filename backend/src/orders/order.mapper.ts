@@ -108,6 +108,7 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
       phone2: doc.customer.phone2 || undefined,
       email: doc.customer.email || undefined,
       city: doc.customer.city,
+      locality: doc.customer.locality || undefined,
       address: doc.customer.address,
       note: doc.customer.note || undefined,
     },

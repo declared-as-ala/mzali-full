@@ -267,6 +267,23 @@ export class FirstDeliveryService {
     return this.resolveLocalityDetailed(gov, city, address);
   }
 
+  /**
+   * Distinct délégation ("Mo3tamadia") names under one governorate, from
+   * First Delivery's own live locality directory — never a separately
+   * maintained hardcoded list, so the admin's "Localité" picker can never
+   * offer a name First Delivery itself doesn't recognize. Powers the
+   * per-governorate `admin/shipping/firstdelivery/delegations` endpoint.
+   */
+  async delegationsForGovernorate(gov: string): Promise<string[]> {
+    const g = this.normGov(gov);
+    if (!g) return [];
+    const localities = await this.getLocalities();
+    const names = new Set(
+      localities.filter((l) => this.normGov(l.governorate_name) === g).map((l) => l.delegation_name),
+    );
+    return [...names].sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
   async createShipment(s: FirstDeliveryShipmentInput): Promise<CarrierResult> {
     if (!this.configured) return { ok: false, raw: null, error: 'FIRST_DELIVERY_TOKEN missing' };
 

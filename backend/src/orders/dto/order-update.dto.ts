@@ -9,6 +9,7 @@ class OrderUpdateCustomerDto {
   @IsOptional() @IsString() phone2?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsString() locality?: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() note?: string;
 }

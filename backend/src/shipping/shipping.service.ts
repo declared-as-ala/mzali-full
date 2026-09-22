@@ -104,9 +104,13 @@ export class ShippingService {
   async previewFirstDeliveryLocality(orderId: string) {
     const order = await this.orders.findById(orderId);
     if (!order) throw new NotFoundException('Commande introuvable');
+    // Prefer the admin-confirmed délégation (Mo3tamadia) when set — an
+    // explicit signal that resolves immediately via resolveLocalityDetailed's
+    // exact-match priority, instead of falling back to free-text address
+    // guessing across the whole governorate.
     const resolution = await this.firstDelivery.previewLocality(
       order.customer.city,
-      order.customer.city,
+      order.customer.locality || order.customer.city,
       order.customer.address,
     );
     if (resolution.status === 'resolved') {
@@ -130,6 +134,13 @@ export class ShippingService {
       };
     }
     return { status: 'not_found' as const, address: order.customer.address };
+  }
+
+  /** Distinct délégation ("Mo3tamadia") names for one governorate, from
+   *  First Delivery's own live directory — see FirstDeliveryService
+   *  .delegationsForGovernorate. Powers the admin's per-Ville Localité picker. */
+  async firstDeliveryDelegations(governorate: string): Promise<string[]> {
+    return this.firstDelivery.delegationsForGovernorate(governorate);
   }
 
   private async dispatch(carrier: CarrierName, order: OrderDocument, localityId?: number): Promise<CarrierResult> {
@@ -165,7 +176,9 @@ export class ShippingService {
         return this.firstDelivery.createShipment({
           receiverName,
           receiverGov: order.customer.city,
-          receiverCity: order.customer.city,
+          // Prefer the admin-confirmed délégation over the raw governorate —
+          // see previewFirstDeliveryLocality's comment above.
+          receiverCity: order.customer.locality || order.customer.city,
           receiverAddress: order.customer.address,
           receiverPhone: order.customer.phone,
           receiverPhone2: order.customer.phone2 || undefined,

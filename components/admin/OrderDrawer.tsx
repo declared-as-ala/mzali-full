@@ -156,7 +156,7 @@ type OrderDraft = {
   savedAt: number;
 };
 
-const INITIAL_CUSTOMER = { firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' };
+const INITIAL_CUSTOMER = { firstName: '', phone: '', city: '', locality: '', address: '', phone2: '', email: '', note: '' };
 const DRAFT_PREFIX = 'mzali_order_draft:';
 
 function draftKey(orderId: string | null | undefined): string {
@@ -207,6 +207,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [fdPreview, setFdPreview] = useState<FirstDeliveryPreviewState>({ status: 'idle' });
   /** Admin's choice among fdPreview's candidates when status is 'ambiguous'. */
   const [fdSelectedLocalityId, setFdSelectedLocalityId] = useState<number | null>(null);
+  /** Délégation ("Mo3tamadia") options for the currently selected Ville —
+   *  fetched from First Delivery's own live locality directory, never a
+   *  separately maintained list, so this can never offer a name First
+   *  Delivery itself doesn't recognize. See customer.locality's schema doc. */
+  const [delegations, setDelegations] = useState<string[]>([]);
+  const [delegationsLoading, setDelegationsLoading] = useState(false);
   const [axessTracking, setAxessTracking] = useState<string>('');
   const [axessStatus, setAxessStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
   const [axessMsg, setAxessMsg] = useState<string>('');
@@ -214,7 +220,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [shipping, setShipping] = useState(8);
   const [deliveryCompany, setDeliveryCompany] = useState('');
   const [privateNote, setPrivateNote] = useState('');
-  const [customer, setCustomer] = useState({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
+  const [customer, setCustomer] = useState(INITIAL_CUSTOMER);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<string | null>(null);
@@ -301,6 +307,22 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const subtotal = lineSubtotal;
   const total = subtotal + shipping;
 
+  // Délégation ("Mo3tamadia") options for the client section's Localité
+  // picker — refetched whenever the selected Ville changes. Never
+  // computed/cached from static data: always First Delivery's own live
+  // directory, so the picker can't drift from what First Delivery
+  // actually recognizes.
+  useEffect(() => {
+    if (!open || !customer.city) { setDelegations([]); return; }
+    let cancelled = false;
+    setDelegationsLoading(true);
+    fetch(`${apiBase}/firstdelivery/delegations?governorate=${encodeURIComponent(customer.city)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => { if (!cancelled && Array.isArray(d)) setDelegations(d); })
+      .catch(() => { if (!cancelled) setDelegations([]); })
+      .finally(() => { if (!cancelled) setDelegationsLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, apiBase, customer.city]);
 
   useEffect(() => {
     if (!open) return;
@@ -381,6 +403,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         firstName: o.customer?.firstName ?? '',
         phone: o.customer?.phone ?? '',
         city: o.customer?.city ?? '',
+        locality: o.customer?.locality ?? '',
         address: o.customer?.address ?? '',
         phone2: String((o.meta?._mzem_phone_2 as string) ?? ''),
         email: o.customer?.email ?? '',
@@ -457,7 +480,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     setConfirmedAt(null);
     setOrderNumber(null);
     setStatusHistory([]);
-    setCustomer({ firstName: '', phone: '', city: '', address: '', phone2: '', email: '', note: '' });
+    setCustomer(INITIAL_CUSTOMER);
     setLines([]);
     setVersion(undefined);
     setEditReason('');
@@ -1092,9 +1115,33 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               <Field label="Nom"><input className="input" value={customer.firstName} onChange={(e) => setCustomer({ ...customer, firstName: e.target.value })} placeholder="Entrez votre nom" /></Field>
               <Field label="Téléphone"><input className="input" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} placeholder="Entrez votre numéro de téléphone" /></Field>
               <Field label="Ville">
-                <select className="input" value={customer.city} onChange={(e) => setCustomer({ ...customer, city: e.target.value })}>
+                <select
+                  className="input"
+                  value={customer.city}
+                  onChange={(e) => setCustomer({ ...customer, city: e.target.value, locality: '' })}
+                >
                   <option value="">Sélectionner Ville</option>
                   {SITE.cities.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </Field>
+              <Field label="Localité (Mo3tamadia)">
+                <select
+                  className="input"
+                  value={customer.locality}
+                  onChange={(e) => setCustomer({ ...customer, locality: e.target.value })}
+                  disabled={!customer.city || delegationsLoading}
+                >
+                  <option value="">
+                    {!customer.city ? 'Sélectionnez d\'abord une ville' : delegationsLoading ? 'Chargement…' : 'Sélectionner localité'}
+                  </option>
+                  {delegations.map((d) => <option key={d} value={d}>{d}</option>)}
+                  {/* An order saved before this field existed may hold a
+                      locality value First Delivery's live directory no
+                      longer lists under this ville (renamed/merged) —
+                      keep it selectable rather than silently blanking it. */}
+                  {customer.locality && !delegations.includes(customer.locality) && (
+                    <option value={customer.locality}>{customer.locality} (historique)</option>
+                  )}
                 </select>
               </Field>
               <Field label="Adresse"><input className="input" value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} placeholder="Entrez votre adresse" /></Field>
@@ -1174,40 +1221,40 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                     <tr><td colSpan={7} className="px-3 py-12 text-center text-ink-700">La scène est prête pour vos produits ! ✨🎉</td></tr>
                   )}
                 </tbody>
-                {lines.length > 0 && (
-                  <tfoot>
-                    <tr>
-                      <td colSpan={4} />
-                      <td colSpan={2} className="px-3 pt-4">
-                        <div className="space-y-1 rounded-xl bg-ink-100 px-4 py-3">
-                          <div className="flex items-center justify-between gap-2 text-sm text-ink-700">
-                            <span className="text-xs font-bold uppercase tracking-wider">Sous-total</span>
-                            <span className="text-sm font-bold">{formatPrice(subtotal)}</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-2 text-sm text-ink-700">
-                            <span className="text-xs font-bold uppercase tracking-wider">Livraison</span>
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={shipping}
-                                onChange={(e) => setShipping(Math.max(0, parseFloat(e.target.value) || 0))}
-                                className="h-7 w-20 rounded bg-white px-2 py-0.5 text-right text-xs font-bold text-ink-900 border border-ink-200 outline-none focus:border-brand-500"
-                              />
-                              <span className="text-xs font-bold text-ink-700">DT</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-2 border-t border-ink-200 pt-2">
-                            <span className="text-xs font-black uppercase tracking-wider text-ink-900">Total</span>
-                            <span className="text-lg font-black text-brand-500">{formatPrice(total)}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
+
+            {/* Totals — deliberately OUTSIDE the table (a table-fixed cell
+                only had ~200px to work with, which is why labels/amounts
+                used to wrap onto two lines). A dedicated, generously-sized
+                block gives every row room to breathe and keeps Total
+                visually dominant without needing to shrink anything else. */}
+            {lines.length > 0 && (
+              <div className="mt-4 flex justify-end">
+                <div className="w-full space-y-2.5 rounded-2xl bg-ink-100 px-5 py-4 sm:w-[320px]">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-ink-700">Sous-total</span>
+                    <span className="text-base font-bold text-ink-900">{formatPrice(subtotal)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-ink-700">Livraison</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        value={shipping}
+                        onChange={(e) => setShipping(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="h-9 w-24 rounded-lg border border-ink-200 bg-white px-2.5 text-right text-sm font-bold text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50"
+                      />
+                      <span className="text-xs font-bold text-ink-700">DT</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-t border-ink-200 pt-3">
+                    <span className="text-sm font-black uppercase tracking-wider text-ink-900">Total</span>
+                    <span className="whitespace-nowrap text-2xl font-black text-brand-600">{formatPrice(total)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
 
           {isEdit && statusHistory && statusHistory.length > 0 && (

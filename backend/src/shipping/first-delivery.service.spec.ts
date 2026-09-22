@@ -214,3 +214,45 @@ describe('FirstDeliveryService.previewLocality (admin confirmation UX, no carrie
     expect(request).toHaveBeenCalledTimes(1); // /localities only, never /create
   });
 });
+
+describe('FirstDeliveryService.delegationsForGovernorate (Mo3tamadia picker)', () => {
+  let service: FirstDeliveryService;
+  let request: jest.SpyInstance;
+  beforeEach(() => {
+    service = new FirstDeliveryService(new ConfigService({ FIRST_DELIVERY_TOKEN: 'test-token' }));
+    request = jest.spyOn(global, 'fetch');
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const localities = [
+    { locality_id: 10, locality_name: 'Centre', delegation_name: 'Sousse Medina', governorate_name: 'Sousse' },
+    { locality_id: 11, locality_name: 'Khezama', delegation_name: 'Sousse Jawhara', governorate_name: 'Sousse' },
+    { locality_id: 12, locality_name: 'Aysaad', delegation_name: 'Akouda', governorate_name: 'Sousse' },
+    { locality_id: 20, locality_name: 'Centre', delegation_name: 'Ariana Ville', governorate_name: 'Ariana' },
+  ];
+
+  it('returns distinct délégation names for the given governorate only, alphabetically sorted', async () => {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
+    const result = await service.delegationsForGovernorate('Sousse');
+    expect(result).toEqual(['Akouda', 'Sousse Jawhara', 'Sousse Medina']);
+  });
+
+  it('never returns a délégation from a different governorate', async () => {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
+    const result = await service.delegationsForGovernorate('Ariana');
+    expect(result).toEqual(['Ariana Ville']);
+    expect(result).not.toContain('Akouda');
+  });
+
+  it('returns an empty list for an unknown governorate rather than throwing', async () => {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
+    const result = await service.delegationsForGovernorate('Nowhere');
+    expect(result).toEqual([]);
+  });
+
+  it('returns an empty list for an empty governorate without even calling the directory', async () => {
+    const result = await service.delegationsForGovernorate('');
+    expect(result).toEqual([]);
+    expect(request).not.toHaveBeenCalled();
+  });
+});
