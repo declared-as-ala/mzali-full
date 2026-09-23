@@ -19,3 +19,4 @@ export * from './settings';
 export * from './purchasing';
 export * from './documents';
 export * from './loyalty';
+export * from './attendance';

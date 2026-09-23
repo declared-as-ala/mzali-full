@@ -7,7 +7,7 @@ import {
   MonitorSmartphone, Wallet, ClipboardList,
   Building2, FileText, FileSignature, Receipt,
   ShieldCheck, Award, AlertTriangle, BarChart3, CreditCard,
-  ChevronRight, Sparkles, Store
+  ChevronRight, Sparkles, Store, IdCard
 } from 'lucide-react';
 import { adminLoginHref, normalizeAdminPath } from '@/lib/admin-nav';
 import { useAdminHref } from '@/lib/admin-nav-context';
@@ -47,6 +47,11 @@ const SECTIONS = [
     label: 'Équipe',
     items: [
       { href: '/employees', label: 'Employés', icon: Users, exact: false },
+      // Isolated Pointage/payroll domain — deliberately a separate roster
+      // from '/employees' above (login/POS accounts), see
+      // backend/src/attendance/'s module doc. 'Pointage' (dashboard) and
+      // 'Paie' land here once their pages exist (Phase 2/4).
+      { href: '/pointage-employes', label: 'Personnel (Pointage)', icon: IdCard, exact: false },
       { href: '/journal', label: 'Journal', icon: ScrollText, exact: false },
     ],
   },

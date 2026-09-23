@@ -28,6 +28,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { QuotesModule } from './quotes/quotes.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
+import { AttendanceModule } from './attendance/attendance.module';
 
 /** API composition root (HTTP process). */
 @Module({
@@ -75,6 +76,7 @@ import { LoyaltyModule } from './loyalty/loyalty.module';
     QuotesModule,
     InvoicesModule,
     LoyaltyModule,
+    AttendanceModule,
   ],
   controllers: [AuthController],
 })

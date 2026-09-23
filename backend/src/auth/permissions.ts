@@ -78,6 +78,17 @@ export const ALL_PERMISSIONS = [
   'loyalty.cards.manage',
   'loyalty.cards.generate',
   'loyalty.cards.export',
+  // Pointage / payroll — isolated attendance domain, see
+  // backend/src/attendance/. `attendance.employees.manage` is deliberately
+  // NOT named `employees.manage` (that string already exists above, for
+  // the separate login/POS Employee) — the two must never be conflatable.
+  'attendance.view',
+  'attendance.manage',
+  'attendance.correct',
+  'attendance.employees.manage',
+  'payroll.view',
+  'payroll.calculate',
+  'payroll.pay',
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
