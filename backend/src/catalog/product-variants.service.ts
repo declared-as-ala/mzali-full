@@ -63,9 +63,13 @@ export class ProductVariantsService {
   async resolveForSale(productId: string, variantId?: string | null) {
     const product = await this.products.findById(productId);
     if (!product || product.deletedAt) throw new BadRequestException('Produit introuvable');
-    if (!variantId && product.inventoryModel === 'MATRIX') throw new BadRequestException('Sélectionnez une variante exacte (taille / couleur).');
+    // Named after the product so the customer/admin knows exactly which
+    // cart line to fix — this happens for real (not just in theory) when
+    // an item was added to a cart/localStorage before that product became
+    // variant-tracked, so the stale line has no variantId at all.
+    if (!variantId && product.inventoryModel === 'MATRIX') throw new BadRequestException(`Sélectionnez une taille et une couleur pour « ${product.name} » avant de continuer.`);
     const variant = variantId ? await this.findById(variantId) : await this.generateDefaultVariant(productId);
-    if (!variant || variant.productId !== productId || !variant.active || variant.retired || variant.boutiquePool) throw new BadRequestException('Variante inactive ou indisponible.');
+    if (!variant || variant.productId !== productId || !variant.active || variant.retired || variant.boutiquePool) throw new BadRequestException(`« ${product.name} » : cette variante n'est plus disponible, sélectionnez-en une autre.`);
     return variant;
   }
 
