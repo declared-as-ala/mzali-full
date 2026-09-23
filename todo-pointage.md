@@ -37,12 +37,13 @@ patterns carry over).
   *admin* JWT users who manage Pointage. Named `attendance.employees.manage`
   (not bare `employees.manage`) to avoid colliding with the existing
   permission that manages login accounts.
-- Routes: public kiosk at `/pointage` (service-token BFF, no JWT, no
-  employee list shown pre-auth). Admin: `/admin/pointage` (dashboard +
-  live present + drill-down profile at `/admin/pointage/[id]`),
-  `/admin/pointage-employes` (isolated employee CRUD + PIN + rate),
-  `/admin/paie` (payroll). Sidebar ÉQUIPE section gets "Personnel
-  (Pointage)", "Pointage", "Paie" added alongside the existing "Employés".
+- **Routes (current, post-consolidation — see "UX consolidation pass"
+  below for the superseded 4-page version)**: public kiosk at
+  `/pointage` (service-token BFF, no JWT, shared "who's here" list +
+  PIN-to-clock-in + one-click "Sortir" to clock out). Admin: a single
+  `/admin/pointage` page (personnel grid + a detail Drawer per employee
+  for status/pay/history/daily-hours). Sidebar ÉQUIPE section has one
+  "Pointage" entry alongside the existing "Employés".
 - Payroll numbering: reuse `CountersService.next()` (same mechanism as
   `orderNumber`) for a new `payrollNumber` sequence → `PAY-00001` style.
 - `PayrollPayment` is immutable after creation for this pass — a later
@@ -223,6 +224,55 @@ verification.
       BFF routes all present in the build output.
 - [x] Sidebar: "Pointage" and "Paie" added under Équipe (previously
       deferred — their pages now exist).
+
+## UX consolidation pass (post-Phase-5, per explicit user request)
+
+The user asked to simplify the whole admin surface down to one page and
+change the hourly-rate/kiosk model. This pass replaced the Phase 2-5
+admin UI (`/admin/pointage` dashboard, `/admin/pointage/[id]` profile,
+`/admin/pointage-employes` CRUD, `/admin/paie` payroll — 4 separate
+pages) and reworked the public kiosk:
+
+- [x] **One single admin page** (`/admin/pointage`, `PointageView.tsx`):
+      a personnel grid (name, live "en session" badge with elapsed time
+      or "Hors service") — click a card to open a detail Drawer with
+      today/week/month/unpaid/total-paid stats, a "Payer" button, daily
+      hours, and payment history with PDF links. The 3 other pages/
+      components were deleted, not just unlinked.
+- [x] **"Ajouter un employé" modal simplified to Nom + PIN only** — no
+      phone/email/job title/rate at creation. Backend relaxed to match:
+      `AttendanceEmployee.lastName`/`phone`/`hourlyRateMinor` are now
+      optional (default `''`/`''`/`0`); the frontend splits the single
+      "Nom" field into firstName + optional lastName.
+- [x] **Hourly rate moved from the employee record to the pay
+      calculator** — `PayrollService.createPayment()` now takes an
+      explicit, required `hourlyRateMinor` typed in by the admin at
+      payment time (a "calculator": hours × price → live amount),
+      instead of always reading `employee.hourlyRateMinor`. The rate
+      typed in is remembered back onto the employee afterward purely to
+      prefill the calculator next time — never re-read for a payment
+      already made (the immutable snapshot on `PayrollPayment` is
+      unaffected).
+- [x] **Kiosk (`/pointage`) redesigned from a single-PIN flow to a
+      shared list**: shows everyone currently clocked in (live elapsed
+      time), a "Pointer" button opens a PIN pad to clock IN (reuses
+      identify + clock-in), and each row has a one-click "Sortir" button
+      to clock OUT — no second PIN entry to leave. New backend surface:
+      `AttendanceService.listActive()`, `GET /pointage/active` and
+      `POST /pointage/:employeeId/clock-out` (replacing the old
+      PIN-based `POST /pointage/clock-out`, deleted). **Explicit
+      tradeoff, stated in the controller's doc comment**: clocking out
+      no longer re-verifies identity, so anyone at the physical kiosk
+      could end someone else's shift — clocking IN still requires the
+      PIN, so a session can only ever be opened by its owner.
+- [x] Sidebar: collapsed 3 entries ("Personnel (Pointage)", "Pointage",
+      "Paie") down to a single "Pointage" link.
+- [x] Backend: 10 new/updated tests (`listActive`, relaxed
+      `createEmployee`, `createPayment`'s explicit-rate + rate-memory
+      behavior) — full suite 430/430, typecheck/lint clean. Frontend
+      typecheck/lint/`npm run build` all clean; confirmed via the build
+      output that `/admin/paie`, `/admin/pointage/[id]`, and
+      `/admin/pointage-employes` no longer exist as routes.
 
 ### Known limitations (honest, not fixed in this pass)
 
