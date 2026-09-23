@@ -3,13 +3,19 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuditModule } from '@/audit/audit.module';
 import { AttendanceEmployee, AttendanceEmployeeSchema } from './attendance-employee.schema';
 import { AttendanceSession, AttendanceSessionSchema } from './attendance-session.schema';
+import { PayrollPayment, PayrollPaymentSchema } from './payroll-payment.schema';
 import { AttendanceService } from './attendance.service';
+import { AttendanceStatsService } from './attendance-stats.service';
+import { PayrollService } from './payroll.service';
 import { AttendanceEmployeesAdminController } from './attendance-employees-admin.controller';
+import { AttendanceAdminController } from './attendance-admin.controller';
+import { PayrollAdminController } from './payroll-admin.controller';
 import { AttendancePublicController } from './attendance-public.controller';
 
 const AttendanceMongoose = MongooseModule.forFeature([
   { name: AttendanceEmployee.name, schema: AttendanceEmployeeSchema },
   { name: AttendanceSession.name, schema: AttendanceSessionSchema },
+  { name: PayrollPayment.name, schema: PayrollPaymentSchema },
 ]);
 
 /**
@@ -21,8 +27,8 @@ const AttendanceMongoose = MongooseModule.forFeature([
  */
 @Module({
   imports: [AttendanceMongoose, AuditModule],
-  controllers: [AttendanceEmployeesAdminController, AttendancePublicController],
-  providers: [AttendanceService],
-  exports: [AttendanceService],
+  controllers: [AttendanceEmployeesAdminController, AttendanceAdminController, PayrollAdminController, AttendancePublicController],
+  providers: [AttendanceService, AttendanceStatsService, PayrollService],
+  exports: [AttendanceService, AttendanceStatsService, PayrollService],
 })
 export class AttendanceModule {}

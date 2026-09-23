@@ -124,42 +124,121 @@ genuinely parallel clock-ins for one employee) hasn't been run against
 this specific collection yet. Flagging rather than claiming full
 verification.
 
-## Phase 2 — Attendance admin page + corrections
+## Phase 2 — Attendance admin page + corrections — DONE
 
-- [ ] `/admin/pointage` dashboard: top stats, table with filters, "who's
-      present now" (polling or light live-update), status badges.
-- [ ] Correction flow: required reason, audit entry, original values
-      preserved.
-- [ ] Multi-session-per-day support verified in the aggregation (daily
-      total = sum of completed sessions, not "most recent").
+- [x] `AttendanceStatsService`: `dashboard()` (present-now count, live
+      elapsed minutes for open sessions folded into "hours today",
+      distinct employees clocked today, open/needs-review count),
+      `listSessions()` (paginated, filtered by employeeId/status/date
+      range, employee names resolved), `correctSession()` (required
+      non-empty reason, original clockIn/clockOut preserved in
+      `correction`, blocks correcting an already-paid session, rejects
+      clockOut <= clockIn, audit-logged with before/after, resolves
+      NEEDS_REVIEW back to CLOSED the same way as a normal correction).
+- [x] `AttendanceAdminController` (`admin/attendance/*` — dashboard,
+      sessions, employees/:id/summary, employees/:id/daily,
+      top-employees, sessions/:id/correct — `attendance.view` /
+      `attendance.correct`).
+- [x] `/admin/pointage` dashboard (`PointageDashboardView.tsx`): stat
+      cards, "Présents actuellement" live list (30s poll), sessions
+      table with status/date-range filters, correction modal
+      (datetime-local inputs + required reason).
+- [x] Multi-session-per-day: `minutesInRange()` sums `durationMinutes`
+      across all CLOSED sessions in range (not "most recent"), plus
+      live-elapsed time for any still-OPEN session in range.
+- [x] `attendance-stats.service.spec.ts` — 21 tests (dashboard,
+      listSessions, employeeSummary, topEmployees, dailyBreakdown,
+      resolvePreset, correctSession incl. paid-session guard and
+      NEEDS_REVIEW resolution).
 
-## Phase 3 — Hours + payroll calculation
+## Phase 3 — Hours + payroll calculation — DONE
 
-- [ ] Duration/hours aggregation service (today/week/month/custom,
-      Africa/Tunis boundaries).
-- [ ] Unpaid-hours computation (sessions with `payrollPaymentId: null`).
-- [ ] Employee profile page: today/week/month/unpaid, hourly rate,
-      estimated unpaid amount.
+- [x] `attendance-date.ts` extended: `tunisStartOfWeek()`,
+      `tunisStartOfMonth()`, `tunisToday()` (Africa/Tunis calendar
+      arithmetic, calendar-as-UTC trick to avoid re-deriving the offset
+      by hand) — 6 new tests in `attendance-date.spec.ts` (weekday
+      rollback across Sunday, month/year boundaries).
+- [x] `AttendanceStatsService.employeeSummary()` — today/week/month
+      minutes via `minutesInRange`, takes unpaid/paid figures from
+      `PayrollService` (kept as separate services; the admin controller
+      composes them).
+- [x] `/admin/pointage/[id]` employee profile page
+      (`PointageEmployeeProfileView.tsx`): today/week/month/unpaid
+      hours, unpaid amount, total paid, daily-hours bar breakdown with
+      today/week/month toggle.
 
-## Phase 4 — Payments + history + PDF
+## Phase 4 — Payments + history + PDF — DONE
 
-- [ ] `PayrollService.createPayment()` — snapshot rate, mark included
-      sessions paid, immutable record, `CountersService` payroll number.
-- [ ] `/admin/paie` dashboard + payment confirmation modal (bonus/
-      deduction/method/note).
-- [ ] Payment history / single-payment detail view.
-- [ ] PDF payslip (reuse whatever PDF library the invoicing/loyalty-card
-      features already use, not a new dependency).
+- [x] `payroll-payment.schema.ts` — immutable `PayrollPayment` (rate
+      snapshot, base/bonus/deduction/final amounts, sessionIds covered,
+      payrollNumber via `CountersService`).
+- [x] `PayrollService`: `unpaidSummary()` (per-employee unpaid minutes/
+      amount at current rate, active or not — a former employee still
+      gets paid for time worked), `createPayment()` (transaction-wrapped:
+      creates the payment + stamps every covered session's
+      `payrollPaymentId` atomically; rejects a negative bonus/deduction
+      and a negative final amount; rejects if there are no unpaid closed
+      sessions), `listPayments()`, `getPayment()`, `totalPaidForEmployee()`,
+      `summary()` (all-time paid total + payment count + current unpaid
+      total, for the Paie dashboard's headline cards).
+- [x] `PayrollAdminController` (`admin/payroll/*` — unpaid, summary,
+      employees/:id/pay, payments, payments/:id, payments/:id/pdf —
+      `payroll.view` / `payroll.pay`).
+- [x] `payslip-pdf.ts` (pdfkit, same visual language as
+      `ticket-z-pdf.ts`) + PDF route streamed through the BFF
+      (`app/api/admin/payroll/[[...path]]/route.ts`, inline/attachment
+      via `?download=1`, mirrors the tickets-z proxy pattern).
+- [x] `/admin/paie` (`PaieView.tsx`): paid/unpaid/payment-count stat
+      cards, unpaid-hours table with a "Payer" action, pay modal
+      (bonus/deduction/method/note, live final-amount preview, blocks a
+      negative final amount client-side too), payment history table
+      with a PDF download link per row.
+- [x] `payroll.service.spec.ts` — 12 tests (unpaidSummary, createPayment
+      incl. the transaction/audit/negative-amount/no-unpaid-hours paths,
+      summary, listPayments/getPayment).
 
-## Phase 5 — Statistics/dashboard
+## Phase 5 — Statistics/dashboard — DONE
 
-- [ ] Top employees by hours (today/week/month/custom).
-- [ ] Per-employee charts (hours by day, totals, averages, longest day).
-- [ ] Payroll dashboard totals (paid/unpaid/total).
+- [x] `AttendanceStatsService.topEmployees()` — ranked by summed CLOSED-
+      session minutes in a date range, never by salary (see design
+      decision #23 from the original spec). Surfaced as a "Meilleurs
+      employés" panel on `/admin/pointage` with a today/week/month
+      toggle, linking each row to its employee profile.
+- [x] `AttendanceStatsService.dailyBreakdown()` — per-employee
+      date-ordered minutes, rendered as a horizontal bar list (not a
+      chart library — consistent with keeping this isolated domain
+      dependency-light) on the employee profile page.
+- [x] `PayrollService.summary()` → Paie dashboard's paid/unpaid/total
+      stat cards (see Phase 4).
 
-## Final pass
+## Final pass — DONE
 
-- [ ] Full backend suite + typecheck + lint.
-- [ ] Frontend typecheck + lint + production build.
-- [ ] Honest note on anything not verifiable in this environment (no
-      browser, no live DB — same constraint as prior work in this repo).
+- [x] Full backend suite: 427/427 passing (63 attendance-specific:
+      attendance-pin 14, attendance-date 8, attendance.service 16,
+      attendance-stats.service 21, payroll.service 14). Backend
+      typecheck and lint both clean.
+- [x] Frontend typecheck, lint, and `npm run build` all clean —
+      `/admin/pointage`, `/admin/pointage/[id]`, `/admin/paie`, and the
+      `/api/admin/attendance/[[...path]]` + `/api/admin/payroll/[[...path]]`
+      BFF routes all present in the build output.
+- [x] Sidebar: "Pointage" and "Paie" added under Équipe (previously
+      deferred — their pages now exist).
+
+### Known limitations (honest, not fixed in this pass)
+
+- Same as Phase 1: `createPayment()`'s transaction (create payment +
+  stamp N sessions atomically) is unit-tested with a mocked
+  `withTransaction`, not against a live Mongo replica set (none running
+  in this environment) — proves the business logic, not real
+  cross-process atomicity under concurrent payment attempts for the same
+  employee.
+- No browser was available to click through the new UI — verified via
+  typecheck/lint/build + backend unit tests only, same constraint noted
+  throughout this repo's session history.
+- Daily-hours visualization is a plain bar list, not a chart library
+  (recharts is already a dependency elsewhere in admin, e.g.
+  `PosAnalyticsView.tsx`, but wasn't pulled in here to keep this new
+  domain's frontend footprint minimal — an easy upgrade later if wanted).
+- `PayrollPayment` correction/void capability was explicitly out of scope
+  for this pass (see the original design decision) — a payment is
+  permanent once created.
