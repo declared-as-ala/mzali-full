@@ -1,14 +1,20 @@
 import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, Matches, Min, MinLength } from 'class-validator';
 
+/** Only firstName/pin are actually required by the admin "add employee"
+ *  flow (name + PIN, per the simplified UX — the frontend splits a
+ *  single "Nom" field into firstName + optional lastName). phone and
+ *  hourlyRateMinor are relaxed to optional here and default to ''/0 in
+ *  AttendanceService.createEmployee(); the hourly rate is now typed in
+ *  directly at each payment instead of being fixed on the employee. */
 export class CreateAttendanceEmployeeDto {
   @IsString() @MinLength(1) firstName!: string;
-  @IsString() @MinLength(1) lastName!: string;
-  @IsString() @MinLength(4) phone!: string;
+  @IsOptional() @IsString() lastName?: string;
+  @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() jobTitle?: string;
   @IsOptional() @IsString() photoUrl?: string;
   @Matches(/^\d{4,6}$/, { message: 'Le code PIN doit contenir 4 à 6 chiffres.' }) pin!: string;
-  @IsInt() @Min(0) hourlyRateMinor!: number;
+  @IsOptional() @IsInt() @Min(0) hourlyRateMinor?: number;
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() @IsString() hiredAt?: string;
   @IsOptional() @IsString() notes?: string;

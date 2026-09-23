@@ -7,7 +7,7 @@ import {
   MonitorSmartphone, Wallet, ClipboardList,
   Building2, FileText, FileSignature, Receipt,
   ShieldCheck, Award, AlertTriangle, BarChart3, CreditCard,
-  ChevronRight, Sparkles, Store, IdCard, Clock, Banknote
+  ChevronRight, Sparkles, Store, Clock
 } from 'lucide-react';
 import { adminLoginHref, normalizeAdminPath } from '@/lib/admin-nav';
 import { useAdminHref } from '@/lib/admin-nav-context';
@@ -49,10 +49,9 @@ const SECTIONS = [
       { href: '/employees', label: 'Employés', icon: Users, exact: false },
       // Isolated Pointage/payroll domain — deliberately a separate roster
       // from '/employees' above (login/POS accounts), see
-      // backend/src/attendance/'s module doc.
-      { href: '/pointage-employes', label: 'Personnel (Pointage)', icon: IdCard, exact: false },
+      // backend/src/attendance/'s module doc. One single consolidated
+      // page: personnel list -> click an employee -> status/pay/history.
       { href: '/pointage', label: 'Pointage', icon: Clock, exact: false },
-      { href: '/paie', label: 'Paie', icon: Banknote, exact: false },
       { href: '/journal', label: 'Journal', icon: ScrollText, exact: false },
     ],
   },

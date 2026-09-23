@@ -11,6 +11,7 @@ import { renderPayslipPdf } from './payslip-pdf';
 import { PAYMENT_METHODS } from './dto/attendance-employee.dto';
 
 class CreatePaymentDto {
+  @IsInt() @Min(0) hourlyRateMinor!: number;
   @IsOptional() @IsInt() @Min(0) bonusMinor?: number;
   @IsOptional() @IsInt() @Min(0) deductionMinor?: number;
   @IsIn(PAYMENT_METHODS) paymentMethod!: 'cash' | 'transfer' | 'other';

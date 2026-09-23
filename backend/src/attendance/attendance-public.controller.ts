@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Ip, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Ip, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuditService } from '@/audit/audit.service';
 import { RateLimitGuard } from '@/common/rate-limit.guard';
@@ -17,6 +17,13 @@ import { ClockActionDto, IdentifyDto } from './dto/attendance-employee.dto';
  * are identified by scanning active employees rather than a direct
  * lookup, so there is no single "employeeId" to rate-limit against until
  * a PIN is already known to be correct.
+ *
+ * Clocking OUT is deliberately a one-click action from the shared
+ * "who's here" list (`:employeeId/clock-out`, no PIN) rather than a
+ * second PIN entry — a simplification the kiosk's UX explicitly asks
+ * for. This trades a small amount of security (anyone at the physical
+ * kiosk could end someone else's shift) for speed; clocking IN still
+ * requires the PIN, so a session can only ever be opened by its owner.
  */
 @ApiTags('pointage')
 @Controller('pointage')
@@ -26,6 +33,12 @@ export class AttendancePublicController {
     private readonly attendance: AttendanceService,
     private readonly audit: AuditService,
   ) {}
+
+  @Get('active')
+  @UseGuards(RateLimitGuard(120, 60))
+  async active() {
+    return this.attendance.listActive();
+  }
 
   @Post('identify')
   @UseGuards(RateLimitGuard(20, 60))
@@ -79,32 +92,25 @@ export class AttendancePublicController {
     };
   }
 
-  @Post('clock-out')
-  @UseGuards(RateLimitGuard(10, 60))
-  async clockOut(@Body() dto: ClockActionDto, @Ip() ip: string) {
-    const identified = await this.attendance.identify(dto.pin);
-    if (!identified.ok) {
-      await this.logFailedAttempt(ip);
-      return { ok: false, error: 'Code PIN incorrect.' };
-    }
-    if (identified.status === 'blocked_stale_session') {
-      return { ok: false, error: 'Une session précédente n\'a pas été clôturée. Veuillez contacter l\'administrateur.' };
-    }
-    if (identified.status === 'ready_to_start') {
-      throw new BadRequestException('Aucune session ouverte pour cet employé.');
-    }
-    const session = await this.attendance.clockOut(identified.employee.id);
+  /** One click from the "who's here" list — no PIN. See the class doc
+   *  for the security tradeoff this accepts. */
+  @Post(':employeeId/clock-out')
+  @UseGuards(RateLimitGuard(20, 60))
+  async clockOutDirect(@Param('employeeId') employeeId: string, @Ip() ip: string) {
+    const employee = await this.attendance.getEmployee(employeeId).catch(() => null);
+    if (!employee) throw new BadRequestException('Employé introuvable.');
+    const session = await this.attendance.clockOut(employeeId);
     await this.audit.log({
-      actor: { type: 'employee', id: identified.employee.id, name: `${identified.employee.firstName} ${identified.employee.lastName}` },
+      actor: { type: 'employee', id: employee.id, name: `${employee.firstName} ${employee.lastName}` },
       action: 'attendance.clock_out',
       entityType: 'attendance_session',
       entityId: session.id,
-      summary: `${identified.employee.firstName} ${identified.employee.lastName} — fin de journée (${session.durationMinutes ?? 0} min)`,
+      summary: `${employee.firstName} ${employee.lastName} — fin de journée (${session.durationMinutes ?? 0} min)`,
       ip,
     });
     return {
       ok: true,
-      employee: { firstName: identified.employee.firstName, lastName: identified.employee.lastName },
+      employee: { firstName: employee.firstName, lastName: employee.lastName },
       session: toAttendanceSessionRecord(session),
     };
   }

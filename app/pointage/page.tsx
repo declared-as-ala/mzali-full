@@ -1,69 +1,151 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Delete, CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Delete, CheckCircle2, AlertTriangle, Clock, Plus, LogOut, X } from 'lucide-react';
 
-type Screen =
+type ActiveEntry = { employeeId: string; firstName: string; lastName: string; clockIn: string };
+
+type AddScreen =
   | { name: 'pin' }
   | { name: 'loading' }
   | { name: 'ready_to_start'; employeeName: string }
-  | { name: 'ready_to_end'; employeeName: string; clockIn: string }
+  | { name: 'already_in'; employeeName: string }
   | { name: 'blocked' }
-  | { name: 'success_in'; clockIn: string }
-  | { name: 'success_out'; clockIn: string; clockOut: string; durationMinutes: number };
+  | { name: 'success'; employeeName: string; clockIn: string };
 
-const AUTO_RESET_MS = 4000;
 const MAX_PIN_LENGTH = 6;
+const AUTO_RESET_MS = 2500;
 
 function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Tunis' });
 }
-
-function formatDuration(totalMinutes: number): string {
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
+function elapsedLabel(clockIn: string, now: number): string {
+  const minutes = Math.max(0, Math.round((now - new Date(clockIn).getTime()) / 60000));
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
   return h > 0 ? `${h} h ${m} min` : `${m} min`;
 }
 
 export default function PointagePage() {
-  const [screen, setScreen] = useState<Screen>({ name: 'pin' });
+  const [active, setActive] = useState<ActiveEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(Date.now());
+  const [addOpen, setAddOpen] = useState(false);
+  const [leaving, setLeaving] = useState<ActiveEntry | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/pointage/active', { cache: 'no-store' });
+      if (res.ok) setActive(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    const id = setInterval(refresh, 15000);
+    return () => clearInterval(id);
+  }, [refresh]);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function confirmLeave() {
+    if (!leaving) return;
+    const employeeId = leaving.employeeId;
+    setLeaving(null);
+    setActive((prev) => prev.filter((e) => e.employeeId !== employeeId));
+    try {
+      await fetch(`/api/pointage/${employeeId}/clock-out`, { method: 'POST' });
+    } finally {
+      refresh();
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 px-4 py-10 text-white sm:px-8">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">Mzali Boutique</p>
+            <h1 className="mt-1 text-3xl font-black tracking-tight sm:text-4xl">Pointage</h1>
+          </div>
+          <button
+            onClick={() => setAddOpen(true)}
+            className="flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3.5 text-sm font-black text-slate-950 transition hover:bg-emerald-400"
+          >
+            <Plus size={18} /> Pointer
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-slate-900" />)}
+          </div>
+        ) : !active.length ? (
+          <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/50 p-12 text-center">
+            <Clock size={32} className="mx-auto mb-3 text-slate-600" />
+            <p className="font-bold text-slate-400">Personne n&apos;est en session actuellement.</p>
+          </div>
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {active.map((e) => (
+              <li key={e.employeeId} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-black">{e.firstName} {e.lastName}</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+                    Depuis {formatClock(e.clockIn)} · {elapsedLabel(e.clockIn, now)}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setLeaving(e)}
+                  className="flex shrink-0 items-center gap-1.5 rounded-xl bg-rose-500/15 px-3.5 py-2.5 text-xs font-black text-rose-400 transition hover:bg-rose-500/25"
+                >
+                  <LogOut size={15} /> Sortir
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {addOpen && <AddPinModal onClose={() => setAddOpen(false)} onClockedIn={() => { setAddOpen(false); refresh(); }} />}
+
+      {leaving && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" onClick={() => setLeaving(null)}>
+          <div className="w-full max-w-xs rounded-3xl border border-slate-800 bg-slate-900 p-6 text-center" onClick={(e) => e.stopPropagation()}>
+            <p className="text-lg font-black">Confirmer la sortie</p>
+            <p className="mt-1 text-sm text-slate-400">{leaving.firstName} {leaving.lastName}</p>
+            <div className="mt-5 flex gap-2">
+              <button onClick={() => setLeaving(null)} className="flex-1 rounded-2xl bg-slate-800 py-3 text-sm font-bold text-slate-300 hover:bg-slate-700">Annuler</button>
+              <button onClick={confirmLeave} className="flex-1 rounded-2xl bg-rose-500 py-3 text-sm font-black text-white hover:bg-rose-400">Sortir</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddPinModal({ onClose, onClockedIn }: { onClose: () => void; onClockedIn: () => void }) {
+  const [screen, setScreen] = useState<AddScreen>({ name: 'pin' });
   const [pin, setPin] = useState('');
   const [shake, setShake] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [elapsedNow, setElapsedNow] = useState(Date.now());
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const reset = () => {
-    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-    setScreen({ name: 'pin' });
-    setPin('');
-    setPinError(null);
-    setBusy(false);
-  };
+  useEffect(() => () => { if (resetTimerRef.current) clearTimeout(resetTimerRef.current); }, []);
 
-  // Live "temps actuel" ticker while waiting on the ready_to_end screen.
   useEffect(() => {
-    if (screen.name !== 'ready_to_end') return;
-    const t = setInterval(() => setElapsedNow(Date.now()), 1000 * 15);
-    return () => clearInterval(t);
-  }, [screen.name]);
-
-  const liveElapsedLabel = useMemo(() => {
-    if (screen.name !== 'ready_to_end') return '';
-    const minutes = Math.max(0, Math.round((elapsedNow - new Date(screen.clockIn).getTime()) / 60000));
-    return formatDuration(minutes);
-  }, [screen, elapsedNow]);
-
-  // Auto-reset the kiosk back to the PIN screen a few seconds after any
-  // terminal (success/blocked) screen — the whole point being that many
-  // employees share the same device, see #34.
-  useEffect(() => {
-    if (screen.name === 'success_in' || screen.name === 'success_out' || screen.name === 'blocked') {
-      resetTimerRef.current = setTimeout(reset, AUTO_RESET_MS);
+    if (screen.name === 'success' || screen.name === 'already_in' || screen.name === 'blocked') {
+      resetTimerRef.current = setTimeout(onClose, AUTO_RESET_MS);
       return () => { if (resetTimerRef.current) clearTimeout(resetTimerRef.current); };
     }
-  }, [screen]);
+  }, [screen, onClose]);
 
   function pressDigit(d: string) {
     if (busy || pin.length >= MAX_PIN_LENGTH) return;
@@ -80,13 +162,11 @@ export default function PointagePage() {
     setBusy(true);
     setScreen({ name: 'loading' });
     try {
-      const res = await fetch('/api/pointage/identify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
+      const idRes = await fetch('/api/pointage/identify', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
       });
-      const data = await res.json();
-      if (!data?.ok) {
+      const idData = await idRes.json();
+      if (!idData?.ok) {
         setShake(true);
         setTimeout(() => setShake(false), 400);
         setPinError('Code PIN incorrect.');
@@ -95,96 +175,49 @@ export default function PointagePage() {
         setBusy(false);
         return;
       }
-      if (data.status === 'ready_to_start') {
-        setScreen({ name: 'ready_to_start', employeeName: data.employee.firstName });
+      if (idData.status === 'ready_to_end') {
+        setScreen({ name: 'already_in', employeeName: idData.employee.firstName });
         setBusy(false);
-      } else if (data.status === 'ready_to_end') {
-        setScreen({ name: 'ready_to_end', employeeName: data.employee.firstName, clockIn: data.session.clockIn });
-        setBusy(false);
-      } else {
+        return;
+      }
+      if (idData.status === 'blocked_stale_session') {
         setScreen({ name: 'blocked' });
         setBusy(false);
+        return;
       }
-    } catch {
-      setPinError('Erreur réseau — réessayez.');
-      setPin('');
-      setScreen({ name: 'pin' });
-      setBusy(false);
-    }
-  }
-
-  async function confirmClockIn() {
-    setBusy(true);
-    try {
-      const res = await fetch('/api/pointage/clock-in', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
+      const ciRes = await fetch('/api/pointage/clock-in', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
       });
-      const data = await res.json();
-      if (data?.ok) {
-        setScreen({ name: 'success_in', clockIn: data.session.clockIn });
+      const ciData = await ciRes.json();
+      if (ciData?.ok) {
+        setScreen({ name: 'success', employeeName: ciData.employee.firstName, clockIn: ciData.session.clockIn });
+        onClockedIn();
       } else {
-        setPinError(data?.error || 'Erreur — réessayez.');
+        setPinError(ciData?.error || 'Erreur — réessayez.');
         setScreen({ name: 'pin' });
       }
-    } catch {
-      setPinError('Erreur réseau — réessayez.');
-      setScreen({ name: 'pin' });
-    } finally {
-      setPin('');
       setBusy(false);
-    }
-  }
-
-  async function confirmClockOut() {
-    setBusy(true);
-    try {
-      const res = await fetch('/api/pointage/clock-out', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
-      });
-      const data = await res.json();
-      if (data?.ok) {
-        setScreen({
-          name: 'success_out',
-          clockIn: data.session.clockIn,
-          clockOut: data.session.clockOut,
-          durationMinutes: data.session.durationMinutes ?? 0,
-        });
-      } else {
-        setPinError(data?.error || 'Erreur — réessayez.');
-        setScreen({ name: 'pin' });
-      }
     } catch {
       setPinError('Erreur réseau — réessayez.');
-      setScreen({ name: 'pin' });
-    } finally {
       setPin('');
+      setScreen({ name: 'pin' });
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 px-4 py-10 text-white select-none">
-      <div className="mb-8 text-center">
-        <p className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">Mzali Boutique</p>
-        <h1 className="mt-1 text-3xl font-black tracking-tight sm:text-4xl">Pointage</h1>
-      </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl sm:p-8" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="mb-2 ml-auto flex h-9 w-9 items-center justify-center rounded-xl bg-slate-800 text-slate-400 hover:bg-slate-700" aria-label="Fermer">
+          <X size={16} />
+        </button>
 
-      <div className="w-full max-w-sm rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl sm:p-8">
         {screen.name === 'pin' && (
           <div className={shake ? 'animate-[shake_0.4s]' : ''}>
             <p className="mb-5 text-center text-base font-bold text-slate-300 sm:text-lg">Entrez votre code PIN</p>
             <div className="mb-6 flex items-center justify-center gap-3">
               {Array.from({ length: 6 }).map((_, i) => (
-                <span
-                  key={i}
-                  className={`h-4 w-4 rounded-full border-2 transition-colors sm:h-5 sm:w-5 ${
-                    i < pin.length ? 'border-emerald-400 bg-emerald-400' : 'border-slate-700 bg-transparent'
-                  }`}
-                />
+                <span key={i} className={`h-4 w-4 rounded-full border-2 transition-colors sm:h-5 sm:w-5 ${i < pin.length ? 'border-emerald-400 bg-emerald-400' : 'border-slate-700 bg-transparent'}`} />
               ))}
             </div>
             {pinError && <p className="mb-4 text-center text-sm font-bold text-rose-400">{pinError}</p>}
@@ -206,80 +239,28 @@ export default function PointagePage() {
           </div>
         )}
 
-        {screen.name === 'ready_to_start' && (
-          <div className="text-center">
-            <p className="text-2xl font-black">Bonjour {screen.employeeName}</p>
-            <p className="mt-2 text-sm text-slate-400">Vous n&apos;avez pas encore commencé votre journée.</p>
-            <div className="my-6 flex items-center justify-center gap-2 text-slate-300">
-              <Clock size={18} />
-              <span className="font-mono text-xl font-bold">
-                {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Tunis' })}
-              </span>
-            </div>
-            <button
-              onClick={confirmClockIn}
-              disabled={busy}
-              className="w-full rounded-2xl bg-emerald-500 py-5 text-lg font-black tracking-wide text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
-            >
-              {busy ? '…' : 'COMMENCER LA JOURNÉE'}
-            </button>
-            <button onClick={reset} className="mt-4 text-sm font-bold text-slate-500 hover:text-slate-300">Annuler</button>
-          </div>
-        )}
-
-        {screen.name === 'ready_to_end' && (
-          <div className="text-center">
-            <p className="text-2xl font-black">Bonjour {screen.employeeName}</p>
-            <div className="my-5 space-y-1 rounded-2xl bg-slate-800/70 p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Début</p>
-              <p className="font-mono text-xl font-bold">{formatClock(screen.clockIn)}</p>
-              <p className="mt-3 text-xs font-bold uppercase tracking-wider text-slate-500">Temps actuel</p>
-              <p className="font-mono text-2xl font-black text-emerald-400">{liveElapsedLabel}</p>
-            </div>
-            <button
-              onClick={confirmClockOut}
-              disabled={busy}
-              className="w-full rounded-2xl bg-rose-500 py-5 text-lg font-black tracking-wide text-white transition hover:bg-rose-400 disabled:opacity-60"
-            >
-              {busy ? '…' : 'QUITTER / TERMINER LA JOURNÉE'}
-            </button>
-            <button onClick={reset} className="mt-4 text-sm font-bold text-slate-500 hover:text-slate-300">Annuler</button>
+        {screen.name === 'already_in' && (
+          <div className="text-center py-6">
+            <AlertTriangle size={40} className="mx-auto mb-4 text-amber-400" />
+            <p className="text-lg font-bold text-amber-300">{screen.employeeName} est déjà en session.</p>
+            <p className="mt-1 text-sm text-slate-400">Utilisez « Sortir » dans la liste pour terminer.</p>
           </div>
         )}
 
         {screen.name === 'blocked' && (
-          <div className="text-center">
+          <div className="text-center py-6">
             <AlertTriangle size={40} className="mx-auto mb-4 text-amber-400" />
-            <p className="text-lg font-bold text-amber-300">
-              Une session précédente n&apos;a pas été clôturée. Veuillez contacter l&apos;administrateur.
-            </p>
-            <button onClick={reset} className="mt-6 w-full rounded-2xl bg-slate-800 py-3 text-sm font-bold text-slate-300 hover:bg-slate-700">
-              Nouveau pointage
-            </button>
+            <p className="text-lg font-bold text-amber-300">Une session précédente n&apos;a pas été clôturée. Veuillez contacter l&apos;administrateur.</p>
           </div>
         )}
 
-        {screen.name === 'success_in' && (
-          <div className="text-center">
+        {screen.name === 'success' && (
+          <div className="text-center py-6">
             <CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-400" />
             <p className="text-xl font-black text-emerald-400">Pointage enregistré</p>
+            <p className="mt-1 text-sm text-slate-400">{screen.employeeName}</p>
             <p className="mt-3 text-xs font-bold uppercase tracking-wider text-slate-500">Début</p>
             <p className="font-mono text-2xl font-black">{formatClock(screen.clockIn)}</p>
-            <button onClick={reset} className="mt-8 w-full rounded-2xl bg-slate-800 py-3 text-sm font-bold text-slate-300 hover:bg-slate-700">
-              Nouveau pointage
-            </button>
-          </div>
-        )}
-
-        {screen.name === 'success_out' && (
-          <div className="text-center">
-            <CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-400" />
-            <p className="text-xl font-black text-emerald-400">Fin de journée enregistrée</p>
-            <p className="mt-3 text-xs font-bold uppercase tracking-wider text-slate-500">Aujourd&apos;hui</p>
-            <p className="font-mono text-2xl font-black">{formatDuration(screen.durationMinutes)}</p>
-            <button onClick={reset} className="mt-8 w-full rounded-2xl bg-slate-800 py-3 text-sm font-bold text-slate-300 hover:bg-slate-700">
-              Nouveau pointage
-            </button>
           </div>
         )}
       </div>
@@ -301,31 +282,14 @@ function Keypad({ onDigit, onBackspace, disabled }: { onDigit: (d: string) => vo
   return (
     <div className="grid grid-cols-3 gap-3">
       {rows.flat().map((d) => (
-        <button
-          key={d}
-          type="button"
-          disabled={disabled}
-          onClick={() => onDigit(d)}
-          className="rounded-2xl bg-slate-800 py-5 text-2xl font-black text-white transition hover:bg-slate-700 active:scale-95 disabled:opacity-50 sm:text-3xl"
-        >
+        <button key={d} type="button" disabled={disabled} onClick={() => onDigit(d)} className="rounded-2xl bg-slate-800 py-5 text-2xl font-black text-white transition hover:bg-slate-700 active:scale-95 disabled:opacity-50 sm:text-3xl">
           {d}
         </button>
       ))}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onBackspace}
-        className="grid place-items-center rounded-2xl bg-slate-800 py-5 text-white transition hover:bg-slate-700 active:scale-95 disabled:opacity-50"
-        aria-label="Effacer"
-      >
+      <button type="button" disabled={disabled} onClick={onBackspace} className="grid place-items-center rounded-2xl bg-slate-800 py-5 text-white transition hover:bg-slate-700 active:scale-95 disabled:opacity-50" aria-label="Effacer">
         <Delete size={22} />
       </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onDigit('0')}
-        className="rounded-2xl bg-slate-800 py-5 text-2xl font-black text-white transition hover:bg-slate-700 active:scale-95 disabled:opacity-50 sm:text-3xl"
-      >
+      <button type="button" disabled={disabled} onClick={() => onDigit('0')} className="rounded-2xl bg-slate-800 py-5 text-2xl font-black text-white transition hover:bg-slate-700 active:scale-95 disabled:opacity-50 sm:text-3xl">
         0
       </button>
       <span />

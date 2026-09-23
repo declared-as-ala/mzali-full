@@ -16,10 +16,14 @@ export class AttendanceEmployee {
   @Prop({ type: String, required: true, trim: true })
   firstName!: string;
 
-  @Prop({ type: String, required: true, trim: true })
+  /** Optional — see firstName's sibling note on phone/hourlyRateMinor;
+   *  the "add employee" flow is a single name field the frontend splits. */
+  @Prop({ type: String, default: '', trim: true })
   lastName!: string;
 
-  @Prop({ type: String, required: true, trim: true })
+  /** Optional — the simplified "add employee" flow only asks for a name
+   *  and a PIN; phone can be filled in later. */
+  @Prop({ type: String, default: '', trim: true })
   phone!: string;
 
   @Prop({ type: String, default: null, trim: true, lowercase: true })
@@ -35,8 +39,11 @@ export class AttendanceEmployee {
   @Prop({ type: String, required: true })
   pinHash!: string;
 
-  /** Integer millimes per hour (see common/money.ts's convention — 1 TND = 1000 millimes). */
-  @Prop({ type: Number, required: true })
+  /** Integer millimes per hour (see common/money.ts's convention — 1 TND
+   *  = 1000 millimes). Not required at creation — the rate is typed in
+   *  directly by the admin at each payment (see PayrollService.createPayment);
+   *  this field just remembers the last rate used, to prefill next time. */
+  @Prop({ type: Number, default: 0 })
   hourlyRateMinor!: number;
 
   @Prop({ type: Boolean, default: true })

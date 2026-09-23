@@ -23,7 +23,7 @@ function fakeSession(overrides: Record<string, unknown> = {}) {
 }
 
 function fakeEmployee(overrides: Record<string, unknown> = {}) {
-  return { id: 'emp-1', firstName: 'Ahmed', lastName: 'Ben Ali', hourlyRateMinor: 6000, active: true, ...overrides };
+  return { id: 'emp-1', firstName: 'Ahmed', lastName: 'Ben Ali', hourlyRateMinor: 6000, active: true, save: jest.fn().mockResolvedValue(undefined), ...overrides };
 }
 
 /** `sessions.find(...).sort(...)` is the only chained call PayrollService
@@ -81,7 +81,7 @@ describe('PayrollService.unpaidSummary', () => {
 describe('PayrollService.createPayment', () => {
   it('throws when the employee does not exist', async () => {
     const service = serviceWith({ employees: { findById: jest.fn().mockResolvedValue(null) } });
-    await expect(service.createPayment('missing', { paymentMethod: 'cash' }, { type: 'employee', id: 'a', name: 'Admin' })).rejects.toThrow('introuvable');
+    await expect(service.createPayment('missing', { hourlyRateMinor: 6000, paymentMethod: 'cash' }, { type: 'employee', id: 'a', name: 'Admin' })).rejects.toThrow('introuvable');
   });
 
   it('throws when there are no unpaid closed sessions', async () => {
@@ -89,21 +89,32 @@ describe('PayrollService.createPayment', () => {
       employees: { findById: jest.fn().mockResolvedValue(fakeEmployee()) },
       sessions: { find: jest.fn().mockReturnValue(findResult([])) },
     });
-    await expect(service.createPayment('emp-1', { paymentMethod: 'cash' }, { type: 'employee', id: 'a', name: 'Admin' })).rejects.toThrow('Aucune heure impayée');
+    await expect(service.createPayment('emp-1', { hourlyRateMinor: 6000, paymentMethod: 'cash' }, { type: 'employee', id: 'a', name: 'Admin' })).rejects.toThrow('Aucune heure impayée');
   });
 
-  it('computes base/final amounts, snapshots the rate, stamps sessions, and audits', async () => {
+  it('rejects an invalid hourly rate before ever looking at sessions', async () => {
+    const employees = { findById: jest.fn().mockResolvedValue(fakeEmployee()) };
+    const sessions = { find: jest.fn() };
+    const service = serviceWith({ employees, sessions });
+    await expect(
+      service.createPayment('emp-1', { hourlyRateMinor: -100, paymentMethod: 'cash' }, { type: 'employee', id: 'a', name: 'Admin' }),
+    ).rejects.toThrow('Prix de l\'heure invalide');
+    expect(sessions.find).not.toHaveBeenCalled();
+  });
+
+  it('computes base/final amounts at the typed-in rate, snapshots it, stamps sessions, remembers the rate on the employee, and audits', async () => {
     const s1 = fakeSession({ id: 's1', durationMinutes: 240 });
     const s2 = fakeSession({ id: 's2', durationMinutes: 120, clockIn: new Date('2026-03-02T08:00:00.000Z'), clockOut: new Date('2026-03-02T10:00:00.000Z') });
     const created = { id: 'pay-1', payrollNumber: 'PAY-00001' };
-    const employees = { findById: jest.fn().mockResolvedValue(fakeEmployee({ hourlyRateMinor: 6000 })) };
+    const employee = fakeEmployee({ hourlyRateMinor: 5000 }); // stale rate — the calculator's typed rate must win
+    const employees = { findById: jest.fn().mockResolvedValue(employee) };
     const sessions = { find: jest.fn().mockReturnValue(findResult([s1, s2])), updateMany: jest.fn().mockResolvedValue(undefined), db: fakeTxnDb() };
     const payments = { create: jest.fn().mockResolvedValue([created]) };
     const counters = { next: jest.fn().mockResolvedValue(1) };
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
     const service = serviceWith({ employees, sessions, payments, counters, audit });
 
-    const result = await service.createPayment('emp-1', { paymentMethod: 'cash', bonusMinor: 1000, deductionMinor: 500 }, { type: 'employee', id: 'admin-1', name: 'Admin' });
+    const result = await service.createPayment('emp-1', { hourlyRateMinor: 6000, paymentMethod: 'cash', bonusMinor: 1000, deductionMinor: 500 }, { type: 'employee', id: 'admin-1', name: 'Admin' });
 
     // 360 min total * 6000/h / 60 = 36000 base; +1000 bonus -500 deduction = 36500
     expect(payments.create).toHaveBeenCalledWith(
@@ -111,6 +122,8 @@ describe('PayrollService.createPayment', () => {
       expect.anything(),
     );
     expect(sessions.updateMany).toHaveBeenCalledWith({ _id: { $in: ['s1', 's2'] } }, { $set: { payrollPaymentId: 'pay-1' } }, expect.anything());
+    expect(employee.hourlyRateMinor).toBe(6000);
+    expect(employee.save).toHaveBeenCalled();
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'payroll.pay', entityId: 'pay-1' }));
     expect(result).toBe(created);
   });
@@ -120,7 +133,7 @@ describe('PayrollService.createPayment', () => {
     const sessions = { find: jest.fn() };
     const service = serviceWith({ employees, sessions });
     await expect(
-      service.createPayment('emp-1', { paymentMethod: 'cash', bonusMinor: -100 }, { type: 'employee', id: 'a', name: 'Admin' }),
+      service.createPayment('emp-1', { hourlyRateMinor: 6000, paymentMethod: 'cash', bonusMinor: -100 }, { type: 'employee', id: 'a', name: 'Admin' }),
     ).rejects.toThrow('Prime invalide');
     expect(sessions.find).not.toHaveBeenCalled();
   });
@@ -131,7 +144,7 @@ describe('PayrollService.createPayment', () => {
     const sessions = { find: jest.fn().mockReturnValue(findResult([s1])), db: fakeTxnDb() };
     const service = serviceWith({ employees, sessions });
     await expect(
-      service.createPayment('emp-1', { paymentMethod: 'cash', deductionMinor: 999999 }, { type: 'employee', id: 'a', name: 'Admin' }),
+      service.createPayment('emp-1', { hourlyRateMinor: 6000, paymentMethod: 'cash', deductionMinor: 999999 }, { type: 'employee', id: 'a', name: 'Admin' }),
     ).rejects.toThrow('ne peut pas être négatif');
   });
 });

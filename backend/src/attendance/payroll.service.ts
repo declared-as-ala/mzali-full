@@ -99,22 +99,28 @@ export class PayrollService {
   }
 
   /**
-   * Pays every currently-unpaid CLOSED session for one employee at their
-   * CURRENT hourly rate (snapshotted onto the payment). Optional bonus/
+   * Pays every currently-unpaid CLOSED session for one employee, at a
+   * rate the admin types in at payment time (the "calculator" — this
+   * domain never fixes an hourly rate on the employee; see
+   * `AttendanceEmployee.hourlyRateMinor`'s doc). Optional bonus/
    * deduction adjust the final amount without touching the base
    * calculation, so the base/bonus/deduction breakdown always stays
-   * auditable on the payment itself.
+   * auditable on the payment itself. The rate used is remembered back
+   * onto the employee purely so the next payment's calculator prefills
+   * with it — it is never re-read for an already-created payment.
    */
   async createPayment(
     employeeId: string,
-    input: { bonusMinor?: number; deductionMinor?: number; paymentMethod: PaymentMethod; note?: string },
+    input: { hourlyRateMinor: number; bonusMinor?: number; deductionMinor?: number; paymentMethod: PaymentMethod; note?: string },
     actor: AuditActor,
   ): Promise<PayrollPaymentDocument> {
     const employee = await this.employees.findById(employeeId).catch(() => null);
     if (!employee) throw new NotFoundException('Employé introuvable');
 
+    const hourlyRateMinorSnapshot = input.hourlyRateMinor;
     const bonusMinor = input.bonusMinor ?? 0;
     const deductionMinor = input.deductionMinor ?? 0;
+    if (!Number.isInteger(hourlyRateMinorSnapshot) || hourlyRateMinorSnapshot < 0) throw new BadRequestException('Prix de l\'heure invalide.');
     if (!Number.isInteger(bonusMinor) || bonusMinor < 0) throw new BadRequestException('Prime invalide.');
     if (!Number.isInteger(deductionMinor) || deductionMinor < 0) throw new BadRequestException('Retenue invalide.');
 
@@ -122,7 +128,6 @@ export class PayrollService {
     if (!unpaid.length) throw new BadRequestException('Aucune heure impayée pour cet employé.');
 
     const totalMinutes = unpaid.reduce((sum, s) => sum + (s.durationMinutes ?? 0), 0);
-    const hourlyRateMinorSnapshot = employee.hourlyRateMinor;
     const baseAmountMinor = Math.round((totalMinutes * hourlyRateMinorSnapshot) / 60);
     const finalAmountMinor = baseAmountMinor + bonusMinor - deductionMinor;
     if (finalAmountMinor < 0) throw new BadRequestException('Le montant final ne peut pas être négatif.');
@@ -154,6 +159,8 @@ export class PayrollService {
         { session: txn },
       );
       await this.sessions.updateMany({ _id: { $in: sessionIds } }, { $set: { payrollPaymentId: doc.id } }, { session: txn });
+      employee.hourlyRateMinor = hourlyRateMinorSnapshot;
+      await employee.save({ session: txn });
       return doc;
     });
 

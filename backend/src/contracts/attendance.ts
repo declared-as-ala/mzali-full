@@ -47,6 +47,16 @@ export type PointageIdentifyResponse =
   | { ok: true; status: 'ready_to_end'; employee: { id: string; firstName: string; lastName: string }; session: { id: string; clockIn: string } }
   | { ok: true; status: 'blocked_stale_session'; employee: { id: string; firstName: string; lastName: string } };
 
+/** The public kiosk's "who's here" list — same shape as
+ *  AttendancePresentEntry minus currentMinutes (the kiosk computes
+ *  elapsed time client-side from clockIn; no admin auth involved here). */
+export type PointageActiveEntry = {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  clockIn: string;
+};
+
 export type AttendancePresentEntry = {
   employeeId: string;
   firstName: string;

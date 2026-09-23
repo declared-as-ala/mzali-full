@@ -50,22 +50,23 @@ export class AttendanceService {
   }
 
   async createEmployee(input: {
-    firstName: string; lastName: string; phone: string; email?: string | null; jobTitle?: string;
-    photoUrl?: string | null; pin: string; hourlyRateMinor: number; active?: boolean; hiredAt?: string | null; notes?: string;
+    firstName: string; lastName?: string; phone?: string; email?: string | null; jobTitle?: string;
+    photoUrl?: string | null; pin: string; hourlyRateMinor?: number; active?: boolean; hiredAt?: string | null; notes?: string;
   }): Promise<AttendanceEmployeeDocument> {
-    if (!Number.isInteger(input.hourlyRateMinor) || input.hourlyRateMinor < 0) {
+    const hourlyRateMinor = input.hourlyRateMinor ?? 0;
+    if (!Number.isInteger(hourlyRateMinor) || hourlyRateMinor < 0) {
       throw new BadRequestException('Tarif horaire invalide.');
     }
     await this.assertPinAvailable(input.pin);
     return this.employees.create({
       firstName: input.firstName.trim(),
-      lastName: input.lastName.trim(),
-      phone: input.phone.trim(),
+      lastName: input.lastName?.trim() ?? '',
+      phone: input.phone?.trim() ?? '',
       email: input.email?.trim().toLowerCase() || null,
       jobTitle: input.jobTitle?.trim() ?? '',
       photoUrl: input.photoUrl ?? null,
       pinHash: await hashPin(input.pin),
-      hourlyRateMinor: input.hourlyRateMinor,
+      hourlyRateMinor,
       active: input.active ?? true,
       hiredAt: input.hiredAt ? new Date(input.hiredAt) : null,
       notes: input.notes?.trim() ?? '',
@@ -199,6 +200,22 @@ export class AttendanceService {
         return mostRecent;
       }
       throw new BadRequestException('Aucune session ouverte pour cet employé.');
+    });
+  }
+
+  /**
+   * Currently clocked-in employees, for the kiosk's shared "who's here"
+   * list (public — no PIN needed to view, only to add a new clock-in;
+   * see AttendancePublicController's doc for the tradeoff this accepts).
+   */
+  async listActive(): Promise<{ employeeId: string; firstName: string; lastName: string; clockIn: string }[]> {
+    const open = await this.sessions.find({ status: 'OPEN' }).sort({ clockIn: 1 });
+    if (!open.length) return [];
+    const employees = await this.employees.find({ _id: { $in: open.map((s) => s.employeeId) } });
+    const byId = new Map(employees.map((e) => [e.id, e]));
+    return open.map((s) => {
+      const e = byId.get(s.employeeId);
+      return { employeeId: s.employeeId, firstName: e?.firstName ?? '—', lastName: e?.lastName ?? '', clockIn: s.clockIn.toISOString() };
     });
   }
 

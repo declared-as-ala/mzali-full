@@ -1,7 +1,7 @@
-import PointageDashboardView from '@/components/admin/PointageDashboardView';
+import PointageView from '@/components/admin/PointageView';
 
 export const dynamic = 'force-dynamic';
 
 export default function PointagePage() {
-  return <PointageDashboardView />;
+  return <PointageView />;
 }

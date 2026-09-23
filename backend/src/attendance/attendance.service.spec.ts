@@ -197,6 +197,23 @@ describe('AttendanceService.clockIn', () => {
   });
 });
 
+describe('AttendanceService.listActive', () => {
+  it('returns open sessions with employee names resolved, oldest first', async () => {
+    const openSession = { employeeId: 'emp-1', clockIn: new Date('2026-01-15T08:00:00.000Z') };
+    const employees = { find: jest.fn().mockResolvedValue([{ id: 'emp-1', firstName: 'Ahmed', lastName: 'Ben Ali' }]) };
+    const sessions = { find: jest.fn().mockReturnValue({ sort: jest.fn().mockResolvedValue([openSession]) }) };
+    const service = serviceWith(employees, sessions);
+    const result = await service.listActive();
+    expect(result).toEqual([{ employeeId: 'emp-1', firstName: 'Ahmed', lastName: 'Ben Ali', clockIn: '2026-01-15T08:00:00.000Z' }]);
+  });
+
+  it('returns an empty list when nobody is clocked in', async () => {
+    const sessions = { find: jest.fn().mockReturnValue({ sort: jest.fn().mockResolvedValue([]) }) };
+    const service = serviceWith({}, sessions);
+    expect(await service.listActive()).toEqual([]);
+  });
+});
+
 describe('AttendanceService.clockOut', () => {
   it('closes the open session and computes duration in whole minutes', async () => {
     const open = fakeSession({
