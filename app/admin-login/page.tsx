@@ -190,9 +190,13 @@ function LoginForm() {
       const fromRaw = sp.get('from');
       // On the admin subdomain, a valid `from` is prefix-free (e.g. '/stock');
       // everywhere else it's /admin-prefixed, matching adminLoginHref()'s callers.
+      // '/pointage' is a one-off exact-match exception: the gated kiosk page
+      // (app/pointage/page.tsx) lives outside /admin and sends admins back
+      // here with `from=/pointage` to unlock the physical kiosk device.
       const fromOk = fromRaw && (
         (role === 'admin' && (
-          onAdminSubdomain() ? !fromRaw.startsWith('/admin') : (fromRaw === '/admin' || fromRaw.startsWith('/admin/'))
+          fromRaw === '/pointage' ||
+          (onAdminSubdomain() ? !fromRaw.startsWith('/admin') : (fromRaw === '/admin' || fromRaw.startsWith('/admin/')))
         )) ||
         (role === 'employee' && fromRaw === home)
       );
