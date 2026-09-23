@@ -7,10 +7,13 @@ export type CheckoutCustomer = {
   phone2?: string;
   email?: string;
   city?: string;
-  /** Délégation ("Mo3tamadia") within `city` — admin-set, scoped per
+  /** Délégation ("Mo3tamadia") display name within `city` — scoped per
    *  governorate from First Delivery's own locality directory. See
    *  order.schema.ts's OrderCustomer.locality doc. */
   locality?: string;
+  /** The exact First Delivery locality id picked alongside `locality` —
+   *  see order.schema.ts's OrderCustomer.firstDeliveryLocalityId doc. */
+  firstDeliveryLocalityId?: number | null;
   address?: string;
   note?: string;
 };

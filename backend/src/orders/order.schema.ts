@@ -12,19 +12,28 @@ class OrderCustomer {
   @Prop({ type: String, default: '' }) email!: string;
   @Prop({ type: String, default: '' }) city!: string;
   /**
-   * Délégation ("Mo3tamadia" / معتمدية) within `city` (the governorate) —
-   * an explicit, admin-set signal, distinct from the free-text `address`.
-   * Feeding this into First Delivery's locality resolution as the exact
-   * delegation lets it match immediately instead of guessing from address
-   * free text, which is what previously caused the wrong delegation
-   * (e.g. "Akouda") to be silently inserted for orders that only ever had
-   * a governorate on them — see first-delivery.service.ts's
-   * resolveLocalityDetailed. Options are scoped per governorate from
-   * First Delivery's own locality directory (ShippingService
-   * .firstDeliveryDelegations), never a separate hardcoded list that
-   * could drift out of sync with what First Delivery actually recognizes.
+   * Délégation ("Mo3tamadia" / معتمدية) name within `city` (the
+   * governorate) — display label only, kept in sync with
+   * `firstDeliveryLocalityId` below whenever that's set. Never the value
+   * actually sent to First Delivery on its own (see the id field).
    */
   @Prop({ type: String, default: '' }) locality!: string;
+  /**
+   * The EXACT First Delivery locality id the customer/admin picked, from
+   * First Delivery's own live directory (see FirstDeliveryService
+   * .localitiesForGovernorate). This is the fix for locality names
+   * sometimes not matching First Delivery's records at send time: once
+   * this is set, `ShippingService.dispatch()` sends this immutable id
+   * directly (the same bypass `createShipment`'s `localityId` param
+   * already provides for the admin-confirms-ambiguity flow), completely
+   * skipping any later free-text/name re-resolution — so it can never
+   * drift from what was actually picked, regardless of how First
+   * Delivery's directory changes afterward. Null means "not yet picked",
+   * which falls back to the older name/address-based resolution (see
+   * first-delivery.service.ts's resolveLocalityDetailed) for orders
+   * created before this field existed.
+   */
+  @Prop({ type: Number, default: null }) firstDeliveryLocalityId!: number | null;
   @Prop({ type: String, default: '' }) address!: string;
   @Prop({ type: String, default: '' }) note!: string;
 }

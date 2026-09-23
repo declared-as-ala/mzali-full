@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/auth/current-user.decorator';
 import { JwtAuthGuard, RequestUser } from '@/auth/guards/jwt-auth.guard';
@@ -34,17 +34,6 @@ export class ShippingAdminController {
   @RequirePermissions('shipping.push')
   preview_firstdelivery(@Body() dto: PreviewFirstDeliveryDto) {
     return this.shipping.previewFirstDeliveryLocality(dto.orderId);
-  }
-
-  /**
-   * Distinct délégation ("Mo3tamadia") names for one governorate, straight
-   * from First Delivery's own locality directory — powers the client
-   * section's "Localité" picker, scoped to whichever Ville is selected.
-   */
-  @Get('firstdelivery/delegations')
-  @RequirePermissions('shipping.push')
-  delegations_firstdelivery(@Query('governorate') governorate: string) {
-    return this.shipping.firstDeliveryDelegations(governorate ?? '');
   }
 
   @Post('axess')

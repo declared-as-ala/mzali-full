@@ -27,6 +27,8 @@ export async function POST(req: Request) {
         phone2: rawPayload.customer.phone2 ?? '',
         email: rawPayload.customer.email ?? '',
         city: rawPayload.customer.city ?? '',
+        locality: rawPayload.customer.locality ?? '',
+        firstDeliveryLocalityId: rawPayload.customer.firstDeliveryLocalityId ?? undefined,
         address: rawPayload.customer.address ?? '',
         note: rawPayload.customer.note ?? '',
       },

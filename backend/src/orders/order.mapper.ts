@@ -109,6 +109,7 @@ export function toOrderContract(doc: Order & { id?: string; _id?: unknown }): Or
       email: doc.customer.email || undefined,
       city: doc.customer.city,
       locality: doc.customer.locality || undefined,
+      firstDeliveryLocalityId: doc.customer.firstDeliveryLocalityId ?? null,
       address: doc.customer.address,
       note: doc.customer.note || undefined,
     },

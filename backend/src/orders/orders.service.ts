@@ -193,6 +193,7 @@ export class OrdersService {
                 email: dto.customer.email ?? '',
                 city: dto.customer.city ?? '',
                 locality: dto.customer.locality ?? '',
+                firstDeliveryLocalityId: dto.customer.firstDeliveryLocalityId ?? null,
                 address: dto.customer.address ?? '',
                 note: dto.customer.note ?? '',
               },
@@ -327,6 +328,7 @@ export class OrdersService {
           email: dto.customer.email ?? '',
           city: dto.customer.city ?? '',
           locality: dto.customer.locality ?? '',
+          firstDeliveryLocalityId: dto.customer.firstDeliveryLocalityId ?? null,
           address: dto.customer.address ?? '',
           note: dto.customer.note ?? '',
         } as Order['customer'];

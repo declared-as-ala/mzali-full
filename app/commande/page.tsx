@@ -32,6 +32,8 @@ export default function CheckoutPage() {
     phone: string;
     email: string;
     city: string;
+    locality: string;
+    firstDeliveryLocalityId: number | null;
     address: string;
     note: string;
   }>({
@@ -39,9 +41,31 @@ export default function CheckoutPage() {
     phone: '',
     email: '',
     city: '',
+    locality: '',
+    firstDeliveryLocalityId: null,
     address: '',
     note: '',
   });
+
+  // Localité ("Mo3tamadia") options for the selected Ville — optional but
+  // strongly encouraged: picking the exact delegation here means First
+  // Delivery resolves the destination immediately and exactly, instead of
+  // guessing from the free-text address later. Same shared, live-directory
+  // picker the admin console uses — see app/api/firstdelivery/localities.
+  type FirstDeliveryLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
+  const [localities, setLocalities] = useState<FirstDeliveryLocality[]>([]);
+  const [localitiesLoading, setLocalitiesLoading] = useState(false);
+  useEffect(() => {
+    if (!form.city) { setLocalities([]); return; }
+    let cancelled = false;
+    setLocalitiesLoading(true);
+    fetch(`/api/firstdelivery/localities?governorate=${encodeURIComponent(form.city)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => { if (!cancelled && Array.isArray(d)) setLocalities(d); })
+      .catch(() => { if (!cancelled) setLocalities([]); })
+      .finally(() => { if (!cancelled) setLocalitiesLoading(false); });
+    return () => { cancelled = true; };
+  }, [form.city]);
 
   const shipping = 8;
   const grand = total + shipping;
@@ -88,6 +112,8 @@ export default function CheckoutPage() {
             phone: form.phone.trim(),
             email: form.email.trim(),
             city: form.city.trim(),
+            locality: form.locality,
+            firstDeliveryLocalityId: form.firstDeliveryLocalityId ?? undefined,
             address: form.address.trim(),
             note: form.note.trim(),
           },
@@ -161,6 +187,8 @@ export default function CheckoutPage() {
           phone: form.phone.trim(),
           email: form.email.trim(),
           city: form.city.trim(),
+          locality: form.locality,
+          firstDeliveryLocalityId: form.firstDeliveryLocalityId ?? undefined,
           address: form.address.trim(),
           note: form.note.trim(),
         },
@@ -343,7 +371,7 @@ export default function CheckoutPage() {
                   <select
                     className="input mt-1 font-normal text-ink-900"
                     value={form.city}
-                    onChange={(e) => setForm({ ...form, city: e.target.value })}
+                    onChange={(e) => setForm({ ...form, city: e.target.value, locality: '', firstDeliveryLocalityId: null })}
                   >
                     <option value="">{t.checkout.selectCity || 'Sélectionner Ville (optionnel)'}</option>
                     {SITE.cities.map((c) => (
@@ -353,6 +381,47 @@ export default function CheckoutPage() {
                     ))}
                   </select>
                 </label>
+
+                {/* Localité / Mo3tamadia (Optional) — shown once a Ville is
+                    picked. Picking the exact delegation here means the
+                    delivery company can resolve the destination exactly
+                    instead of guessing from the address later. */}
+                {form.city && (
+                  <label className="block text-sm font-semibold text-ink-700">
+                    <div className="flex items-center justify-between">
+                      <span>{lang === 'ar' ? 'المعتمدية' : 'Localité (Mo3tamadia)'}</span>
+                      <span className="text-[11px] font-normal text-ink-400">
+                        {lang === 'ar' ? 'اختياري' : 'Optionnel'}
+                      </span>
+                    </div>
+                    <select
+                      className="input mt-1 font-normal text-ink-900"
+                      value={form.firstDeliveryLocalityId ?? ''}
+                      disabled={localitiesLoading}
+                      onChange={(e) => {
+                        const id = e.target.value ? Number(e.target.value) : null;
+                        const picked = localities.find((l) => l.locality_id === id);
+                        setForm({ ...form, firstDeliveryLocalityId: id, locality: picked?.delegation_name ?? '' });
+                      }}
+                    >
+                      <option value="">
+                        {localitiesLoading ? (lang === 'ar' ? 'تحميل…' : 'Chargement…') : (lang === 'ar' ? 'اختر المعتمدية (اختياري)' : 'Sélectionner localité (optionnel)')}
+                      </option>
+                      {Object.entries(
+                        localities.reduce<Record<string, typeof localities>>((groups, l) => {
+                          (groups[l.delegation_name] ??= []).push(l);
+                          return groups;
+                        }, {}),
+                      ).map(([delegation, group]) => (
+                        <optgroup key={delegation} label={delegation}>
+                          {group.map((l) => (
+                            <option key={l.locality_id} value={l.locality_id}>{l.locality_name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 {/* Address (Optional) */}
                 <label className="block text-sm font-semibold text-ink-700 sm:col-span-2">

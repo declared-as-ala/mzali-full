@@ -215,7 +215,7 @@ describe('FirstDeliveryService.previewLocality (admin confirmation UX, no carrie
   });
 });
 
-describe('FirstDeliveryService.delegationsForGovernorate (Mo3tamadia picker)', () => {
+describe('FirstDeliveryService.localitiesForGovernorate / localityById (Mo3tamadia picker)', () => {
   let service: FirstDeliveryService;
   let request: jest.SpyInstance;
   beforeEach(() => {
@@ -231,28 +231,40 @@ describe('FirstDeliveryService.delegationsForGovernorate (Mo3tamadia picker)', (
     { locality_id: 20, locality_name: 'Centre', delegation_name: 'Ariana Ville', governorate_name: 'Ariana' },
   ];
 
-  it('returns distinct délégation names for the given governorate only, alphabetically sorted', async () => {
+  it('returns full locality records for the given governorate only, sorted by delegation then locality', async () => {
     request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
-    const result = await service.delegationsForGovernorate('Sousse');
-    expect(result).toEqual(['Akouda', 'Sousse Jawhara', 'Sousse Medina']);
+    const result = await service.localitiesForGovernorate('Sousse');
+    expect(result.map((l) => l.locality_id)).toEqual([12, 11, 10]); // Akouda, Sousse Jawhara, Sousse Medina
+    expect(result.every((l) => l.governorate_name === 'Sousse')).toBe(true);
   });
 
-  it('never returns a délégation from a different governorate', async () => {
+  it('never returns a locality from a different governorate', async () => {
     request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
-    const result = await service.delegationsForGovernorate('Ariana');
-    expect(result).toEqual(['Ariana Ville']);
-    expect(result).not.toContain('Akouda');
+    const result = await service.localitiesForGovernorate('Ariana');
+    expect(result).toEqual([localities[3]]);
   });
 
   it('returns an empty list for an unknown governorate rather than throwing', async () => {
     request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
-    const result = await service.delegationsForGovernorate('Nowhere');
+    const result = await service.localitiesForGovernorate('Nowhere');
     expect(result).toEqual([]);
   });
 
   it('returns an empty list for an empty governorate without even calling the directory', async () => {
-    const result = await service.delegationsForGovernorate('');
+    const result = await service.localitiesForGovernorate('');
     expect(result).toEqual([]);
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it('localityById finds the exact record by its immutable id, regardless of governorate filter', async () => {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
+    const result = await service.localityById(12);
+    expect(result).toEqual(localities[2]);
+  });
+
+  it('localityById returns null for an id that no longer exists in the live directory', async () => {
+    request.mockResolvedValueOnce(new Response(JSON.stringify({ result: localities }), { status: 200 }));
+    const result = await service.localityById(999999);
+    expect(result).toBeNull();
   });
 });

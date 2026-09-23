@@ -40,6 +40,9 @@ type FirstDeliveryPreviewState =
   | { status: 'not_found'; address: string }
   | { status: 'error'; message: string };
 
+/** Mirrors app/api/firstdelivery/localities' response shape. */
+type FirstDeliveryLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
+
 const TEMP_KEY_PREFIX = 'temp:';
 function newClientKey(): string {
   const rand = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -156,7 +159,7 @@ type OrderDraft = {
   savedAt: number;
 };
 
-const INITIAL_CUSTOMER = { firstName: '', phone: '', city: '', locality: '', address: '', phone2: '', email: '', note: '' };
+const INITIAL_CUSTOMER = { firstName: '', phone: '', city: '', locality: '', firstDeliveryLocalityId: null as number | null, address: '', phone2: '', email: '', note: '' };
 const DRAFT_PREFIX = 'mzali_order_draft:';
 
 function draftKey(orderId: string | null | undefined): string {
@@ -207,12 +210,15 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [fdPreview, setFdPreview] = useState<FirstDeliveryPreviewState>({ status: 'idle' });
   /** Admin's choice among fdPreview's candidates when status is 'ambiguous'. */
   const [fdSelectedLocalityId, setFdSelectedLocalityId] = useState<number | null>(null);
-  /** Délégation ("Mo3tamadia") options for the currently selected Ville —
+  /** Localité ("Mo3tamadia") options for the currently selected Ville —
    *  fetched from First Delivery's own live locality directory, never a
-   *  separately maintained list, so this can never offer a name First
-   *  Delivery itself doesn't recognize. See customer.locality's schema doc. */
-  const [delegations, setDelegations] = useState<string[]>([]);
-  const [delegationsLoading, setDelegationsLoading] = useState(false);
+   *  separately maintained list, so the picker can never offer a locality
+   *  First Delivery itself doesn't recognize. Full records, not just
+   *  delegation names — an exact locality_id is what's actually stored
+   *  and sent, which is what fixes locality/First-Delivery mismatches
+   *  (see order.schema.ts's OrderCustomer.firstDeliveryLocalityId doc). */
+  const [localities, setLocalities] = useState<FirstDeliveryLocality[]>([]);
+  const [localitiesLoading, setLocalitiesLoading] = useState(false);
   const [axessTracking, setAxessTracking] = useState<string>('');
   const [axessStatus, setAxessStatus] = useState<'idle' | 'sent' | 'failed'>('idle');
   const [axessMsg, setAxessMsg] = useState<string>('');
@@ -307,22 +313,22 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const subtotal = lineSubtotal;
   const total = subtotal + shipping;
 
-  // Délégation ("Mo3tamadia") options for the client section's Localité
-  // picker — refetched whenever the selected Ville changes. Never
-  // computed/cached from static data: always First Delivery's own live
-  // directory, so the picker can't drift from what First Delivery
-  // actually recognizes.
+  // Localité ("Mo3tamadia") options for the client section's picker —
+  // refetched whenever the selected Ville changes. Never computed/cached
+  // from static data: always First Delivery's own live directory (via a
+  // shared public route, not apiBase — this data isn't role-scoped), so
+  // the picker can't drift from what First Delivery actually recognizes.
   useEffect(() => {
-    if (!open || !customer.city) { setDelegations([]); return; }
+    if (!open || !customer.city) { setLocalities([]); return; }
     let cancelled = false;
-    setDelegationsLoading(true);
-    fetch(`${apiBase}/firstdelivery/delegations?governorate=${encodeURIComponent(customer.city)}`)
+    setLocalitiesLoading(true);
+    fetch(`/api/firstdelivery/localities?governorate=${encodeURIComponent(customer.city)}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((d) => { if (!cancelled && Array.isArray(d)) setDelegations(d); })
-      .catch(() => { if (!cancelled) setDelegations([]); })
-      .finally(() => { if (!cancelled) setDelegationsLoading(false); });
+      .then((d) => { if (!cancelled && Array.isArray(d)) setLocalities(d); })
+      .catch(() => { if (!cancelled) setLocalities([]); })
+      .finally(() => { if (!cancelled) setLocalitiesLoading(false); });
     return () => { cancelled = true; };
-  }, [open, apiBase, customer.city]);
+  }, [open, customer.city]);
 
   useEffect(() => {
     if (!open) return;
@@ -404,6 +410,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         phone: o.customer?.phone ?? '',
         city: o.customer?.city ?? '',
         locality: o.customer?.locality ?? '',
+        firstDeliveryLocalityId: o.customer?.firstDeliveryLocalityId ?? null,
         address: o.customer?.address ?? '',
         phone2: String((o.meta?._mzem_phone_2 as string) ?? ''),
         email: o.customer?.email ?? '',
@@ -1118,7 +1125,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 <select
                   className="input"
                   value={customer.city}
-                  onChange={(e) => setCustomer({ ...customer, city: e.target.value, locality: '' })}
+                  onChange={(e) => setCustomer({ ...customer, city: e.target.value, locality: '', firstDeliveryLocalityId: null })}
                 >
                   <option value="">Sélectionner Ville</option>
                   {SITE.cities.map((c) => <option key={c}>{c}</option>)}
@@ -1127,20 +1134,37 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
               <Field label="Localité (Mo3tamadia)">
                 <select
                   className="input"
-                  value={customer.locality}
-                  onChange={(e) => setCustomer({ ...customer, locality: e.target.value })}
-                  disabled={!customer.city || delegationsLoading}
+                  value={customer.firstDeliveryLocalityId ?? ''}
+                  onChange={(e) => {
+                    const id = e.target.value ? Number(e.target.value) : null;
+                    const picked = localities.find((l) => l.locality_id === id);
+                    setCustomer({ ...customer, firstDeliveryLocalityId: id, locality: picked?.delegation_name ?? '' });
+                  }}
+                  disabled={!customer.city || localitiesLoading}
                 >
                   <option value="">
-                    {!customer.city ? 'Sélectionnez d\'abord une ville' : delegationsLoading ? 'Chargement…' : 'Sélectionner localité'}
+                    {!customer.city ? 'Sélectionnez d\'abord une ville' : localitiesLoading ? 'Chargement…' : 'Sélectionner localité'}
                   </option>
-                  {delegations.map((d) => <option key={d} value={d}>{d}</option>)}
-                  {/* An order saved before this field existed may hold a
-                      locality value First Delivery's live directory no
-                      longer lists under this ville (renamed/merged) —
-                      keep it selectable rather than silently blanking it. */}
-                  {customer.locality && !delegations.includes(customer.locality) && (
-                    <option value={customer.locality}>{customer.locality} (historique)</option>
+                  {Object.entries(
+                    localities.reduce<Record<string, FirstDeliveryLocality[]>>((groups, l) => {
+                      (groups[l.delegation_name] ??= []).push(l);
+                      return groups;
+                    }, {}),
+                  ).map(([delegation, group]) => (
+                    <optgroup key={delegation} label={delegation}>
+                      {group.map((l) => (
+                        <option key={l.locality_id} value={l.locality_id}>{l.locality_name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {/* An order saved before this field existed (or whose
+                      picked locality First Delivery has since removed —
+                      the resolved id lookup falls back to text, but the
+                      picker itself still needs something to display) may
+                      hold a locality that no longer appears above — keep
+                      it selectable rather than silently blanking it. */}
+                  {customer.firstDeliveryLocalityId != null && !localities.some((l) => l.locality_id === customer.firstDeliveryLocalityId) && (
+                    <option value={customer.firstDeliveryLocalityId}>{customer.locality || 'Localité'} (historique)</option>
                   )}
                 </select>
               </Field>

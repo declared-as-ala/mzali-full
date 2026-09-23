@@ -268,20 +268,29 @@ export class FirstDeliveryService {
   }
 
   /**
-   * Distinct délégation ("Mo3tamadia") names under one governorate, from
-   * First Delivery's own live locality directory — never a separately
-   * maintained hardcoded list, so the admin's "Localité" picker can never
-   * offer a name First Delivery itself doesn't recognize. Powers the
-   * per-governorate `admin/shipping/firstdelivery/delegations` endpoint.
+   * Every locality under one governorate, straight from First Delivery's
+   * own live directory — never a separately maintained hardcoded list, so
+   * the "Localité" picker can never offer a locality First Delivery
+   * itself doesn't recognize. Full records (not just delegation names) so
+   * the caller can store the exact `locality_id` the customer/admin
+   * picked — see order.schema.ts's OrderCustomer.firstDeliveryLocalityId
+   * doc for why an immutable id, not a re-matched name, is what actually
+   * fixes "locality sometimes doesn't match at send time".
    */
-  async delegationsForGovernorate(gov: string): Promise<string[]> {
+  async localitiesForGovernorate(gov: string): Promise<FDLocality[]> {
     const g = this.normGov(gov);
     if (!g) return [];
     const localities = await this.getLocalities();
-    const names = new Set(
-      localities.filter((l) => this.normGov(l.governorate_name) === g).map((l) => l.delegation_name),
-    );
-    return [...names].sort((a, b) => a.localeCompare(b, 'fr'));
+    return localities
+      .filter((l) => this.normGov(l.governorate_name) === g)
+      .sort((a, b) => a.delegation_name.localeCompare(b.delegation_name, 'fr') || a.locality_name.localeCompare(b.locality_name, 'fr'));
+  }
+
+  /** Looks up one locality by its immutable First Delivery id — the
+   *  no-re-resolution-needed path once a customer/admin has picked one. */
+  async localityById(id: number): Promise<FDLocality | null> {
+    const localities = await this.getLocalities();
+    return localities.find((l) => l.locality_id === id) ?? null;
   }
 
   async createShipment(s: FirstDeliveryShipmentInput): Promise<CarrierResult> {

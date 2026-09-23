@@ -104,10 +104,32 @@ export class ShippingService {
   async previewFirstDeliveryLocality(orderId: string) {
     const order = await this.orders.findById(orderId);
     if (!order) throw new NotFoundException('Commande introuvable');
-    // Prefer the admin-confirmed délégation (Mo3tamadia) when set — an
-    // explicit signal that resolves immediately via resolveLocalityDetailed's
-    // exact-match priority, instead of falling back to free-text address
-    // guessing across the whole governorate.
+
+    // The customer/admin already picked an EXACT locality by its
+    // immutable id — look it up directly rather than re-resolving from
+    // text. This is what actually fixes "locality sometimes doesn't
+    // match at send time": a name can drift (accents, casing, First
+    // Delivery renaming/reorganizing a delegation) but an id lookup
+    // either finds the exact same record or reports it as genuinely
+    // gone, never a near-miss substitute.
+    if (order.customer.firstDeliveryLocalityId) {
+      const locality = await this.firstDelivery.localityById(order.customer.firstDeliveryLocalityId);
+      if (locality) {
+        return {
+          status: 'resolved' as const,
+          governorate: locality.governorate_name,
+          delegation: locality.delegation_name,
+          locality: locality.locality_name,
+          localityId: locality.locality_id,
+          address: order.customer.address,
+        };
+      }
+      // The id was real when picked but no longer exists in First
+      // Delivery's live directory (rare — a delegation reorganization on
+      // their end) — fall through to text-based resolution below rather
+      // than hard-failing, since the governorate/address are still there.
+    }
+
     const resolution = await this.firstDelivery.previewLocality(
       order.customer.city,
       order.customer.locality || order.customer.city,
@@ -136,11 +158,12 @@ export class ShippingService {
     return { status: 'not_found' as const, address: order.customer.address };
   }
 
-  /** Distinct délégation ("Mo3tamadia") names for one governorate, from
-   *  First Delivery's own live directory — see FirstDeliveryService
-   *  .delegationsForGovernorate. Powers the admin's per-Ville Localité picker. */
-  async firstDeliveryDelegations(governorate: string): Promise<string[]> {
-    return this.firstDelivery.delegationsForGovernorate(governorate);
+  /** Every locality for one governorate, from First Delivery's own live
+   *  directory — see FirstDeliveryService.localitiesForGovernorate.
+   *  Powers the per-Ville "Localité" picker, both in the admin drawer and
+   *  on the public checkout page. */
+  async firstDeliveryLocalities(governorate: string) {
+    return this.firstDelivery.localitiesForGovernorate(governorate);
   }
 
   private async dispatch(carrier: CarrierName, order: OrderDocument, localityId?: number): Promise<CarrierResult> {
@@ -176,8 +199,8 @@ export class ShippingService {
         return this.firstDelivery.createShipment({
           receiverName,
           receiverGov: order.customer.city,
-          // Prefer the admin-confirmed délégation over the raw governorate —
-          // see previewFirstDeliveryLocality's comment above.
+          // Text fallback only used when no locality id resolves below —
+          // see previewFirstDeliveryLocality's comment on why an id beats a name.
           receiverCity: order.customer.locality || order.customer.city,
           receiverAddress: order.customer.address,
           receiverPhone: order.customer.phone,
@@ -186,7 +209,10 @@ export class ShippingService {
           productLabel,
           itemsCount,
           note: order.customer.note || undefined,
-          localityId,
+          // Priority: an explicit per-push override (the admin confirming
+          // an ambiguous candidate right now) beats the order's own stored
+          // pick, which beats falling through to text-based resolution.
+          localityId: localityId ?? order.customer.firstDeliveryLocalityId ?? undefined,
         });
       case 'axess':
         return this.axess.createShipment({

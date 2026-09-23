@@ -20,6 +20,7 @@ class CheckoutCustomerDto {
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() locality?: string;
+  @IsOptional() @IsInt() firstDeliveryLocalityId?: number;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() note?: string;
 }
