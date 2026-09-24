@@ -114,6 +114,14 @@ services:
   worker:
     image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-worker:${IMAGE_TAG:?Set IMAGE_TAG}
     restart: unless-stopped
+    # Disabled by explicit request after the 2026-09-24 outages — plain
+    # `docker compose up -d` (what deploy.sh runs, no --profile flag) skips
+    # any service assigned to a profile, so this stays off across every
+    # future deploy without needing to delete/comment out the definition
+    # below. Re-enable with: docker compose ... --profile worker up -d
+    # (after removing this line, or passing --profile worker on every future
+    # deploy — removing the line is simpler for a permanent re-enable).
+    profiles: ["worker"]
     # Hard resource ceiling — this host has only 2 CPUs total. Root cause of
     # the 2026-09-24 outages: a stuck BullMQ/Redis retry loop in this
     # container consumed effectively unbounded CPU, starving Caddy/API/
