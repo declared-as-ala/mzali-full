@@ -120,6 +120,42 @@ class Carrier {
 }
 const CarrierSchema = SchemaFactory.createForClass(Carrier);
 
+export type DeliveryCarrierName = 'navex' | 'firstdelivery' | 'axess';
+
+/**
+ * Normalized, carrier-independent delivery confirmation — separate from
+ * `Carrier` above, which only records whether WE successfully handed the
+ * parcel to a carrier (`status: 'sent'|'failed'`), not whether the
+ * carrier actually delivered it. `status` is the only value this can
+ * hold today (`'DELIVERED'` or `null`) — kept as a string enum rather
+ * than a boolean so a future carrier-reported terminal state (e.g. a
+ * confirmed loss) can be added without a schema migration.
+ *
+ * Write-once: once `deliveredAt` is set it is never overwritten by a
+ * later sync (see jobs/cleanup.processor.ts's `sync-delivery-status`
+ * task, which guards every write with `delivery.status: {$ne:'DELIVERED'}`
+ * at the query level) — a carrier reporting "Delivered" on three
+ * separate syncs must still count as one delivery on one date.
+ */
+@Schema({ _id: false })
+export class OrderDelivery {
+  @Prop({ type: String, enum: ['DELIVERED'], default: null }) status!: 'DELIVERED' | null;
+  @Prop({ type: Date, default: null }) deliveredAt!: Date | null;
+  @Prop({ type: String, enum: ['navex', 'firstdelivery', 'axess'], default: null }) provider!: DeliveryCarrierName | null;
+  /** Best-effort human-readable status text captured from the carrier's
+   *  last response — see shipping/delivery-status.ts's doc for why this
+   *  can't be a strict typed enum per carrier (undocumented raw shapes). */
+  @Prop({ type: String, default: null }) rawStatus!: string | null;
+  @Prop({ type: Date, default: null }) lastCheckedAt!: Date | null;
+  /** Admin-confirmed delivery, entered manually rather than carrier-
+   *  reported — see #12: never conflated with a real carrier
+   *  confirmation (reason + actor are required whenever this is true). */
+  @Prop({ type: Boolean, default: false }) manual!: boolean;
+  @Prop({ type: String, default: null }) manualReason!: string | null;
+  @Prop({ type: Object, default: null }) manualBy!: { type: string; id: string | null; name: string } | null;
+}
+const OrderDeliverySchema = SchemaFactory.createForClass(OrderDelivery);
+
 @Schema({ _id: false })
 class ReturnedItem {
   @Prop({ type: String, required: true }) productId!: string;
@@ -183,6 +219,15 @@ export class Order {
 
   @Prop({ type: CarrierSchema, default: () => ({ navex: null, firstdelivery: null, axess: null }) })
   carrier!: Carrier;
+
+  /** Carrier-confirmed delivery — the source of truth for the "Chiffre
+   *  d'affaires commandes" revenue page (see delivery-revenue/). Never
+   *  read from `status`/`confirmedAt`. */
+  @Prop({
+    type: OrderDeliverySchema,
+    default: () => ({ status: null, deliveredAt: null, provider: null, rawStatus: null, lastCheckedAt: null, manual: false, manualReason: null, manualBy: null }),
+  })
+  delivery!: OrderDelivery;
 
   @Prop({ type: String, default: '' }) privateNote!: string;
   @Prop({ type: Boolean, default: false }) exchange!: boolean;
@@ -249,3 +294,9 @@ OrderSchema.index({ 'carrier.navex.tracking': 1 }, { sparse: true });
 OrderSchema.index({ 'carrier.firstdelivery.tracking': 1 }, { sparse: true });
 OrderSchema.index({ 'carrier.axess.tracking': 1 }, { sparse: true });
 OrderSchema.index({ 'returnInfo.trackingNumber': 1 }, { sparse: true });
+// Delivery-revenue page: range query by deliveredAt, filtered to
+// confirmed-delivered orders only.
+OrderSchema.index({ 'delivery.status': 1, 'delivery.deliveredAt': -1 });
+OrderSchema.index({ 'delivery.status': 1, 'delivery.provider': 1, 'delivery.deliveredAt': -1 });
+// The sync job's candidate query (oldest-checked-first, excluding already-delivered).
+OrderSchema.index({ 'delivery.status': 1, 'delivery.lastCheckedAt': 1 });

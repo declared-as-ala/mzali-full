@@ -7,7 +7,7 @@ import {
   MonitorSmartphone, Wallet, ClipboardList,
   Building2, FileText, FileSignature, Receipt,
   ShieldCheck, Award, AlertTriangle, BarChart3, CreditCard,
-  ChevronRight, Sparkles, Store, Clock
+  ChevronRight, Sparkles, Store, Clock, Banknote
 } from 'lucide-react';
 import { adminLoginHref, normalizeAdminPath } from '@/lib/admin-nav';
 import { useAdminHref } from '@/lib/admin-nav-context';
@@ -26,6 +26,10 @@ const SECTIONS = [
     label: 'Ventes',
     items: [
       { href: '/commandes', label: 'Commandes', icon: ShoppingCart, exact: false },
+      // Delivery-confirmed revenue only (delivery.status==='DELIVERED') —
+      // deliberately separate from the Dashboard/Rapports revenue KPIs,
+      // which count on order confirmation. See backend/src/delivery-revenue/.
+      { href: '/chiffre-affaires-commandes', label: "Chiffre d'affaires commandes", icon: Banknote, exact: false },
       { href: '/clients', label: 'Clients', icon: Contact, exact: false },
       { href: '/coupons', label: 'Codes promo', icon: Ticket, exact: false },
     ],

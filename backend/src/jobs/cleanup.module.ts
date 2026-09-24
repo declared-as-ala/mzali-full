@@ -8,6 +8,7 @@ import { Alert, AlertSchema } from '@/inventory/alerts/alert.schema';
 import { LowStockCheckService } from '@/inventory/alerts/low-stock-check.service';
 import { InventoryCoreModule } from '@/inventory/inventory-core.module';
 import { Order, OrderSchema } from '@/orders/order.schema';
+import { ShippingCoreModule } from '@/shipping/shipping-core.module';
 import { CleanupProcessor } from './cleanup.processor';
 import { QUEUES } from './queues';
 
@@ -20,6 +21,7 @@ import { QUEUES } from './queues';
       { name: Product.name, schema: ProductSchema },
     ]),
     InventoryCoreModule,
+    ShippingCoreModule,
   ],
   providers: [CleanupProcessor, LowStockCheckService],
 })
@@ -37,6 +39,13 @@ export class CleanupModule implements OnModuleInit {
       'check-low-stock',
       { task: 'check-low-stock' },
       { jobId: 'check-low-stock-hourly', repeat: { pattern: '0 * * * *' } },
+    );
+    // Powers "Chiffre d'affaires commandes" — the only writer of
+    // delivery.status/deliveredAt (see CleanupProcessor.syncDeliveryStatus).
+    await this.queue.add(
+      'sync-delivery-status',
+      { task: 'sync-delivery-status' },
+      { jobId: 'sync-delivery-status-20min', repeat: { pattern: '*/20 * * * *' } },
     );
     // Loyalty tiers were removed — drop the previously-scheduled repeatable
     // job so it doesn't keep firing forever from Redis's stored schedule.
