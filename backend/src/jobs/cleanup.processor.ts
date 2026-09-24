@@ -16,9 +16,12 @@ const DEFAULT_DRAFT_MAX_AGE_DAYS = 14;
 
 /** Bound per run — "tens of thousands of orders" means this must never
  *  try to sync everything in one pass; the 20-minute repeat cadence
- *  (see cleanup.module.ts) works through the backlog gradually,
- *  oldest-checked-first. */
-const DELIVERY_SYNC_BATCH_SIZE = 150;
+ *  (see cleanup.module.ts) works through the backlog gradually. At the
+ *  500ms pace below, 600 orders takes ~5 minutes — comfortably inside
+ *  the 20-minute window, and large enough that a ~30k-order backlog of
+ *  never-checked orders (the actual size observed in production before
+ *  this job first ran) clears in about a day instead of several. */
+const DELIVERY_SYNC_BATCH_SIZE = 600;
 /** An order still not delivered after 45 days is an edge case worth an
  *  admin's manual attention, not indefinite automated polling against
  *  carrier API quota. */
@@ -109,7 +112,15 @@ export class CleanupProcessor extends WorkerHost {
         createdAt: { $gte: cutoff },
         $or: CARRIER_NAMES.map((name) => ({ [`carrier.${name}.status`]: 'sent', [`carrier.${name}.tracking`]: { $ne: null } })),
       })
-      .sort({ 'delivery.lastCheckedAt': 1 })
+      // Never-checked orders (lastCheckedAt: null) all sort first as a
+      // group either way — the secondary `createdAt: -1` breaks the tie
+      // among them in favor of the MOST RECENT ones, so a fresh order
+      // gets its first check well before a 40-day-old one does (recent
+      // orders are both more likely to be actively in transit and more
+      // relevant to what an admin is actually looking at on the revenue
+      // page). Once an order has a real lastCheckedAt, it naturally sinks
+      // behind the remaining never-checked ones for future runs.
+      .sort({ 'delivery.lastCheckedAt': 1, createdAt: -1 })
       .limit(DELIVERY_SYNC_BATCH_SIZE);
 
     let checked = 0;

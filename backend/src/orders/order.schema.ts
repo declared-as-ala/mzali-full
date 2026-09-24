@@ -298,5 +298,6 @@ OrderSchema.index({ 'returnInfo.trackingNumber': 1 }, { sparse: true });
 // confirmed-delivered orders only.
 OrderSchema.index({ 'delivery.status': 1, 'delivery.deliveredAt': -1 });
 OrderSchema.index({ 'delivery.status': 1, 'delivery.provider': 1, 'delivery.deliveredAt': -1 });
-// The sync job's candidate query (oldest-checked-first, excluding already-delivered).
-OrderSchema.index({ 'delivery.status': 1, 'delivery.lastCheckedAt': 1 });
+// The sync job's candidate query (never-checked-first, newest-created
+// first among ties, excluding already-delivered) — see cleanup.processor.ts.
+OrderSchema.index({ 'delivery.status': 1, 'delivery.lastCheckedAt': 1, createdAt: -1 });
