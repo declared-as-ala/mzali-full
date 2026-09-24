@@ -43,7 +43,7 @@ function qs(params: Record<string, string | undefined>): string {
 export default function ChiffreAffairesCommandesView() {
   const toast = useToast();
   const adminHref = useAdminHref();
-  const [preset, setPreset] = useState<Preset>('thisMonth');
+  const [preset, setPreset] = useState<Preset>('lastMonth');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [summary, setSummary] = useState<Summary | null>(null);

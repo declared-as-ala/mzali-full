@@ -14,28 +14,48 @@ import { QUEUES } from './queues';
 
 const DEFAULT_DRAFT_MAX_AGE_DAYS = 14;
 
-/** Bound per run — "tens of thousands of orders" means this must never
- *  try to sync everything in one pass; the 20-minute repeat cadence
- *  (see cleanup.module.ts) works through the backlog gradually. At the
- *  500ms pace below, 600 orders takes ~5 minutes — comfortably inside
- *  the 20-minute window, and large enough that a ~30k-order backlog of
- *  never-checked orders (the actual size observed in production before
- *  this job first ran) clears in about a day instead of several. */
+/** Bound per run — this must never try to sync the whole eligible pool
+ *  in one pass; the 20-minute repeat cadence (see cleanup.module.ts)
+ *  works through it gradually. At the base ~2 req/s pace, 600 orders
+ *  takes ~5 minutes — comfortably inside the 20-minute window. */
 const DELIVERY_SYNC_BATCH_SIZE = 600;
-/** An order still not delivered after 45 days is an edge case worth an
- *  admin's manual attention, not indefinite automated polling against
- *  carrier API quota. */
-const DELIVERY_SYNC_MAX_AGE_DAYS = 45;
+/** Scoped to the last month, per explicit request — the revenue page is
+ *  only used for recent periods, and this also fixes the backlog
+ *  problem directly: excluding anything older than 31 days shrinks the
+ *  candidate pool from tens of thousands down to whatever was actually
+ *  created in the last month, so the sync catches up in hours instead
+ *  of days and stays caught up going forward. An order still not
+ *  delivered after 31 days is an edge case worth an admin's manual
+ *  attention, not indefinite automated polling against carrier API quota. */
+const DELIVERY_SYNC_MAX_AGE_DAYS = 31;
 /** Confirmed live against First Delivery's real API: firing requests
  *  back-to-back with no delay triggers `429 Too many requests` almost
  *  immediately, silently wasting most of a batch (a 429 counts as a
  *  failed check, same as any other non-ok response — see the `!result.ok`
- *  branch below). A fixed ~2 req/s pace stays well under that. */
+ *  branch below). A fixed ~2 req/s pace per carrier stays well under
+ *  that — PER CARRIER, not globally, so interleaved orders across the 3
+ *  carriers don't needlessly throttle each other (see the `pacing` map
+ *  in syncDeliveryStatus). */
 const DELIVERY_SYNC_DELAY_MS = 500;
+/** Extra cooldown applied to a specific carrier once IT reports a rate
+ *  limit — confirmed live: a 429 doesn't mean "try again in 500ms", it
+ *  means back off meaningfully before hitting that carrier again. */
+const RATE_LIMIT_BACKOFF_MS = 5000;
 const CARRIER_NAMES: readonly DeliveryCarrierName[] = ['navex', 'firstdelivery', 'axess'];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Detects a rate-limit response from whatever `getState()` put in
+ *  `result.error` (each carrier service surfaces the HTTP status and/or
+ *  the carrier's own error message there — see e.g. First Delivery's
+ *  real `429 { message: "Too many requests, please try again later." }`
+ *  response, captured live). */
+function isRateLimitError(error: string | undefined): boolean {
+  if (!error) return false;
+  const norm = error.toLowerCase();
+  return norm.includes('429') || norm.includes('too many request') || norm.includes('rate limit');
 }
 
 /**
@@ -123,19 +143,32 @@ export class CleanupProcessor extends WorkerHost {
       .sort({ 'delivery.lastCheckedAt': 1, createdAt: -1 })
       .limit(DELIVERY_SYNC_BATCH_SIZE);
 
+    // Epoch-ms "don't call this carrier again before this instant" —
+    // per carrier, not a single global clock, so e.g. a Navex cooldown
+    // never delays a First Delivery call that's next in line.
+    const nextAllowedAt: Record<DeliveryCarrierName, number> = { navex: 0, firstdelivery: 0, axess: 0 };
     let checked = 0;
     let delivered = 0;
     let failed = 0;
+    const failureReasons = new Map<string, number>();
+    const recordFailure = (reason: string) => failureReasons.set(reason, (failureReasons.get(reason) ?? 0) + 1);
+
     for (const order of candidates) {
       const active = this.activeCarrierFor(order);
       if (!active) continue;
-      if (checked > 0) await sleep(DELIVERY_SYNC_DELAY_MS);
+
+      const waitMs = nextAllowedAt[active.carrier] - Date.now();
+      if (waitMs > 0) await sleep(waitMs);
+
       checked++;
       const now = new Date();
       try {
         const result = await this.serviceFor(active.carrier).getState(active.tracking);
+        const rateLimited = isRateLimitError(result.error);
+        nextAllowedAt[active.carrier] = Date.now() + (rateLimited ? RATE_LIMIT_BACKOFF_MS : DELIVERY_SYNC_DELAY_MS);
         if (!result.ok) {
           failed++;
+          recordFailure(result.error ?? 'unknown error');
           await this.orders.updateOne({ _id: order._id }, { $set: { 'delivery.lastCheckedAt': now } });
           continue;
         }
@@ -153,11 +186,17 @@ export class CleanupProcessor extends WorkerHost {
           await this.orders.updateOne({ _id: order._id }, { $set: { 'delivery.rawStatus': rawText, 'delivery.lastCheckedAt': now } });
         }
       } catch (err) {
+        nextAllowedAt[active.carrier] = Date.now() + DELIVERY_SYNC_DELAY_MS;
         failed++;
-        this.logger.warn(`Delivery-status sync failed for order ${order.id} (${active.carrier}): ${String(err)}`);
+        const reason = String(err);
+        recordFailure(reason);
+        this.logger.warn(`Delivery-status sync failed for order ${order.id} (${active.carrier}): ${reason}`);
         await this.orders.updateOne({ _id: order._id }, { $set: { 'delivery.lastCheckedAt': now } });
       }
     }
-    if (checked > 0) this.logger.log(`Delivery-status sync: checked ${checked} (${failed} failed), newly delivered ${delivered}`);
+    if (checked > 0) {
+      const reasons = [...failureReasons.entries()].map(([reason, count]) => `${reason} x${count}`).join('; ');
+      this.logger.log(`Delivery-status sync: checked ${checked} (${failed} failed${reasons ? ` — ${reasons}` : ''}), newly delivered ${delivered}`);
+    }
   }
 }
