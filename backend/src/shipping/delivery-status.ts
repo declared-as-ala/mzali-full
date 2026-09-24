@@ -75,20 +75,42 @@ function collectStrings(value: unknown, out: string[], depth = 0): void {
  *  depends on this matching (see collectStrings above for that). */
 const STATUS_KEY_HINTS = ['etat', 'status', 'statut', 'state', 'libelle', 'label', 'message'];
 
-function findStatusLikeString(value: unknown, depth = 0): string | null {
-  if (depth > 6 || !value || typeof value !== 'object') return null;
-  const obj = value as Record<string, unknown>;
-  for (const key of Object.keys(obj)) {
-    const v = obj[key];
-    if (typeof v === 'string' && v.trim() && STATUS_KEY_HINTS.some((hint) => key.toLowerCase().includes(hint))) return v;
+/**
+ * Confirmed live against First Delivery's real `/etat` response (see
+ * commit history — no field name here was guessed): it wraps its actual
+ * status in `result.state`, alongside a generic top-level `message` like
+ * "État du produit récupéré avec succès" ("product status retrieved
+ * successfully") that ALSO matches the hints above but says nothing
+ * about the parcel itself. Any key in this list is deprioritized to a
+ * last-resort fallback so a real nested status field always wins.
+ */
+const GENERIC_ENVELOPE_KEYS = new Set(['message', 'status', 'iserror', 'ok', 'success', 'error']);
+
+function collectKeyValueStrings(value: unknown, out: { key: string; value: string }[], depth = 0): void {
+  if (depth > 6 || out.length > 200) return;
+  if (Array.isArray(value)) {
+    for (const v of value) collectKeyValueStrings(v, out, depth + 1);
+    return;
   }
-  for (const v of Object.values(obj)) {
-    if (v && typeof v === 'object') {
-      const found = findStatusLikeString(v, depth + 1);
-      if (found) return found;
+  if (value && typeof value === 'object') {
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof v === 'string' && v.trim()) out.push({ key, value: v });
+      else collectKeyValueStrings(v, out, depth + 1);
     }
   }
-  return null;
+}
+
+function findStatusLikeString(raw: unknown): string | null {
+  const pairs: { key: string; value: string }[] = [];
+  collectKeyValueStrings(raw, pairs);
+  const isHint = (key: string) => STATUS_KEY_HINTS.some((hint) => key.toLowerCase().includes(hint));
+  // A specific, non-generic status field (e.g. `result.state`) always wins...
+  const specific = pairs.find((p) => isHint(p.key) && !GENERIC_ENVELOPE_KEYS.has(p.key.toLowerCase()));
+  if (specific) return specific.value;
+  // ...only falling back to a generic envelope field (`message`, `status`)
+  // when nothing more specific exists anywhere in the payload.
+  const generic = pairs.find((p) => isHint(p.key));
+  return generic ? generic.value : null;
 }
 
 export type DeliveryStatusCheck = {

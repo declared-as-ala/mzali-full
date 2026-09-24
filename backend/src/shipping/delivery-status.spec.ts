@@ -42,6 +42,21 @@ describe('checkDeliveredStatus', () => {
     expect(checkDeliveredStatus(raw).rawText).toBe('Livré');
   });
 
+  it('prefers a nested specific status field (result.state) over a generic top-level "message" envelope — regression for the real First Delivery /etat shape', () => {
+    // Captured live from https://www.firstdeliverygroup.com/api/v2/etat —
+    // `message` is a generic "request succeeded" wrapper, NOT the parcel
+    // status; the real status is `result.state`.
+    const raw = { status: 200, isError: false, message: 'État du produit récupéré avec succès', result: { state: 'Au magasin', barCode: '134508619406' } };
+    const check = checkDeliveredStatus(raw);
+    expect(check.rawText).toBe('Au magasin');
+    expect(check.delivered).toBe(false);
+  });
+
+  it('falls back to the generic envelope message only when no specific status field exists', () => {
+    const raw = { status: 200, message: 'Une erreur générique' };
+    expect(checkDeliveredStatus(raw).rawText).toBe('Une erreur générique');
+  });
+
   it('falls back to the matched keyword string when no status-like key is found', () => {
     const raw = { result: ['Colis livré'] };
     const check = checkDeliveredStatus(raw);

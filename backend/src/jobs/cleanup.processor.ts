@@ -23,7 +23,17 @@ const DELIVERY_SYNC_BATCH_SIZE = 150;
  *  admin's manual attention, not indefinite automated polling against
  *  carrier API quota. */
 const DELIVERY_SYNC_MAX_AGE_DAYS = 45;
+/** Confirmed live against First Delivery's real API: firing requests
+ *  back-to-back with no delay triggers `429 Too many requests` almost
+ *  immediately, silently wasting most of a batch (a 429 counts as a
+ *  failed check, same as any other non-ok response — see the `!result.ok`
+ *  branch below). A fixed ~2 req/s pace stays well under that. */
+const DELIVERY_SYNC_DELAY_MS = 500;
 const CARRIER_NAMES: readonly DeliveryCarrierName[] = ['navex', 'firstdelivery', 'axess'];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Shares the CLEANUP queue rather than getting its own — this is a
@@ -104,14 +114,17 @@ export class CleanupProcessor extends WorkerHost {
 
     let checked = 0;
     let delivered = 0;
+    let failed = 0;
     for (const order of candidates) {
       const active = this.activeCarrierFor(order);
       if (!active) continue;
+      if (checked > 0) await sleep(DELIVERY_SYNC_DELAY_MS);
       checked++;
       const now = new Date();
       try {
         const result = await this.serviceFor(active.carrier).getState(active.tracking);
         if (!result.ok) {
+          failed++;
           await this.orders.updateOne({ _id: order._id }, { $set: { 'delivery.lastCheckedAt': now } });
           continue;
         }
@@ -129,10 +142,11 @@ export class CleanupProcessor extends WorkerHost {
           await this.orders.updateOne({ _id: order._id }, { $set: { 'delivery.rawStatus': rawText, 'delivery.lastCheckedAt': now } });
         }
       } catch (err) {
+        failed++;
         this.logger.warn(`Delivery-status sync failed for order ${order.id} (${active.carrier}): ${String(err)}`);
         await this.orders.updateOne({ _id: order._id }, { $set: { 'delivery.lastCheckedAt': now } });
       }
     }
-    if (checked > 0) this.logger.log(`Delivery-status sync: checked ${checked}, newly delivered ${delivered}`);
+    if (checked > 0) this.logger.log(`Delivery-status sync: checked ${checked} (${failed} failed), newly delivered ${delivered}`);
   }
 }
