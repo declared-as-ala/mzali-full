@@ -114,6 +114,16 @@ services:
   worker:
     image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-worker:${IMAGE_TAG:?Set IMAGE_TAG}
     restart: unless-stopped
+    # Hard resource ceiling — this host has only 2 CPUs total. Root cause of
+    # the 2026-09-24 outages: a stuck BullMQ/Redis retry loop in this
+    # container consumed effectively unbounded CPU, starving Caddy/API/
+    # storefront's own health checks on the SAME shared cores and taking
+    # the whole site down. Capping the worker at 1 CPU / 768MB means any
+    # future bug in this container (this one or a different one) can never
+    # again take more than half the box — the rest of the stack keeps
+    # serving traffic even if the worker is fully wedged.
+    cpus: "1.0"
+    mem_limit: "768m"
     environment:
       <<: *backend-environment
     depends_on:
@@ -143,6 +153,20 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set MONGO_INITDB_ROOT_PASSWORD}
       MONGO_REPLICA_KEY: ${MONGO_REPLICA_KEY:?Set MONGO_REPLICA_KEY}
+    # `interval` MUST exceed `timeout` (see the 2026-09-24 outage postmortem
+    # in deploy/README or the commit that added this comment) — the
+    # original config had interval:5s < timeout:10s, so under any host
+    # slowdown a check could still be running when Docker started the NEXT
+    # one 5s later. Docker does not guarantee the old `mongosh` process
+    # gets killed cleanly under CPU starvation, so these piled up (7+
+    # concurrent `mongosh` processes observed live), which itself consumed
+    # enough CPU/RAM to make the host slower still — a self-reinforcing
+    # spiral that starved every other container's own health checks too.
+    # Also narrowed the failure branch: the original blindly called
+    # rs.initiate() on ANY exception from rs.status(), including a
+    # transient timeout on an already-initialized replica set (this one
+    # has been initialized for 50+ days) — now only re-initiates on the
+    # specific "not yet initialized" error.
     healthcheck:
       test:
         - CMD-SHELL
@@ -150,11 +174,13 @@ services:
           mongosh --quiet --username "$$MONGO_INITDB_ROOT_USERNAME"
           --password "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin
           --eval "try { rs.status().ok } catch (e) {
-          rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok }"
-      interval: 5s
-      timeout: 10s
-      retries: 30
-      start_period: 20s
+          e.codeName === 'NotYetInitialized'
+          ? rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}).ok
+          : false }"
+      interval: 20s
+      timeout: 8s
+      retries: 10
+      start_period: 30s
     networks: [mzali-internal]
     logging: *default-logging
 
