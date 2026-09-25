@@ -153,6 +153,7 @@ services:
     entrypoint: ["/bin/bash", "-ec"]
     command:
       - |
+        rm -f /tmp/mongo-keyfile
         printf '%s' "$${MONGO_REPLICA_KEY}" > /tmp/mongo-keyfile
         chown mongodb:mongodb /tmp/mongo-keyfile
         chmod 400 /tmp/mongo-keyfile
