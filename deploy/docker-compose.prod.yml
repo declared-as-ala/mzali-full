@@ -218,6 +218,17 @@ services:
     # alpine:3.20 — see that file's comment on why quay.io/minio/mc
     # stopped resolving), but this override replaces the base `command:`
     # entirely, so the `mc` bootstrap step has to be repeated here too.
+    #
+    # Base compose only puts this on mzali-internal (no route out — see
+    # api/worker's doc above for why), which broke the `mc` bootstrap:
+    # wget couldn't reach github.com at all, `mc` never got written, and
+    # the container exited 127 trying to run it. Adding egress here is
+    # the same narrow, deliberate exception api/worker already have, for
+    # the same reason (a real outbound call this container needs to make)
+    # — the blast-radius concern is much smaller for this one: it's a
+    # one-shot bootstrap container (`restart: "no"`) that exits after a
+    # single run, not a long-running service handling untrusted input.
+    networks: [mzali-internal, egress]
     command:
       - |
         set -eu
