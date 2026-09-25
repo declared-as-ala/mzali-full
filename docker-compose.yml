@@ -79,10 +79,16 @@ services:
 
   minio-init:
     # See deploy/docker-compose.yml's comment on this service — quay.io/
-    # minio/mc stopped resolving anonymously (401), so this fetches the
-    # `mc` binary straight from GitHub Releases (checksum-verified)
-    # instead, on a plain alpine base.
-    image: alpine:3.20
+    # minio/mc stopped resolving anonymously (401), and the follow-up
+    # fetch-at-runtime attempt broke too (backup-minio.sh/restore-minio.sh
+    # both assume `mc` is already IN the image, bypassing any bootstrap
+    # `command:`). Real fix: build the same image deploy/Dockerfile.mc
+    # produces (mc baked in at build time, checksum-verified) locally
+    # here too, instead of pulling a pre-built one from GHCR — no
+    # registry auth needed for local dev.
+    build:
+      context: deploy
+      dockerfile: Dockerfile.mc
     env_file:
       - backend/.env
     depends_on:
@@ -92,10 +98,6 @@ services:
     command:
       - |
         set -eu
-        MC_VERSION="RELEASE.2025-08-13T08-35-41Z"
-        wget -qO /usr/local/bin/mc "https://github.com/minio/mc/releases/download/$${MC_VERSION}/mc.linux-amd64.$${MC_VERSION}"
-        echo "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891  /usr/local/bin/mc" | sha256sum -c -
-        chmod +x /usr/local/bin/mc
         mc alias set local http://minio:9000 "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}"
         for bucket in catalog categories banners avatars documents exports temp; do
           mc mb --ignore-existing "local/$${bucket}"

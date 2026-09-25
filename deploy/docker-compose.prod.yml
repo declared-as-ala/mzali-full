@@ -214,28 +214,17 @@ services:
     logging: *default-logging
 
   minio-init:
-    # This service's `image:` comes from the base compose file (now
-    # alpine:3.20 — see that file's comment on why quay.io/minio/mc
-    # stopped resolving), but this override replaces the base `command:`
-    # entirely, so the `mc` bootstrap step has to be repeated here too.
-    #
-    # Base compose only puts this on mzali-internal (no route out — see
-    # api/worker's doc above for why), which broke the `mc` bootstrap:
-    # wget couldn't reach github.com at all, `mc` never got written, and
-    # the container exited 127 trying to run it. Adding egress here is
-    # the same narrow, deliberate exception api/worker already have, for
-    # the same reason (a real outbound call this container needs to make)
-    # — the blast-radius concern is much smaller for this one: it's a
-    # one-shot bootstrap container (`restart: "no"`) that exits after a
-    # single run, not a long-running service handling untrusted input.
-    networks: [mzali-internal, egress]
+    # `image:` comes from the base compose file (now our own GHCR-hosted
+    # `mc` image with the binary baked in at build time — see that
+    # file's comment for the two failed attempts before this one). This
+    # override only replaces `command:` (to add backup volumes/logging),
+    # so no bootstrap step is needed here — `mc` is just already there,
+    # exactly like the original quay.io/minio/mc image, and this service
+    # stays on mzali-internal only (no egress needed, nothing to download
+    # at runtime).
     command:
       - |
         set -eu
-        MC_VERSION="RELEASE.2025-08-13T08-35-41Z"
-        wget -qO /usr/local/bin/mc "https://github.com/minio/mc/releases/download/$${MC_VERSION}/mc.linux-amd64.$${MC_VERSION}"
-        echo "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891  /usr/local/bin/mc" | sha256sum -c -
-        chmod +x /usr/local/bin/mc
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         for bucket in catalog categories banners avatars documents exports temp; do
           mc mb --ignore-existing "local/$${bucket}"

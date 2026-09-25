@@ -118,7 +118,53 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --runInBand
 
+  # Builds and publishes the `mc` (MinIO Client) replacement image — see
+  # deploy/Dockerfile.mc's doc comment for why this exists: quay.io/
+  # minio/mc stopped resolving anonymously on 2026-09-25, so minio-init
+  # (and backup-minio.sh / restore-minio.sh, which both run `mc` inside
+  # that same service's image) now pull this instead. Fixed tag tied to
+  # the mc release baked in, not to this app repo's own commit SHAs —
+  # this image only needs rebuilding when deploy/Dockerfile.mc changes.
+  mc-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Normalize GHCR owner
+        shell: bash
+        run: echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - name: Build mc image
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy
+          file: deploy/Dockerfile.mc
+          push: false
+          load: true
+          tags: |
+            mc:ci
+            ghcr.io/${{ env.IMAGE_OWNER }}/mc:RELEASE.2025-08-13T08-35-41Z
+            ghcr.io/${{ env.IMAGE_OWNER }}/mc:latest
+          cache-from: type=gha,scope=mc-image
+          cache-to: type=gha,mode=max,scope=mc-image
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish mc image
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        shell: bash
+        run: |
+          docker push "ghcr.io/$IMAGE_OWNER/mc:RELEASE.2025-08-13T08-35-41Z"
+          docker push "ghcr.io/$IMAGE_OWNER/mc:latest"
+
   compose-validate:
+    needs: [mc-image]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

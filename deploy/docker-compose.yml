@@ -52,11 +52,21 @@ services:
     # of 2026-09-25 — MinIO restricted anonymous pulls on both quay.io and
     # Docker Hub for their own images). `docker compose config -q` in CI
     # HEAD-checks every pinned digest, so a dead reference here fails the
-    # whole pipeline before anything even runs. Fix: a plain, still-freely-
-    # pullable alpine image that fetches the `mc` binary straight from
-    # GitHub Releases (checksum-verified) at container start instead of
-    # depending on MinIO's own registries at all.
-    image: alpine:3.20
+    # whole pipeline before anything even runs.
+    #
+    # First fix attempt (alpine + wget the `mc` binary from GitHub
+    # Releases at container START) broke a second time: this service's
+    # own `command:` isn't the only place that runs `mc` — backup-minio.sh
+    # and restore-minio.sh both do `compose run --rm --entrypoint /bin/sh
+    # minio-init -ec '...uses mc...'`, which bypasses this `command:`
+    # entirely and assumes `mc` is already IN the image (true for the old
+    # quay.io/minio/mc image, false for a bare alpine one). Real fix: a
+    # tiny custom image with `mc` baked in at BUILD time (checksum-
+    # verified), published to our own GHCR by CI (see the `mc-image` job
+    # in .github/workflows/ci.yml and deploy/Dockerfile.mc) — every call
+    # site that assumed "mc is just there" goes back to being correct,
+    # with no per-site bootstrap script to remember or forget.
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
@@ -67,10 +77,6 @@ services:
     command:
       - |
         set -eu
-        MC_VERSION="RELEASE.2025-08-13T08-35-41Z"
-        wget -qO /usr/local/bin/mc "https://github.com/minio/mc/releases/download/$${MC_VERSION}/mc.linux-amd64.$${MC_VERSION}"
-        echo "01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891  /usr/local/bin/mc" | sha256sum -c -
-        chmod +x /usr/local/bin/mc
         mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
         for bucket in catalog categories banners avatars documents exports temp; do
           mc mb --ignore-existing "local/$${bucket}"
