@@ -73,7 +73,19 @@ trap deploy_failed ERR
 
 bash "$SCRIPT_DIR/backup-mongodb.sh"
 bash "$SCRIPT_DIR/backup-minio.sh"
-compose pull
+# --ignore-pull-failures: the minio server image is pinned to a quay.io
+# digest that stopped resolving anonymously on 2026-09-25 (MinIO
+# restricted anonymous pulls for their own images — see the compose-
+# validate CI job's comment for the full story). The running container
+# already has this exact digest cached locally, so `up -d` below
+# recreates/keeps it just fine without a fresh pull — a hard-failing
+# `compose pull` here would otherwise block EVERY future deploy (of
+# every service, not just minio) on an image we don't actually need to
+# re-fetch. Every other image is still expected to pull normally; a real
+# failure there just means `up -d` won't have a newer image to switch to,
+# which surfaces immediately as "still running the old version", not a
+# silent success.
+compose pull --ignore-pull-failures
 compose up -d --remove-orphans
 compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || true
 
