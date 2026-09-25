@@ -168,11 +168,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Normalize GHCR owner
+        shell: bash
+        run: echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
       - name: Validate production compose and MinIO image availability
         env:
-          # Dummy values only — this step never starts anything. It validates
-          # the merged config and checks MinIO manifests before deployment.
-          GHCR_OWNER: ci
+          # Dummy values only, EXCEPT GHCR_OWNER — that one is load-bearing
+          # now: minio-init's image really was published under the real
+          # (lowercased) owner by the mc-image job above, so checking
+          # reachability needs the real value, not a placeholder like the
+          # other dummy vars below (those only resolve config, never get
+          # reachability-checked).
+          GHCR_OWNER: ${{ env.IMAGE_OWNER }}
           IMAGE_TAG: ci
           STOREFRONT_DOMAIN: shop.example.com
           WWW_DOMAIN: www.example.com
