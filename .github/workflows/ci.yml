@@ -152,29 +152,39 @@ jobs:
           COMPOSE="docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml"
           $COMPOSE config -q
 
-          # minio-init: alpine + the `mc` binary fetched from GitHub Releases
-          # at container start (see that service's compose comment for why
-          # it no longer depends on a pre-built quay.io/Docker Hub image) --
-          # expected to always resolve, so this hard-fails the job.
-          mc_image=$($COMPOSE config --images minio-init)
-          docker buildx imagetools inspect "$mc_image" >/dev/null
-
-          # minio (the object-storage SERVER) is still pinned to a quay.io
-          # digest that stopped resolving anonymously on 2026-09-25 --
-          # confirmed live: MinIO restricted anonymous pulls for their own
-          # images on BOTH quay.io and Docker Hub, not a transient blip, and
-          # no GitHub-Releases binary or working mirror exists for the
-          # server (unlike the `mc` client). The already-running production
-          # container has this exact digest cached locally and keeps
-          # serving without a fresh pull (deploy.sh's `compose pull
-          # --ignore-pull-failures` makes the same trade-off deliberately),
-          # so this check is a WARNING, not a hard failure, until a real
-          # long-term fix (a self-hosted mirror in our own GHCR, most
-          # likely) lands -- track that separately, don't silently forget it.
-          minio_image=$($COMPOSE config --images minio)
-          if ! docker buildx imagetools inspect "$minio_image" >/dev/null 2>&1; then
-            echo "::warning::minio server image ($minio_image) is not reachable upstream (MinIO restricted anonymous registry pulls). The running production container already has it cached and is unaffected, but a fresh VPS or an image prune would fail to pull it -- needs a real fix (self-hosted mirror)."
-          fi
+          # `--images minio-init` also returns `minio`'s image (its
+          # depends_on target) -- compose resolves the full dependency
+          # chain for a named service, not just that service's own image.
+          # Verified live locally; do not assume single-line output here.
+          images=$($COMPOSE config --images minio-init)
+          while IFS= read -r image; do
+            [ -z "$image" ] && continue
+            if [[ "$image" == quay.io/minio/* ]]; then
+              # minio (the object-storage SERVER) is still pinned to a
+              # quay.io digest that stopped resolving anonymously on
+              # 2026-09-25 -- confirmed live: MinIO restricted anonymous
+              # pulls for their own images on BOTH quay.io and Docker Hub,
+              # not a transient blip, and no GitHub-Releases binary or
+              # working mirror exists for the server (unlike the `mc`
+              # client, handled below). The already-running production
+              # container has this exact digest cached locally and keeps
+              # serving without a fresh pull (deploy.sh's `compose pull
+              # --ignore-pull-failures` makes the same trade-off
+              # deliberately), so this is a WARNING, not a hard failure,
+              # until a real long-term fix (a self-hosted mirror in our
+              # own GHCR, most likely) lands -- track that separately,
+              # don't silently forget it.
+              if ! docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
+                echo "::warning::$image is not reachable upstream (MinIO restricted anonymous registry pulls). The running production container already has it cached and is unaffected, but a fresh VPS or an image prune would fail to pull it -- needs a real fix (self-hosted mirror)."
+              fi
+            else
+              # minio-init's own image (alpine:3.20 + the `mc` binary
+              # fetched from GitHub Releases at container start, see that
+              # service's compose comment) -- expected to always resolve,
+              # so this hard-fails the job.
+              docker buildx imagetools inspect "$image" >/dev/null
+            fi
+          done <<< "$images"
 
   docker:
     needs: [frontend, pos, backend, compose-validate]
