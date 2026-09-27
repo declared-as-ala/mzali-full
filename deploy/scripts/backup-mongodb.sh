@@ -50,12 +50,20 @@ compose() {
 }
 
 echo "Creating MongoDB backup $mongo_dir/dump.archive.gz"
+# mongodump runs INSIDE the same container as mongod, on a 2-CPU box — with no
+# priority hint it competes head-to-head with mongod for both CPU and disk IO
+# during the dump, which has previously stalled mongod enough to fail its own
+# healthcheck mid-deploy. nice/ionice tell the scheduler mongodump can wait;
+# --numParallelCollections=1 caps mongodump's own concurrency (default: 4) so
+# it doesn't fan out across every core at once.
 # Variables in this single-quoted command expand inside the Mongo container.
 # shellcheck disable=SC2016
 compose exec -T mongo sh -ec '
-  mongodump --quiet --username "$MONGO_INITDB_ROOT_USERNAME" \
+  IONICE=""
+  if command -v ionice >/dev/null 2>&1; then IONICE="ionice -c3"; fi
+  nice -n 19 $IONICE mongodump --quiet --username "$MONGO_INITDB_ROOT_USERNAME" \
     --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin \
-    --db mzali --archive --gzip
+    --db mzali --archive --gzip --numParallelCollections=1
 ' > "$mongo_dir/dump.archive.gz"
 [[ -s "$mongo_dir/dump.archive.gz" ]] || { echo "MongoDB backup is empty" >&2; exit 1; }
 
