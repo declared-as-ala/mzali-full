@@ -138,3 +138,27 @@
 
 	respond "Not found" 404
 }
+
+# facture — a separate app (own repo, own Postgres) that shares this host.
+# Deliberately NOT part of the mzali compose project: it lives at
+# /opt/facture and only joins the caddy-edge network (which this container
+# is also on) so we can reach it by container name. It is not on
+# mzali-internal, so it has no path to mongo/redis/minio/api. If it is down
+# or absent, only this block returns 502; every other site is unaffected.
+{$FACTURE_DOMAIN} {
+	import security_headers
+	encode zstd gzip
+	request_body {
+		max_size 25MB
+	}
+	# Next.js static assets are content-hashed, same as the storefront block.
+	@static_assets path /_next/static/*
+	header @static_assets Cache-Control "public, max-age=31536000, immutable"
+	reverse_proxy facture-web:3000 {
+		header_up X-Real-IP {remote_host}
+		transport http {
+			read_timeout 60s
+			dial_timeout 5s
+		}
+	}
+}

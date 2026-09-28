@@ -8,6 +8,7 @@ services:
   storefront:
     image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-storefront:${IMAGE_TAG:?Set IMAGE_TAG}
     restart: unless-stopped
+    mem_limit: "512m"
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -37,6 +38,7 @@ services:
   pos:
     image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-pos:${IMAGE_TAG:?Set IMAGE_TAG}
     restart: unless-stopped
+    mem_limit: "256m"
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -55,6 +57,7 @@ services:
   api:
     image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/mzali-api:${IMAGE_TAG:?Set IMAGE_TAG}
     restart: unless-stopped
+    mem_limit: "512m"
     environment: &backend-environment
       NODE_ENV: production
       PORT: 4000
@@ -150,6 +153,11 @@ services:
 
   mongo:
     restart: unless-stopped
+    # Memory ceilings on every service are sized so the sum stays well under
+    # RAM + swap (3.7GB + 3GB) even if all hit their cap at once; typical real
+    # usage is about half. WiredTiger cache is 0.5GB, the rest is connection/
+    # index/oplog overhead. Added after the 2026-09-28 mongod OOM kill.
+    mem_limit: "1024m"
     entrypoint: ["/bin/bash", "-ec"]
     command:
       - |
@@ -157,7 +165,7 @@ services:
         printf '%s' "$${MONGO_REPLICA_KEY}" > /tmp/mongo-keyfile
         chown mongodb:mongodb /tmp/mongo-keyfile
         chmod 400 /tmp/mongo-keyfile
-        exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /tmp/mongo-keyfile
+        exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --auth --keyFile /tmp/mongo-keyfile --wiredTigerCacheSizeGB 0.5
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Set MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Set MONGO_INITDB_ROOT_PASSWORD}
@@ -195,6 +203,7 @@ services:
 
   redis:
     restart: unless-stopped
+    mem_limit: "128m"
     command:
       - sh
       - -ec
@@ -211,6 +220,7 @@ services:
 
   minio:
     restart: unless-stopped
+    mem_limit: "640m"
     logging: *default-logging
 
   minio-init:
@@ -240,6 +250,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    mem_limit: "256m"
     environment:
       STOREFRONT_DOMAIN: ${STOREFRONT_DOMAIN:?Set STOREFRONT_DOMAIN}
       WWW_DOMAIN: ${WWW_DOMAIN:?Set WWW_DOMAIN}
@@ -247,6 +258,7 @@ services:
       POS_DOMAIN: ${POS_DOMAIN:?Set POS_DOMAIN}
       API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN:?Set MEDIA_DOMAIN}
+      FACTURE_DOMAIN: ${FACTURE_DOMAIN:-facture.ahmedmzaliboutique.tn}
       CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?Set CADDY_ACME_EMAIL}
     ports:
       - "80:80"

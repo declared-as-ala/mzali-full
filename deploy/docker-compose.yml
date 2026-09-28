@@ -1,7 +1,11 @@
 services:
   mongo:
     image: mongo:7
-    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    # Explicit WiredTiger cache cap. The default is 50% of (RAM - 1GB) as seen by
+    # the container, which on this shared 3.7GB host meant a ~1.3GB cache plus
+    # overhead; mongod was OOM-killed at 1.8GB RSS on 2026-09-28. Keep in sync
+    # with the command override in docker-compose.prod.yml.
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.5"]
     restart: unless-stopped
     volumes:
       - mongo-data:/data/db
