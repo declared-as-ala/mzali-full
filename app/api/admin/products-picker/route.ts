@@ -56,6 +56,8 @@ export async function GET(req: Request) {
       image: getPrimaryProductImage(p.images)?.url ?? '',
       status: p.status,
       posOnly: Boolean(p.posOnly),
+      // Live sellable stock (sum of active variants at DEPOT); null when stock is not tracked.
+      stock: p.inventoryEnabled === false ? null : (p.variants ?? []).filter((v) => v.active).reduce((sum, v) => sum + (v.available ?? 0), 0),
     })),
   );
 }

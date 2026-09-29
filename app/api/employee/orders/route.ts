@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { orderService } from '@/services';
 import { ApiError } from '@/services/mzali-api/client';
+import { apiErrorResponse } from '@/lib/api-error-response';
 
 export async function POST(req: Request) {
   const session = await getSession();
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
     return NextResponse.json(order);
   } catch (e) {
     const status = e instanceof ApiError ? e.status : 500;
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'create failed' }, { status });
+    return apiErrorResponse(e, 'create failed');
   }
 }
 

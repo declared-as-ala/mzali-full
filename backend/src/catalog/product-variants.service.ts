@@ -120,6 +120,22 @@ export class ProductVariantsService {
     await this.variants.updateMany({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } }, { $set: { purchasePriceMinor: minor } });
   }
 
+  /**
+   * POS carts saved before the single-inventory change, and old POS sale lines, point at the archived
+   * per-product "Boutique pool" variant (or a retired default one). Stock now lives on the product's
+   * real variants, so map such an id to the product's single live variant when that is unambiguous
+   * (a product without size/color variants). Returns null when it cannot be decided safely.
+   */
+  async resolveLiveVariant(variantId: string): Promise<VariantDocument | null> {
+    const v = await this.findById(variantId);
+    if (!v) return null;
+    if (!v.boutiquePool && !v.retired) return v;
+    const product = await this.products.findById(v.productId);
+    if (!product || product.inventoryModel === 'MATRIX') return null;
+    const live = await this.variants.find({ productId: v.productId, retired: { $ne: true }, boutiquePool: { $ne: true } });
+    return live.length === 1 ? live[0] : null;
+  }
+
   async allForProducts(productIds: string[]) {
     return this.variants.find({ productId: { $in: productIds }, retired: { $ne: true }, boutiquePool: { $ne: true } }).sort({ createdAt: 1 });
   }

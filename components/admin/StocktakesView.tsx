@@ -30,7 +30,6 @@ type Category = { id: string; name: string };
 
 const LOCATIONS = [
   { code: 'DEPOT', label: 'Dépôt' },
-  { code: 'BOUTIQUE', label: 'Boutique' },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -134,7 +133,7 @@ export default function StocktakesView() {
 
 function CreateStocktakeDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const toast = useToast();
-  const [locationId, setLocationId] = useState('BOUTIQUE');
+  const [locationId, setLocationId] = useState('DEPOT');
   const [scopeKind, setScopeKind] = useState<'all' | 'categories'>('all');
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);

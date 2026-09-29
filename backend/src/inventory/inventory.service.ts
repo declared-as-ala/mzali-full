@@ -16,6 +16,23 @@ import { InsufficientStockError, StockLedgerService } from './stock-ledger.servi
 
 export { InsufficientStockError };
 
+export type AvailabilityCheck = {
+  valid: boolean;
+  available: boolean;
+  stock: number;
+  mode: 'SIMPLE' | 'VARIANT' | 'UNTRACKED';
+  location: string;
+  requiredDelta: number;
+  productId?: string;
+  variantId?: string | null;
+  resolvedVariantId?: string;
+  variantLabel?: string;
+  error?: string;
+};
+
+const stockChangedMessage = (label: string, left: number) =>
+  `Stock modifié pendant la saisie. Il reste ${left} unité${left > 1 ? 's' : ''} de ${label}.`;
+
 export type ReserveResult = { insufficient: boolean };
 
 /**
@@ -134,9 +151,9 @@ export class InventoryService {
     movement?: { type: StockMovementType; orderId: string },
   ): Promise<void> {
     const variantId = await this.resolveExact(productId, exactVariantId);
-    const targetLocation = locationId === 'BOUTIQUE'
-      ? (await this.locations.getDefaultPosLocationCode())
-      : (await this.locations.getDefaultOnlineLocationCode());
+    // One operational inventory (DEPOT). `locationId` is kept only so old call sites still compile.
+    void locationId;
+    const targetLocation = await this.locations.getDefaultOnlineLocationCode();
     const run = async (s?: ClientSession) => {
       const { item } = await this.ledger.applyMovement({
         variantId,
@@ -180,13 +197,8 @@ export class InventoryService {
 
     const variantIds = Array.from(productIdByVariantId.keys());
     const depotCode = await this.locations.getDefaultOnlineLocationCode();
-    const boutiqueCode = await this.locations.getDefaultPosLocationCode();
-    const [depotItems, boutiqueItems] = await Promise.all([
-      this.ledger.stockForVariants(variantIds, depotCode),
-      this.ledger.stockForVariants(variantIds, boutiqueCode),
-    ]);
+    const depotItems = await this.ledger.stockForVariants(variantIds, depotCode);
     const depotByVariant = new Map(depotItems.map((i) => [i.variantId, i]));
-    const boutiqueByVariant = new Map(boutiqueItems.map((i) => [i.variantId, i]));
 
     const incomingAgg = await this.purchaseOrders.aggregate<{ _id: string; incoming: number }>([
       { $match: { status: { $in: InventoryService.OPEN_PO_STATUSES } } },
@@ -208,11 +220,10 @@ export class InventoryService {
     let contracts: InventoryItemContract[] = productDocs.map((product) => {
       const variantId = variantIdByProductId.get(product.id);
       const depotItem = variantId ? depotByVariant.get(variantId) ?? null : null;
-      const boutiqueItem = variantId ? boutiqueByVariant.get(variantId) ?? null : null;
       const incoming = variantId ? incomingByVariant.get(variantId) ?? 0 : 0;
       return this.toContract(
         depotItem ?? { locationId: depotCode, quantityOnHand: 0, quantityReserved: 0, lowStockThreshold: null, updatedAt: now },
-        boutiqueItem,
+        null,
         product.id,
         product,
         incoming,
@@ -221,7 +232,7 @@ export class InventoryService {
     if (lowStockOnly) {
       contracts = contracts.filter((c) => {
         const thresh = c.lowStockThreshold ?? 5;
-        return c.available <= thresh || c.boutiqueAvailable <= thresh;
+        return c.available <= thresh;
       });
     }
     const total = contracts.length;
@@ -269,6 +280,15 @@ export class InventoryService {
     return this.variants.resolveForSale(productId, variantId);
   }
 
+  /**
+   * THE stock check for every channel (storefront, admin manual order / edit,
+   * POS). One location (DEPOT) and one rule:
+   *  - product with real size/color variants (inventoryModel MATRIX) -> the exact
+   *    variant's stock;
+   *  - product without variants -> the product's single quantity.
+   * `existingQuantity` is what the order already holds (edit of a confirmed
+   * order): only the extra units are required from free stock.
+   */
   async validateOrderAvailability(params: {
     channel?: 'ONLINE' | 'ADMIN' | 'POS';
     productId: string;
@@ -276,87 +296,36 @@ export class InventoryService {
     variation?: Record<string, string> | null;
     quantity: number;
     existingQuantity?: number;
-  }) {
-    const { channel = 'ONLINE', productId, variantId, variation, quantity, existingQuantity = 0 } = params;
+  }): Promise<AvailabilityCheck> {
+    const { productId, variantId, variation, quantity, existingQuantity = 0 } = params;
+    const location = await this.locations.getDefaultOnlineLocationCode();
     if (quantity <= 0) {
       throw new BadRequestException('La quantité doit être supérieure à zéro.');
     }
 
-    const inventorySettings = await this.settings.getInventorySettings();
-    const inventoryEnabled = inventorySettings.enabled !== false;
-
+    const inventoryEnabled = (await this.settings.getInventorySettings()).enabled !== false;
     const product = await this.products.findById(productId);
     if (!product || product.deletedAt) {
       throw new BadRequestException('Produit introuvable');
     }
-
-    const locationId: 'DEPOT' | 'BOUTIQUE' = channel === 'POS' ? 'BOUTIQUE' : 'DEPOT';
-
-    // Mode sans stock
-    if (!inventoryEnabled || product.manageStock === false) {
-      return {
-        valid: true,
-        available: true,
-        stock: Infinity,
-        mode: 'UNTRACKED',
-        location: locationId,
-        requiredDelta: Math.max(0, quantity - existingQuantity),
-      };
-    }
-
-    const trackingMode = locationId === 'BOUTIQUE'
-      ? (product.boutiqueTrackingMode ?? 'SIMPLE')
-      : (product.depotTrackingMode ?? (product.inventoryModel === 'MATRIX' ? 'VARIANT' : 'SIMPLE'));
-
     const requiredDelta = Math.max(0, quantity - existingQuantity);
 
-    if (trackingMode === 'SIMPLE') {
-      let available = 0;
-      if (locationId === 'BOUTIQUE') {
-        const balance = await this.ledger.boutiqueBalance(productId);
-        available = Math.max(0, balance.onHand - balance.reserved);
-      } else {
-        const variants = await this.variants.allForProducts([productId]);
-        const activeVariants = variants.filter((v) => v.active);
-        const rows = await this.ledger.stockForVariants(activeVariants.map((v) => v.id), 'DEPOT');
-        available = rows.reduce((sum, r) => sum + Math.max(0, r.quantityOnHand - r.quantityReserved), 0);
-      }
-
-      if (available <= 0 && requiredDelta > 0) {
-        return {
-          valid: false,
-          available: false,
-          stock: 0,
-          mode: 'SIMPLE',
-          location: locationId,
-          requiredDelta,
-          error: 'Ce produit est actuellement épuisé.',
-        };
-      }
-
-      if (requiredDelta > available) {
-        return {
-          valid: false,
-          available: false,
-          stock: available,
-          mode: 'SIMPLE',
-          location: locationId,
-          requiredDelta,
-          error: `Stock insuffisant pour ${product.name} (disponible : ${available}).`,
-        };
-      }
-
-      return {
-        valid: true,
-        available: true,
-        stock: available,
-        mode: 'SIMPLE',
-        location: locationId,
-        requiredDelta,
-      };
+    if (!inventoryEnabled || product.manageStock === false) {
+      return { valid: true, available: true, stock: Infinity, mode: 'UNTRACKED', location, requiredDelta };
     }
 
-    // VARIANT mode
+    const isMatrix = product.inventoryModel === 'MATRIX';
+
+    if (!isMatrix) {
+      const variants = (await this.variants.allForProducts([productId])).filter((v) => v.active);
+      const rows = await this.ledger.stockForVariants(variants.map((v) => v.id), location);
+      const stock = rows.reduce((sum, r) => sum + Math.max(0, r.quantityOnHand - r.quantityReserved), 0);
+      const base = { mode: 'SIMPLE' as const, location, requiredDelta, productId, variantLabel: product.name, stock };
+      if (stock <= 0 && requiredDelta > 0) return { ...base, valid: false, available: false, error: `${product.name} — ÉPUISÉ` };
+      if (requiredDelta > stock) return { ...base, valid: false, available: false, error: stockChangedMessage(product.name, stock) };
+      return { ...base, valid: true, available: true };
+    }
+
     let targetVariantId = variantId;
     if (!targetVariantId && variation) {
       try {
@@ -365,74 +334,22 @@ export class InventoryService {
         targetVariantId = null;
       }
     }
-
     if (!targetVariantId) {
-      return {
-        valid: false,
-        available: false,
-        stock: 0,
-        mode: 'VARIANT',
-        location: locationId,
-        requiredDelta,
-        error: 'Veuillez sélectionner une taille et une couleur.',
-      };
+      return { valid: false, available: false, stock: 0, mode: 'VARIANT', location, requiredDelta, productId, error: 'Veuillez sélectionner une taille et une couleur.' };
     }
 
     const variant = await this.variants.findById(targetVariantId);
-    if (!variant || variant.productId !== productId || !variant.active || variant.retired) {
-      return {
-        valid: false,
-        available: false,
-        stock: 0,
-        mode: 'VARIANT',
-        location: locationId,
-        requiredDelta,
-        error: 'Cette variante est inactive ou indisponible.',
-      };
+    if (!variant || variant.productId !== productId || !variant.active || variant.retired || variant.boutiquePool) {
+      return { valid: false, available: false, stock: 0, mode: 'VARIANT', location, requiredDelta, productId, variantId: targetVariantId, error: 'Cette variante est désactivée ou n’existe plus.' };
     }
 
     const variantLabel = [variant.attributes?.size, variant.attributes?.color].filter(Boolean).join(' / ') || variant.sku || 'Variante';
-    const stockItem = await this.ledger.stockAt(variant.id, locationId);
-    const available = stockItem ? Math.max(0, stockItem.quantityOnHand - stockItem.quantityReserved) : 0;
-
-    if (available <= 0 && requiredDelta > 0) {
-      return {
-        valid: false,
-        available: false,
-        stock: 0,
-        mode: 'VARIANT',
-        location: locationId,
-        resolvedVariantId: variant.id,
-        variantLabel,
-        requiredDelta,
-        error: `${variantLabel} — ÉPUISÉ`,
-      };
-    }
-
-    if (requiredDelta > available) {
-      return {
-        valid: false,
-        available: false,
-        stock: available,
-        mode: 'VARIANT',
-        location: locationId,
-        resolvedVariantId: variant.id,
-        variantLabel,
-        requiredDelta,
-        error: `Stock insuffisant pour ${variantLabel}.`,
-      };
-    }
-
-    return {
-      valid: true,
-      available: true,
-      stock: available,
-      mode: 'VARIANT',
-      location: locationId,
-      resolvedVariantId: variant.id,
-      variantLabel,
-      requiredDelta,
-    };
+    const stockItem = await this.ledger.stockAt(variant.id, location);
+    const stock = stockItem ? Math.max(0, stockItem.quantityOnHand - stockItem.quantityReserved) : 0;
+    const base = { mode: 'VARIANT' as const, location, requiredDelta, productId, resolvedVariantId: variant.id, variantId: variant.id, variantLabel, stock };
+    if (stock <= 0 && requiredDelta > 0) return { ...base, valid: false, available: false, error: `${variantLabel} — ÉPUISÉ` };
+    if (requiredDelta > stock) return { ...base, valid: false, available: false, error: stockChangedMessage(variantLabel, stock) };
+    return { ...base, valid: true, available: true };
   }
 
   async assertOrderAvailability(params: {
@@ -445,9 +362,83 @@ export class InventoryService {
   }) {
     const res = await this.validateOrderAvailability(params);
     if (!res.valid) {
-      throw new BadRequestException(res.error || 'Stock insuffisant');
+      // Structured body: the admin order form uses productId/variantId/available to point at the
+      // exact line and keep everything else the employee typed.
+      throw new BadRequestException({
+        message: res.error || 'Stock insuffisant',
+        code: 'INSUFFICIENT_STOCK',
+        productId: params.productId,
+        variantId: res.variantId ?? params.variantId ?? null,
+        variantLabel: res.variantLabel ?? null,
+        available: Number.isFinite(res.stock) ? res.stock : null,
+        requested: params.quantity,
+      });
     }
     return res;
+  }
+
+  /**
+   * Live availability of one product, for the admin order form (and anything
+   * else that needs to show stock BEFORE saving). Read-only, DEPOT only.
+   */
+  async getAvailability(productId: string) {
+    const product = await this.products.findById(productId);
+    if (!product || product.deletedAt) throw new BadRequestException('Produit introuvable');
+    const location = await this.locations.getDefaultOnlineLocationCode();
+    const tracked = (await this.settings.getInventorySettings()).enabled !== false && product.manageStock !== false;
+    const isMatrix = product.inventoryModel === 'MATRIX';
+    const variants = await this.variants.allForProducts([productId]);
+    const stock = await this.ledger.stockForVariants(variants.map((v) => v.id), location);
+    const availableOf = new Map(stock.map((r) => [r.variantId, Math.max(0, r.quantityOnHand - r.quantityReserved)]));
+    const rows = variants.map((v) => ({
+      id: v.id,
+      sku: v.sku,
+      size: v.attributes?.size ?? '',
+      color: v.attributes?.color ?? '',
+      active: v.active,
+      available: availableOf.get(v.id) ?? 0,
+    }));
+    const sellable = rows.filter((r) => r.active);
+    return {
+      productId,
+      name: product.name,
+      tracked,
+      mode: isMatrix ? ('VARIANT' as const) : ('SIMPLE' as const),
+      total: sellable.reduce((sum, r) => sum + r.available, 0),
+      /** Only real variants; a product without variants has none (its stock is `total`). */
+      variants: isMatrix ? rows : [],
+      /** For products without variants: the single variant that carries the quantity. */
+      defaultVariantId: isMatrix ? null : (sellable[0]?.id ?? null),
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Builds the refusal for "not enough stock at the moment of saving": names the exact variant, says how
+   * many are really left, and carries structured details so the admin form can point at that line and
+   * keep everything else the employee typed. `extra` = the request was for ADDITIONAL units of an order
+   * that already holds some (confirmed-order edit), so the wording is about the extra units.
+   */
+  async insufficientStockError(productId: string, variantId: string | null | undefined, requested: number, opts: { extra?: boolean } = {}) {
+    const location = await this.locations.getDefaultOnlineLocationCode();
+    let vid = variantId ?? null;
+    if (!vid) vid = (await this.variants.findByProductId(productId))?.id ?? null;
+    let free = 0;
+    let label = '';
+    if (vid) {
+      const item = await this.ledger.stockAt(vid, location);
+      free = item ? Math.max(0, item.quantityOnHand - item.quantityReserved) : 0;
+      const v = await this.variants.findById(vid);
+      label = [v?.attributes?.size, v?.attributes?.color].filter(Boolean).join(' / ');
+    }
+    if (!label) label = (await this.products.findById(productId))?.name ?? 'ce produit';
+    const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? 's' : ''}`;
+    const message = opts.extra
+      ? `${plural(free, 'unité')} supplémentaire${free > 1 ? 's' : ''} disponible${free > 1 ? 's' : ''}, ${requested} requise${requested > 1 ? 's' : ''} (${label}).`
+      : free <= 0
+        ? `${label} vient d’être épuisé.`
+        : `Stock modifié pendant la saisie. Il reste ${plural(free, 'unité')} de ${label}.`;
+    return new BadRequestException({ message, code: 'INSUFFICIENT_STOCK', productId, variantId: vid, variantLabel: label, available: free, requested });
   }
 
   async validateAvailable(productId: string, variantId: string, qty: number, channel: 'ONLINE' | 'ADMIN' | 'POS' = 'ONLINE') {

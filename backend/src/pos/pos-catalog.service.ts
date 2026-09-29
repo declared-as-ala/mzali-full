@@ -15,6 +15,10 @@ import { SettingsService } from '@/settings/settings.service';
  * filtered/searched client-side (see docs/pos-platform/pos-architecture.md
  * §"Catalog loading" — the primary touch-first workflow needs zero-latency
  * category taps and search-as-you-type, not a round trip per keystroke).
+ *
+ * ONE inventory: the till sells from the same DEPOT quantities as the website
+ * and the admin. There is one catalog item per sellable variant (a product
+ * without size/color variants has exactly one), each with its own live stock.
  */
 @Injectable()
 export class PosCatalogService {
@@ -39,10 +43,8 @@ export class PosCatalogService {
     for (let page = 2; page <= productList.totalPages; page++) products.push(...(await this.products.list({ perPage: 100, page, status: 'published' }, true)).items);
     const productIds = products.map((p) => p.id);
     const allVariants = await this.variants.allForProducts(productIds);
-    const variantIds = allVariants.map(v => v.id);
-
-    const depotStock = await this.ledger.stockForVariants(variantIds, depotCode);
-    const depotByVariant = new Map(depotStock.map(s => [s.variantId, s]));
+    const stock = await this.ledger.stockForVariants(allVariants.map((v) => v.id), depotCode);
+    const availableOf = new Map(stock.map((s) => [s.variantId, Math.max(0, s.quantityOnHand - s.quantityReserved)]));
 
     const favoriteProductIds = new Set<string>(
       (posSettings?.favoriteProductIds as string[] | undefined) ?? [],
@@ -50,34 +52,39 @@ export class PosCatalogService {
 
     const items: PosCatalogItem[] = [];
     for (const p of products) {
-      const variant = await this.ledger.boutiqueVariant(p.id);
-      const b = await this.ledger.boutiqueBalance(p.id);
-      const depotAvailable = allVariants.filter(v => v.productId === p.id).reduce((sum,v) => { const item = depotByVariant.get(v.id); return sum + (item ? item.quantityOnHand - item.quantityReserved : 0); }, 0);
-      items.push({
-        productId: p.id,
-        variantId: variant.id,
-        name: p.name,
-        slug: p.slug,
-        sku: variant.sku,
-        barcode: variant.barcode,
-        priceMinor: variant.sellingPriceMinor ?? toMinor(p.price),
-        size: variant.attributes.size ?? '',
-        color: variant.attributes.color ?? '',
-        stockTracked: p.inventoryEnabled !== false,
-        imageUrl: normalizePublicMediaUrl(primaryProductImage(p.images)?.url ?? null),
-        categoryIds: p.categoryIds,
-        boutiqueAvailable: b.onHand - b.reserved,
-        depotAvailable: depotAvailable,
-        favorite: favoriteProductIds.has(p.id),
-        bundles: p.bundles.map((bundle) => ({
-          id: bundle.id,
-          name: bundle.name,
-          label: bundle.label ?? null,
-          priceMinor: toMinor(bundle.price),
-          regularPriceMinor: toMinor(bundle.regularPrice),
-          quantity: bundle.quantity,
-        })),
-      });
+      let variants = allVariants.filter((v) => v.productId === p.id && v.active && !v.obsoleteByOptions);
+      // A product created before it got its default variant: create it once (idempotent).
+      if (!variants.length && !allVariants.some((v) => v.productId === p.id)) variants = [await this.variants.generateDefaultVariant(p.id)];
+      for (const variant of variants) {
+        const available = availableOf.get(variant.id) ?? 0;
+        items.push({
+          productId: p.id,
+          variantId: variant.id,
+          name: p.name,
+          slug: p.slug,
+          sku: variant.sku,
+          barcode: variant.barcode,
+          priceMinor: variant.sellingPriceMinor ?? toMinor(p.price),
+          size: variant.attributes?.size ?? '',
+          color: variant.attributes?.color ?? '',
+          stockTracked: p.inventoryEnabled !== false,
+          imageUrl: normalizePublicMediaUrl(primaryProductImage(p.images)?.url ?? null),
+          categoryIds: p.categoryIds,
+          available,
+          // Deprecated aliases so a till tab loaded before this change keeps working; both are the same DEPOT quantity.
+          boutiqueAvailable: available,
+          depotAvailable: available,
+          favorite: favoriteProductIds.has(p.id),
+          bundles: p.bundles.map((bundle) => ({
+            id: bundle.id,
+            name: bundle.name,
+            label: bundle.label ?? null,
+            priceMinor: toMinor(bundle.price),
+            regularPriceMinor: toMinor(bundle.regularPrice),
+            quantity: bundle.quantity,
+          })),
+        });
+      }
     }
 
     return {

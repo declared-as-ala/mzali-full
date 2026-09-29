@@ -9,8 +9,11 @@ import { SITE, formatPrice, formatDateTime } from '@/lib/site-config';
 import { adminLoginHref } from '@/lib/admin-nav';
 import { attemptStatus, getAttemptNumber, getOrderStatusLabel, getOrderStatusTone, isAttemptStatus, MAX_ATTEMPT, MIN_ATTEMPT } from '@/lib/order-status';
 import { getPrimaryProductImage, type OrderResponse, type OrderStatus } from '@/types';
+import { useLiveStock } from './useLiveStock';
+import { LineQtyNote, LineVariant, StockTotalNote, type StockCtx } from './OrderLineStock';
+import { clampQuantity, heldQuantity, isSoldOut, limitMessage, maxQuantity, overbooked, type LiveStock, type LiveVariant } from '@/lib/order-stock';
 
-type ProductPickerItem = { id: string; name: string; price: number; image?: string; status?: string; posOnly?: boolean };
+type ProductPickerItem = { id: string; name: string; price: number; image?: string; status?: string; posOnly?: boolean; /** live sellable stock, null = not tracked */ stock?: number | null };
 type LineDraft = {
   /** Stable per-line identity for this drawer session — either the real
    *  server `itemId` (an existing, already-saved line) or a client-only
@@ -248,6 +251,71 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   const [version, setVersion] = useState<number | undefined>(undefined);
   const [reasonModalOpen, setReasonModalOpen] = useState(false);
   const [reasonError, setReasonError] = useState<string | null>(null);
+
+  // ── Live DEPOT stock: the employee sees exact availability BEFORE saving ─────────────────────
+  const productIdsInOrder = useMemo(() => [...new Set(lines.map((l) => l.productId))], [lines]);
+  const { stocks, refresh: refreshStock } = useLiveStock(apiBase, productIdsInOrder, open);
+  const [clampNotes, setClampNotes] = useState<Record<string, string>>({});
+  const [stockErrors, setStockErrors] = useState<Record<string, string>>({});
+  /** An already-deducted order holds its own units: they count as free again for its own lines. */
+  const heldFor = (productId: string, variantId?: string | null) =>
+    isSensitiveOrder ? heldQuantity(originalRef.current?.lines ?? [], { productId, variantId: variantId ?? null }) : 0;
+  const lineMatches = (l: LineDraft, b: { productId: string; variantId: string | null }) =>
+    l.productId === b.productId && (stocks[b.productId]?.mode === 'SIMPLE' || !b.variantId || l.variantId === b.variantId);
+  const stockNotices = useMemo(() => {
+    const out: Record<string, string> = { ...clampNotes };
+    // Stock changed while the drawer was open (web order, till sale, another admin): warn on the exact line.
+    for (const b of overbooked(lines, stocks, isSensitiveOrder ? (originalRef.current?.lines ?? []) : [])) {
+      for (const l of lines) if (lineMatches(l, b) && !out[l.key]) out[l.key] = limitMessage(b.max);
+    }
+    return { ...out, ...stockErrors };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, stocks, clampNotes, stockErrors, isSensitiveOrder]);
+  const dropNotice = (key: string) => {
+    setClampNotes((prev) => { if (!(key in prev)) return prev; const next = { ...prev }; delete next[key]; return next; });
+    setStockErrors((prev) => { if (!(key in prev)) return prev; const next = { ...prev }; delete next[key]; return next; });
+  };
+  function applyClamp(l: LineDraft, requested: number, fresh: LiveStock | undefined, variantId: string | null | undefined) {
+    const { qty, notice } = clampQuantity(requested, maxQuantity(fresh, { variantId }, heldFor(l.productId, variantId)));
+    if (qty !== l.qty || notice) setLine(l.key, { qty });
+    setClampNotes((prev) => { const next = { ...prev }; if (notice) next[l.key] = notice; else delete next[l.key]; return next; });
+  }
+  function onQty(l: LineDraft, value: number) {
+    setStockErrors((prev) => { if (!(l.key in prev)) return prev; const next = { ...prev }; delete next[l.key]; return next; });
+    const stock = stocks[l.productId];
+    applyClamp({ ...l }, value, stock, l.variantId);
+    // The number on screen may be a few seconds old: re-check against a fresh read.
+    if (stock && Date.now() - stock.fetchedAt > 8000) void refreshStock(l.productId).then((fresh) => { if (fresh) applyClamp({ ...l, qty: value }, value, fresh, l.variantId); });
+  }
+  function onPickVariant(l: LineDraft, v: LiveVariant) {
+    dropNotice(l.key);
+    setLine(l.key, { variantId: v.id, variation: { Taille: v.size, Couleur: v.color } });
+    applyClamp(l, l.qty, stocks[l.productId], v.id);
+    void refreshStock(l.productId).then((fresh) => { if (fresh) applyClamp(l, l.qty, fresh, v.id); });
+  }
+  /** Before anything is sent: refresh stock and refuse quantities above what is really free. */
+  async function stockPreflight(): Promise<boolean> {
+    const fresh: Record<string, LiveStock | undefined> = { ...stocks };
+    await Promise.all(productIdsInOrder.map(async (pid) => { const s = await refreshStock(pid); if (s) fresh[pid] = s; }));
+    const bad = overbooked(lines, fresh, isSensitiveOrder ? (originalRef.current?.lines ?? []) : []);
+    if (!bad.length) return true;
+    const errors: Record<string, string> = {};
+    for (const b of bad) for (const l of lines) if (lineMatches(l, b)) errors[l.key] = limitMessage(b.max);
+    setStockErrors((prev) => ({ ...prev, ...errors }));
+    const first = bad[0];
+    const name = lines.find((l) => l.productId === first.productId)?.name ?? 'ce produit';
+    toast.error(`Stock insuffisant pour « ${name} » : ${limitMessage(first.max)} Corrigez la quantité puis réessayez.`);
+    return false;
+  }
+  /** The server refused at save time (stock moved meanwhile): keep the form, mark the exact line. */
+  function handleStockRefusal(d: { error?: string; productId?: string; variantId?: string | null }) {
+    const message = d.error ?? 'Stock modifié pendant la saisie.';
+    const errors: Record<string, string> = {};
+    for (const l of lines) if (l.productId === d.productId && (!d.variantId || l.variantId === d.variantId || stocks[l.productId]?.mode === 'SIMPLE')) errors[l.key] = message;
+    setStockErrors((prev) => ({ ...prev, ...errors }));
+    if (d.productId) void refreshStock(d.productId);
+    toast.error(message);
+  }
 
   async function ensureProductInfo(pid: string): Promise<ProductInfo | null> {
     if (productInfo[pid]) {
@@ -494,6 +562,8 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     setReasonModalOpen(false);
     setReasonError(null);
     originalRef.current = null;
+    setClampNotes({});
+    setStockErrors({});
     restoreDraftIfAny(null);
   }
 
@@ -519,6 +589,12 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   async function addProduct(p: ProductPickerItem) {
     setPickerOpen(false);
     setPickerQuery('');
+    // Never add something that cannot be fulfilled: the employee learns it now, not at Save.
+    const live = await refreshStock(p.id);
+    if (isSoldOut(live ?? undefined) || p.stock === 0) {
+      toast.error(`${p.name} — ÉPUISÉ. Impossible de l’ajouter à la commande.`);
+      return;
+    }
     // Load the product's full info first so we know whether it has bundles
     const info = await ensureProductInfo(p.id);
     const defaultBundle = info?.bundles.find((b) => b.quantity > 0);
@@ -658,6 +734,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       toast.info('Aucune modification détectée — rien à enregistrer.');
       return;
     }
+    if (!(await stockPreflight())) return;
     if (isEdit && isSensitiveOrder) {
       // Already-committed order with real changes: the backend requires a
       // modification reason — collect it through the modal, then save.
@@ -779,7 +856,16 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         if (orderId) await loadOrder(orderId);
         return;
       }
-      if (!res.ok) throw new Error((await res.json()).error ?? 'Erreur');
+      if (!res.ok) {
+        const failure = await res.json().catch(() => ({}));
+        if (failure?.code === 'INSUFFICIENT_STOCK') {
+          // Keep the whole form; just mark the line and refresh its stock.
+          setReasonModalOpen(false);
+          handleStockRefusal(failure);
+          return;
+        }
+        throw new Error(failure?.error ?? 'Erreur');
+      }
       const order = await res.json();
 
       // ── Auto-push to delivery company ────────────────────────────────────
@@ -1195,11 +1281,13 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                       key={p.id}
                       type="button"
                       onClick={() => addProduct(p)}
-                      className="flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2 text-left last:border-0 hover:bg-ink-100"
+                      disabled={p.stock === 0}
+                      className="flex w-full items-center gap-3 border-b border-ink-200 px-3 py-2 text-left last:border-0 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       {p.image ? <img src={p.image} alt="" className="h-10 w-10 rounded-lg object-cover" /> : <div className="h-10 w-10 rounded-lg bg-ink-200" />}
                       <span className="flex-1 text-sm font-bold">{p.name}</span>
+                      {p.stock != null && <span className={`text-xs font-black ${p.stock <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>{p.stock <= 0 ? 'ÉPUISÉ' : `${p.stock} en stock`}</span>}
                       <span className="text-sm font-black text-brand-500">{formatPrice(p.price)}</span>
                       <Plus size={16} className="text-brand-500" />
                     </button>
@@ -1225,7 +1313,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                   <tr className="bg-ink-100">
                     <th className="rounded-l-xl px-4 py-3 text-left font-bold">Produit</th>
                     <th className="px-3 py-3 text-left font-bold">Qté</th>
-                    <th className="px-3 py-3 text-left font-bold">Attributs</th>
+                    <th className="px-3 py-3 text-left font-bold">Variante / stock</th>
                     <th className="px-3 py-3 text-right font-bold">Prix unitaire</th>
                     <th className="px-3 py-3 text-right font-bold">Total</th>
                     <th className="rounded-r-xl px-3 py-3 text-right font-bold"></th>
@@ -1240,6 +1328,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                     removeLine,
                     removeBundleGroup,
                     switchBundle,
+                    stockCtx: { stocks, held: heldFor, notices: stockNotices, onQty, onPickVariant },
                   })}
                   {lines.length === 0 && (
                     <tr><td colSpan={7} className="px-3 py-12 text-center text-ink-700">La scène est prête pour vos produits ! ✨🎉</td></tr>
@@ -1344,8 +1433,9 @@ function renderSummaryRows(args: {
   removeLine: (key: string) => void;
   removeBundleGroup: (productId: string, bundleName: string) => void;
   switchBundle: (productId: string, oldBundleName: string, b: { name: string; quantity: number; price: number }) => void;
+  stockCtx: StockCtx<LineDraft>;
 }): React.ReactNode {
-  const { lines, productInfo, setLine, setLineVariation, removeLine, removeBundleGroup, switchBundle } = args;
+  const { lines, productInfo, setLine, setLineVariation, removeLine, removeBundleGroup, switchBundle, stockCtx } = args;
 
   // Group consecutive same-bundle lines for display — grouping is purely
   // visual ordering; every actual edit below targets `l.key`, never array
@@ -1419,7 +1509,7 @@ function renderSummaryRows(args: {
                   ) : (
                     <div className="h-11 w-11 flex-none rounded-xl bg-ink-100" />
                   )}
-                  <span className="line-clamp-2 break-words font-bold text-ink-900" title={l.name}>{l.name}</span>
+                  <span className="min-w-0"><span className="line-clamp-2 break-words font-bold text-ink-900" title={l.name}>{l.name}</span><StockTotalNote stock={stockCtx.stocks[l.productId]} /></span>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 pl-14 text-xs text-ink-700">
@@ -1432,22 +1522,23 @@ function renderSummaryRows(args: {
             <td className="px-3 py-3 align-middle">
               <NumberField
                 value={l.qty}
-                onChange={(v) => setLine(l.key, { qty: Math.max(1, v) })}
+                onChange={(v) => stockCtx.onQty(l, v)}
                 min={1}
                 blankOnZero={false}
                 live
                 className="h-9 w-16 rounded-lg border border-ink-200 bg-white px-2 text-center text-sm font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50"
               />
+<LineQtyNote l={l} ctx={stockCtx} />
             </td>
             <td className="px-3 py-3 align-middle">
-              <VariationSelects
+              <LineVariant l={l} ctx={stockCtx} matrix={Boolean(info?.matrix)} fallback={<VariationSelects
                 variants={info?.matrix ? info.variants : undefined}
                 variantId={l.variantId ?? undefined}
                 onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l.key, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
                 attrs={attrs}
                 value={l.variation}
                 onChange={(name, v) => setLineVariation(l.key, name, v)}
-              />
+              />} />
             </td>
             <td className="px-3 py-3 align-middle text-right">
               <NumberField
@@ -1488,28 +1579,29 @@ function renderSummaryRows(args: {
               ) : (
                 <div className="h-11 w-11 flex-none rounded-xl bg-ink-100" />
               )}
-              <span className="line-clamp-2 break-words font-bold text-ink-900" title={l.name}>{l.name}</span>
+              <span className="min-w-0"><span className="line-clamp-2 break-words font-bold text-ink-900" title={l.name}>{l.name}</span><StockTotalNote stock={stockCtx.stocks[l.productId]} /></span>
             </div>
           </td>
           <td className="px-3 py-3 align-middle">
             <NumberField
               value={l.qty}
-              onChange={(v) => setLine(l.key, { qty: Math.max(1, v) })}
+              onChange={(v) => stockCtx.onQty(l, v)}
               min={1}
               blankOnZero={false}
               live
               className="h-9 w-16 rounded-lg border border-ink-200 bg-white px-2 text-center text-sm font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50"
             />
+<LineQtyNote l={l} ctx={stockCtx} />
           </td>
           <td className="px-3 py-3 align-middle">
-            <VariationSelects
+            <LineVariant l={l} ctx={stockCtx} matrix={Boolean(info?.matrix)} fallback={<VariationSelects
                 variants={info?.matrix ? info.variants : undefined}
                 variantId={l.variantId ?? undefined}
                 onVariantChange={id => { const v = info?.variants?.find(v => v.id === id); setLine(l.key, { variantId: id, variation: v ? { Taille: v.size, Couleur: v.color } : {} }); }}
               attrs={attrs}
               value={l.variation}
               onChange={(name, v) => setLineVariation(l.key, name, v)}
-            />
+            />} />
           </td>
           <td className="px-3 py-3 align-middle text-right">
             <NumberField

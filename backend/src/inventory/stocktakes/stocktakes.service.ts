@@ -28,6 +28,8 @@ export class StocktakesService {
 
   async create(dto: CreateStocktakeDto, startedBy: AuditActor): Promise<StocktakeDocument> {
     const locationId = dto.locationId.toUpperCase();
+    // One inventory: counts are only possible on DEPOT (the archived Boutique stock is not counted).
+    if (locationId !== 'DEPOT') throw new BadRequestException('Seul le stock Dépôt peut être inventorié : le stock Boutique est archivé.');
     await this.locations.requireByCode(locationId);
 
     const productFilter: Record<string, unknown> = { deletedAt: null };
@@ -38,13 +40,12 @@ export class StocktakesService {
     const productDocs = await this.products.find(productFilter).select({ _id: 1, name: 1 });
     const productIds = productDocs.map((p) => p.id);
     const productNameById = new Map(productDocs.map((p) => [p.id, p.name]));
-    const allVariants = locationId === 'BOUTIQUE' ? await Promise.all(productIds.map(id => this.ledger.boutiqueVariant(id))) : await this.variants.allForProducts(productIds);
+    const allVariants = await this.variants.allForProducts(productIds);
     if (!allVariants.length) throw new BadRequestException('Aucune variante dans ce périmètre');
 
     const variantIds = allVariants.map(v => v.id);
     const stockItems = await this.ledger.stockForVariants(variantIds, locationId);
     const onHandByVariant = new Map(stockItems.map((i) => [i.variantId, i.quantityOnHand]));
-    if (locationId === 'BOUTIQUE') for (const v of allVariants) onHandByVariant.set(v.id, (await this.ledger.boutiqueBalance(v.productId)).onHand);
 
     const stocktakeNumber = await this.counters.next(SEQUENCE_NAME);
     const doc = await this.model.create({
@@ -164,9 +165,8 @@ export class StocktakesService {
         for (const line of doc.lines) {
           if (line.countedQuantity === null) continue;
           const current = await this.ledger.stockAt(line.variantId, doc.locationId, session);
-          const variant = doc.locationId === 'BOUTIQUE' ? await this.variants.findById(line.variantId) : null;
-          if (doc.locationId === 'BOUTIQUE' && !variant?.boutiquePool) throw new BadRequestException('Recréez cet inventaire Boutique par produit.');
-          const currentOnHand = doc.locationId === 'BOUTIQUE' ? (await this.ledger.boutiqueBalance(line.productId, session)).onHand : current?.quantityOnHand ?? 0;
+          if (doc.locationId !== 'DEPOT') throw new BadRequestException('Cet inventaire concerne le stock Boutique archivé : il ne peut plus être validé.');
+          const currentOnHand = current?.quantityOnHand ?? 0;
           if (currentOnHand !== line.expectedQuantity) throw new BadRequestException('Le stock a changé depuis le comptage. Annulez cet inventaire et créez un nouveau comptage.');
           const delta = line.countedQuantity - currentOnHand;
           if (delta === 0) continue;

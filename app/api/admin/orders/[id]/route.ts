@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { orderService } from '@/services';
 import { ApiError } from '@/services/mzali-api/client';
+import { apiErrorResponse } from '@/lib/api-error-response';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -19,7 +20,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json(order);
   } catch (e) {
     const status = e instanceof ApiError ? e.status : 500;
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status });
+    return apiErrorResponse(e, 'update failed');
   }
 }
 

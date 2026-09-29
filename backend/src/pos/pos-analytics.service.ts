@@ -519,17 +519,17 @@ export class PosAnalyticsService {
     const variantIds = currentRows.map((r) => r.variantId).filter((v): v is string => Boolean(v));
     const productIds = [...new Set(currentRows.map((r) => r.productId))];
 
-    const [variantDocs, productDocs, boutiqueStockDocs, depotStockDocs, incomingRows, costByVariant] = await Promise.all([
+    const [variantDocs, productDocs, depotStockDocs, incomingRows, costByVariant] = await Promise.all([
       this.variants.find({ _id: { $in: variantIds } }).select({ sku: 1 }),
       this.products.find({ _id: { $in: productIds } }).select({ name: 1, images: 1, categoryIds: 1 }),
-      this.stockItems.find({ variantId: { $in: variantIds }, locationId: 'BOUTIQUE' }).select({ variantId: 1, quantityOnHand: 1, quantityReserved: 1 }),
       this.stockItems.find({ variantId: { $in: variantIds }, locationId: 'DEPOT' }).select({ variantId: 1, quantityOnHand: 1, quantityReserved: 1 }),
       this.incomingQtyByVariant(variantIds),
       this.variantCostMap(variantIds),
     ]);
     const variantById = new Map(variantDocs.map((v) => [v.id, v]));
     const productById = new Map(productDocs.map((p) => [p.id, p]));
-    const boutiqueByVariant = new Map(boutiqueStockDocs.map((s) => [s.variantId, Math.max(0, s.quantityOnHand - s.quantityReserved)]));
+    // Single inventory: the old Boutique stock is archived, so the Boutique column is always 0.
+    const boutiqueByVariant = new Map<string, number>();
     const depotByVariant = new Map(depotStockDocs.map((s) => [s.variantId, Math.max(0, s.quantityOnHand - s.quantityReserved)]));
 
     const periodDays = Math.max(1, (filter.to.getTime() - filter.from.getTime()) / 86_400_000);
@@ -774,12 +774,11 @@ export class PosAnalyticsService {
 
     const variantIds = rows.map((r) => r._id);
     const cashierIds = [...new Set(rows.map((r) => r.lastCashierId))];
-    const [boutiqueStockDocs, depotStockDocs, employeeDocs] = await Promise.all([
-      this.stockItems.find({ variantId: { $in: variantIds }, locationId: 'BOUTIQUE' }).select({ variantId: 1, quantityOnHand: 1, quantityReserved: 1 }),
+    const [depotStockDocs, employeeDocs] = await Promise.all([
       this.stockItems.find({ variantId: { $in: variantIds }, locationId: 'DEPOT' }).select({ variantId: 1, quantityOnHand: 1, quantityReserved: 1 }),
       this.employees.find({ _id: { $in: cashierIds } }).select({ name: 1 }),
     ]);
-    const boutiqueByVariant = new Map(boutiqueStockDocs.map((s) => [s.variantId, Math.max(0, s.quantityOnHand - s.quantityReserved)]));
+    const boutiqueByVariant = new Map<string, number>(); // archived: single DEPOT inventory
     const depotByVariant = new Map(depotStockDocs.map((s) => [s.variantId, Math.max(0, s.quantityOnHand - s.quantityReserved)]));
     const nameByCashier = new Map(employeeDocs.map((e) => [e.id, e.name]));
 

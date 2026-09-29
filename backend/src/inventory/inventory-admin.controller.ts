@@ -88,6 +88,13 @@ export class InventoryAdminController {
     return { ok: true };
   }
 
+  /** Live stock of one product (per exact variant when it has variants), read before an order is saved. */
+  @Get('availability/:productId')
+  @RequirePermissions('inventory.read')
+  availability(@Param('productId') productId: string) {
+    return this.inventory.getAvailability(productId);
+  }
+
   @Post('validate-availability')
   @RequirePermissions('inventory.read')
   async validateAvailability(

@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import type Redis from 'ioredis';
 import { ClientSession, Model } from 'mongoose';
 import type { AuditActor, StockMovementType } from '@contracts';
+import { DEPOT_CODE } from '@/catalog/location.schema';
 import { REDIS } from '@/redis/redis.constants';
 import { INVENTORY_UPDATED_CHANNEL, InventoryUpdatedEvent } from './inventory-events';
 import { StockItem, StockItemDocument } from './stock-item.schema';
@@ -64,24 +65,14 @@ export class StockLedgerService {
       try { return (await session.withTransaction(() => this.applyMovement({ ...input, session })))!; }
       finally { await session.endSession(); }
     }
-    if (input.locationId.toUpperCase() === 'BOUTIQUE' && !input.migration && this.items.db.models.Variant) {
-      const source = await this.items.db.models.Variant.findById(input.variantId).session(input.session ?? null);
-      if (!source) throw new ConflictException('Produit de stock introuvable');
-      // Only consolidate into the pool when boutiqueTrackingMode is SIMPLE (default).
-      // For VARIANT Boutique, each variant has its own StockItem at BOUTIQUE.
-      const productModel = this.items.db.models.Product;
-      const boutiqueMode = productModel
-        ? ((await productModel.findById(source.productId).select('boutiqueTrackingMode').session(input.session ?? null)) as { boutiqueTrackingMode?: string } | null)?.boutiqueTrackingMode ?? 'SIMPLE'
-        : 'SIMPLE';
-      if (boutiqueMode !== 'VARIANT') {
-        const pool = await this.consolidateBoutique(source.productId, input.actor, input.session!);
-        input = { ...input, variantId: pool.id };
-      }
-      // else: BOUTIQUE VARIANT — write to the exact variant's StockItem directly.
-    }
     const onHandDelta = input.onHandDelta ?? 0;
     const reservedDelta = input.reservedDelta ?? 0;
     const locationId = input.locationId.toUpperCase();
+    // ONE operational inventory: DEPOT. The old Boutique stock is archived (see
+    // `archive:boutique-stock`) and can never be moved again, whichever channel asks.
+    if (locationId !== DEPOT_CODE && !input.migration) {
+      throw new BadRequestException('Seul le stock Dépôt est actif : le stock Boutique est archivé.');
+    }
 
     if (![onHandDelta, reservedDelta].every(Number.isSafeInteger)) throw new BadRequestException('Quantité entière requise');
     const variantModel = this.items.db.models.Variant;
@@ -90,7 +81,7 @@ export class StockLedgerService {
       { $inc: { inventoryRevision: 1 } }, { new: true, session: input.session },
     ) : null;
     if (variantModel && !variant) throw new ConflictException('Variante historique ou introuvable : réconciliation requise.');
-    if (variant?.boutiquePool && locationId !== 'BOUTIQUE') throw new BadRequestException('Le stock produit Boutique ne peut pas être utilisé au Dépôt.');
+    if (variant?.boutiquePool && !input.migration) throw new ConflictException('Ancienne variante Boutique archivée : choisissez la variante du produit.');
     const before = await this.items.findOne({ variantId: input.variantId, locationId }).session(input.session ?? null);
     if ((before?.quantityOnHand ?? 0) + onHandDelta < 0 || (before?.quantityReserved ?? 0) + reservedDelta < 0) throw new InsufficientStockError(input.variantId, locationId);
     let doc: StockItemDocument | null;
@@ -149,37 +140,6 @@ export class StockLedgerService {
     });
 
     return { item: doc!, movement };
-  }
-
-  /** Stable product-level identity for Boutique; no stock is changed here. */
-  async boutiqueVariant(productId: string, session?: ClientSession) {
-    const model = this.items.db.models.Variant;
-    try { return await model.findOneAndUpdate({ productId, combinationKey: '__boutique_pool__' }, { $setOnInsert: { productId, combinationKey: '__boutique_pool__', boutiquePool: true, sku: `BOUTIQUE-${productId}`, attributes: {}, active: true, retired: false } }, { upsert: true, new: true, session }); }
-    catch (error) {
-      // Concurrent catalog requests may create the same unique pool identity.
-      if (!session && (error as { code?: number }).code === 11000) return model.findOne({ productId, combinationKey: '__boutique_pool__' }).orFail();
-      throw error;
-    }
-  }
-
-  async boutiqueBalance(productId: string, session?: ClientSession) {
-    const variants = await this.items.db.models.Variant.find({ productId }).select('_id').session(session ?? null);
-    const stocks = await this.items.find({ variantId: { $in: variants.map(v => v.id) }, locationId: 'BOUTIQUE' }).session(session ?? null);
-    return stocks.reduce((sum, item) => ({ onHand: sum.onHand + item.quantityOnHand, reserved: sum.reserved + item.quantityReserved }), { onHand: 0, reserved: 0 });
-  }
-
-  /** Move historical per-variant balances into the product pool within the caller's transaction. */
-  async consolidateBoutique(productId: string, actor: AuditActor, session: ClientSession) {
-    const pool = await this.boutiqueVariant(productId, session);
-    const variants = await this.items.db.models.Variant.find({ productId, _id: { $ne: pool._id } }).select('_id').session(session);
-    const stocks = await this.items.find({ variantId: { $in: variants.map(v => v.id) }, locationId: 'BOUTIQUE' }).session(session);
-    for (const item of stocks) {
-      if (!item.quantityOnHand && !item.quantityReserved) continue;
-      const common = { locationId: 'BOUTIQUE', type: 'correction' as const, reason: 'Regroupement du stock Boutique par produit', actor, session, migration: true };
-      await this.applyMovement({ ...common, variantId: item.variantId, onHandDelta: -item.quantityOnHand, reservedDelta: -item.quantityReserved });
-      await this.applyMovement({ ...common, variantId: pool.id, onHandDelta: item.quantityOnHand, reservedDelta: item.quantityReserved });
-    }
-    return pool;
   }
 
   private async publishUpdate(event: InventoryUpdatedEvent): Promise<void> {

@@ -156,7 +156,7 @@ export class OrdersService {
                 await this.inventory.commit(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, session, strict, line.variantId);
               } catch (err) {
                 if (err instanceof InsufficientStockError) {
-                  throw new BadRequestException(`Cette variante vient d’être épuisée.`);
+                  throw await this.inventory.insufficientStockError(line.productId, line.variantId, line.qty);
                 }
                 throw err;
               }
@@ -167,7 +167,7 @@ export class OrdersService {
                 await this.inventory.reserve(line.productId, line.qty, orderId.toString(), SYSTEM_ACTOR, strict, session, line.variantId);
               } catch (err) {
                 if (err instanceof InsufficientStockError) {
-                  throw new BadRequestException(`Cette variante vient d’être épuisée.`);
+                  throw await this.inventory.insufficientStockError(line.productId, line.variantId, line.qty);
                 }
                 throw err;
               }
@@ -896,7 +896,7 @@ export class OrdersService {
                   await this.inventory.commit(productId, delta, id, actor, session, strict, variantId);
                 } catch (err) {
                   if (err instanceof InsufficientStockError) {
-                    throw new BadRequestException(`Stock insuffisant pour ${variantLabel}.`);
+                    throw await this.inventory.insufficientStockError(productId, variantId, delta, { extra: true });
                   }
                   throw err;
                 }
@@ -909,7 +909,7 @@ export class OrdersService {
                   await this.inventory.reserve(productId, delta, id, actor, strict, session, variantId);
                 } catch (err) {
                   if (err instanceof InsufficientStockError) {
-                    throw new BadRequestException(`Stock insuffisant pour ${variantLabel}.`);
+                    throw await this.inventory.insufficientStockError(productId, variantId, delta, { extra: true });
                   }
                   throw err;
                 }
@@ -1161,7 +1161,7 @@ export class OrdersService {
           await this.inventory.commit(item.productId, item.qty, doc.id, actor, session, strict, variantId, wasReserved);
         } catch (err) {
           if (err instanceof InsufficientStockError) {
-            throw new BadRequestException(`Stock insuffisant pour ${item.name}`);
+            throw await this.inventory.insufficientStockError(item.productId, variantId, item.qty);
           }
           throw err;
         }

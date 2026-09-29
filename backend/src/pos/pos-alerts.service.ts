@@ -219,14 +219,14 @@ export class PosAlertsService {
   }
 
   private async negativeStock(): Promise<PosAlert[]> {
-    const docs = await this.stockItems.find({ locationId: 'BOUTIQUE', quantityOnHand: { $lt: 0 } });
+    const docs = await this.stockItems.find({ locationId: 'DEPOT', quantityOnHand: { $lt: 0 } });
     return docs.map((d) => ({
       type: 'NEGATIVE_STOCK' as const,
       severity: 'critical' as const,
-      title: 'Stock boutique négatif',
+      title: 'Stock négatif',
       detectedAt: d.updatedAt.toISOString(),
       evidence: { variantId: d.variantId, locationId: d.locationId },
-      summary: `Stock de ${d.quantityOnHand} unités en boutique`,
+      summary: `Stock de ${d.quantityOnHand} unités`,
     }));
   }
 }

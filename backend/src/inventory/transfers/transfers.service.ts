@@ -25,47 +25,9 @@ export class TransfersService {
   ) {}
 
   async create(dto: CreateTransferDto, requestedBy: AuditActor): Promise<StockTransferDocument> {
-    const source = dto.sourceLocationId.toUpperCase();
-    const destination = dto.destinationLocationId.toUpperCase();
-    if (source === destination) throw new BadRequestException('Le dépôt source et destination doivent être différents');
-    await this.locations.requireByCode(source);
-    await this.locations.requireByCode(destination);
-
-    const lines = await Promise.all(
-      dto.lines.map(async (l) => {
-        const product = await this.products.findOne({ _id: l.productId, deletedAt: null });
-        if (!product) throw new BadRequestException(`Produit introuvable: ${l.productId}`);
-        const variant = await this.variants.resolveForSale(l.productId, l.variantId);
-        return {
-          variantId: variant.id,
-          productId: product.id,
-          productName: [product.name, variant.attributes.size, variant.attributes.color].filter(Boolean).join(' / '),
-          requestedQuantity: l.requestedQuantity,
-          approvedQuantity: null,
-          shippedQuantity: null,
-          receivedQuantity: 0,
-          damagedQuantity: 0,
-          missingQuantity: 0,
-        };
-      }),
-    );
-
-    if (new Set(lines.map(l => l.variantId)).size !== lines.length) throw new BadRequestException('Regroupez les quantités de la même variante.');
-    const status = dto.draft ? 'DRAFT' : 'REQUESTED';
-    const now = new Date();
-    const transferNumber = await this.counters.next(SEQUENCE_NAME);
-    const doc = await this.model.create({
-      transferNumber,
-      sourceLocationId: source,
-      destinationLocationId: destination,
-      status,
-      lines,
-      statusHistory: [{ from: null, to: status, by: requestedBy, at: now, note: null }],
-      requestedBy,
-      approvedBy: null,
-      note: dto.note ?? null,
-    });
-    return doc;
+    // Depot <-> Boutique transfers no longer exist: there is one inventory (DEPOT). Historical transfers stay readable.
+    void dto; void requestedBy;
+    throw new BadRequestException('Les transferts Dépôt ↔ Boutique sont désactivés : il n\u2019y a plus qu\u2019un seul stock (Dépôt).');
   }
 
   async list(status?: string): Promise<StockTransferDocument[]> {

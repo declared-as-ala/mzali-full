@@ -9,6 +9,7 @@ import { ProductsService } from '@/catalog/products.service';
 import { addMinor, clampDiscount, toMinor } from '@/common/money';
 import { clampPagination } from '@/common/pagination';
 import { CountersService } from '@/database/counters.service';
+import { DEPOT_CODE } from '@/catalog/location.schema';
 import { InsufficientStockError, StockLedgerService } from '@/inventory/stock-ledger.service';
 import { LoyaltyLedgerService } from '@/loyalty/loyalty-ledger.service';
 import { LoyaltyRulesService } from '@/loyalty/loyalty-rules.service';
@@ -58,7 +59,6 @@ export class PosSalesService {
         return { doc: existing, wasExisting: true };
       }
     }
-    if (ctx.locationId !== 'BOUTIQUE') throw new BadRequestException('Le POS doit utiliser le stock Boutique.');
     if (!input.lines.length) throw new BadRequestException('Le panier est vide');
     if (!input.payments?.length) throw new BadRequestException('Au moins un mode de paiement est requis');
 
@@ -77,7 +77,7 @@ export class PosSalesService {
         try {
           await this.ledger.applyMovement({
             variantId: line.variantId,
-            locationId: ctx.locationId,
+            locationId: DEPOT_CODE,
             type: 'pos_sale',
             onHandDelta: -line.qty,
             requireAvailableAtLeast: line.qty,
@@ -87,7 +87,7 @@ export class PosSalesService {
           });
         } catch (err) {
           if (err instanceof InsufficientStockError) {
-            throw new BadRequestException(`Stock boutique insuffisant pour ${line.descriptionSnapshot}`);
+            throw new BadRequestException(`Stock insuffisant pour ${line.descriptionSnapshot}`);
           }
           throw err;
         }
@@ -270,13 +270,20 @@ export class PosSalesService {
    * plain regular price, exactly as before offers existed — a line simply
    * opts out of automatic offer pricing by omitting it.
    */
+  /** Old sale lines may reference an archived Boutique variant; stock moves on the product's live variant. */
+  private async liveVariantIdFor(variantId: string): Promise<string> {
+    const live = await this.variants.resolveLiveVariant(variantId);
+    if (!live) throw new BadRequestException('Vente historique : la variante d’origine n’existe plus, ajustez le stock manuellement depuis la page Stock.');
+    return live.id;
+  }
+
   private async resolveSaleLines(inputLines: PosSaleLineInput[]): Promise<{ lines: PosSaleLine[]; categoryIdsByProductId: Map<string, string[]> }> {
     const categoryIdsByProductId = new Map<string, string[]>();
 
     const resolvedInputs = await Promise.all(
       inputLines.map(async (line) => {
-        const variant = await this.variants.findById(line.variantId);
-        if (!variant || !variant.active || variant.retired) throw new NotFoundException(`Variante introuvable: ${line.variantId}`);
+        const variant = await this.variants.resolveLiveVariant(line.variantId);
+        if (!variant || !variant.active || variant.retired) throw new NotFoundException(`Variante introuvable ou désactivée : ${line.variantId}. Rechoisissez la taille/couleur.`);
         const product = await this.products.getById(variant.productId);
         if (!product) throw new NotFoundException(`Produit introuvable pour la variante ${line.variantId}`);
         categoryIdsByProductId.set(variant.productId, product.categoryIds ?? []);
@@ -432,11 +439,12 @@ export class PosSalesService {
       // reused Mongoose document with cleared dirty fields.
       const doc = await this.sales.findOne({ _id: id, updatedAt: beforeSnapshot.updatedAt, status: 'COMPLETED' }).session(txnSession ?? null);
       if (!doc) throw new ConflictException('Cette vente a changé, rechargez-la');
-      for (const [variantId, delta] of beforeSnapshot.stockTracked === false ? [] : stockDeltas) {
+      for (const [savedVariantId, delta] of beforeSnapshot.stockTracked === false ? [] : stockDeltas) {
+        const variantId = await this.liveVariantIdFor(savedVariantId);
         try {
           await this.ledger.applyMovement({
             variantId,
-            locationId: doc.locationId,
+            locationId: DEPOT_CODE,
             type: 'correction',
             onHandDelta: -delta,
             requireAvailableAtLeast: delta > 0 ? delta : undefined,
@@ -447,7 +455,7 @@ export class PosSalesService {
           });
         } catch (err) {
           if (err instanceof InsufficientStockError) {
-            throw new BadRequestException('Stock boutique insuffisant pour appliquer cette modification');
+            throw new BadRequestException('Stock insuffisant pour appliquer cette modification');
           }
           throw err;
         }
@@ -664,7 +672,7 @@ export class PosSalesService {
       }, { session: txn });
       if (!result.matchedCount) throw new ConflictException('Cette session est fermée');
       for (const line of doc.stockTracked === false ? [] : doc.lines) {
-        await this.ledger.applyMovement({ variantId: line.variantId, locationId: doc.locationId, type: 'correction', onHandDelta: line.qty, reference: doc.id, reason: `Annulation vente #${doc.saleNumber}`, actor, session: txn });
+        await this.ledger.applyMovement({ variantId: await this.liveVariantIdFor(line.variantId), locationId: DEPOT_CODE, type: 'correction', onHandDelta: line.qty, reference: doc.id, reason: `Annulation vente #${doc.saleNumber}`, actor, session: txn });
       }
       if (cash) await this.sessions.recordMovement(cashSession, 'CASH_REFUND', cash, actor.id, `Annulation vente #${doc.saleNumber}`, txn, doc.id, `refund:${doc.id}`);
       await this.payments.updateMany({ saleId: id, status: 'PAID' }, { $set: { status: 'REFUNDED' } }, { session: txn });

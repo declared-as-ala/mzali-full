@@ -351,7 +351,7 @@ function ProductEditor({ productId, onClose, onSaved }: { productId: string | nu
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
                 <span className="font-semibold">Stock et inventaire : géré dans les modules Stock.</span>
                 {isEdit ? (
-                  <a href={adminHref(`/stock-depot?productId=${productId}`)} className="inline-flex items-center gap-1.5 font-bold text-blue-600 hover:underline"><Boxes size={14} /> Gérer les stocks →</a>
+                  <a href={adminHref(`/stock?productId=${productId}`)} className="inline-flex items-center gap-1.5 font-bold text-blue-600 hover:underline"><Boxes size={14} /> Gérer les stocks →</a>
                 ) : (
                   <span>Enregistrez d’abord le produit.</span>
                 )}

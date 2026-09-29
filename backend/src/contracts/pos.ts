@@ -92,7 +92,11 @@ export type PosCatalogItem = {
   priceMinor: number;
   imageUrl: string | null;
   categoryIds: string[];
+  /** Live DEPOT quantity of this exact variant (the one inventory the website, admin and till share). */
+  available: number;
+  /** @deprecated same value as `available`; kept so an older till tab keeps working. */
   boutiqueAvailable: number;
+  /** @deprecated same value as `available`. */
   depotAvailable: number;
   favorite: boolean;
   /** This product's configured quantity offers (may be empty). The POS

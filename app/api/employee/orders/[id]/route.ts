@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { orderService } from '@/services';
 import { ApiError } from '@/services/mzali-api/client';
+import { apiErrorResponse } from '@/lib/api-error-response';
 
 async function requireOrder(id: string) {
   const order = await orderService.getById(id);
@@ -34,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json(updated);
   } catch (e) {
     const status = e instanceof ApiError ? e.status : 500;
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status });
+    return apiErrorResponse(e, 'update failed');
   }
 }
 

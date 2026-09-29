@@ -8,7 +8,7 @@ const BASE = (process.env.MZALI_API_URL ?? '').replace(/\/+$/, '');
 const SERVICE_TOKEN = process.env.MZALI_SERVICE_TOKEN ?? '';
 
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(message: string, public readonly status: number, public readonly body?: unknown) {
     super(message);
     this.name = 'ApiError';
   }
@@ -63,7 +63,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
       (json && typeof json === 'object' && 'message' in json && typeof (json as { message: unknown }).message === 'string'
         ? (json as { message: string }).message
         : undefined) ?? `Request failed (${res.status})`;
-    throw new ApiError(Array.isArray(message) ? message.join(', ') : message, res.status);
+    throw new ApiError(Array.isArray(message) ? message.join(', ') : message, res.status, json);
   }
   return json as T;
 }

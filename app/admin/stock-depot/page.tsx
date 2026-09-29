@@ -1,7 +1,7 @@
-import VariantStockView from '@/components/admin/VariantStockView';
+import { redirect } from 'next/navigation';
 
-/** `?productId=` deep-links here from the product editor's "Gerer les stocks" link. */
+/** The Dépôt/Boutique split is gone: there is one Stock page. */
 export default async function Page({ searchParams }: { searchParams: Promise<{ productId?: string }> }) {
   const { productId } = await searchParams;
-  return <VariantStockView locationId="DEPOT" initialProductId={/^[a-f0-9]{24}$/i.test(productId ?? '') ? productId : ''} />;
+  redirect(`/admin/stock${productId ? `?productId=${encodeURIComponent(productId)}` : ''}`);
 }
