@@ -4,12 +4,13 @@ import { Model } from 'mongoose';
 import type { AuditActor } from '@contracts';
 import { Product } from '@/catalog/product.schema';
 import { Variant } from '@/catalog/variant.schema';
+import { combinationKey } from '@/catalog/variant-options';
 import { StockItem } from './stock-item.schema';
 import { StockMovement } from './stock-movement.schema';
 import { StockLedgerService } from './stock-ledger.service';
 import { ActivateMatrixDto, BoutiqueQuantityDto, SetModeDto, SetStockQuantitiesDto, VariantAdjustmentDto } from './variant-stock.dto';
 
-export const combinationKey = (size: string, color: string) => JSON.stringify([size.trim().normalize('NFC').toLocaleLowerCase('fr'), color.trim().normalize('NFC').toLocaleLowerCase('fr')]);
+export { combinationKey };
 
 @Injectable()
 export class VariantStockService {
@@ -32,7 +33,7 @@ export class VariantStockService {
       depotTrackingMode: product.depotTrackingMode ?? 'SIMPLE',
       boutiqueTrackingMode: product.boutiqueTrackingMode ?? 'SIMPLE',
       legacyStockQuantity: product.stockQuantity, options: product.options,
-      variants: variants.map(v => ({ id: v.id, sku: v.sku, attributes: v.attributes, active: v.active, retired: v.retired, sellingPriceMinor: v.sellingPriceMinor, lowStockThreshold: v.lowStockThreshold,
+      variants: variants.map(v => ({ id: v.id, sku: v.sku, attributes: v.attributes, active: v.active, retired: v.retired, obsoleteByOptions: Boolean(v.obsoleteByOptions), sellingPriceMinor: v.sellingPriceMinor, lowStockThreshold: v.lowStockThreshold,
         stock: stock.filter(s => s.variantId === v.id).map(s => ({ locationId: s.locationId, onHand: s.quantityOnHand, reserved: s.quantityReserved })) })) };
   }
 

@@ -3,6 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Product } from './product.schema';
 import { Variant, VariantDocument } from './variant.schema';
+import { combinationKey, validCombinationKeys } from './variant-options';
+
+export type ReconcileChange = { id: string; sku: string; size: string; color: string };
+export type ReconcileResult = { deactivated: ReconcileChange[]; reactivated: ReconcileChange[]; skipped?: string };
 
 @Injectable()
 export class ProductVariantsService {
@@ -54,6 +58,53 @@ export class ProductVariantsService {
     }
     this.logger.log(`generateForAllProducts: created=${created} skipped=${skipped} total=${products.length}${dryRun ? ' (dry-run)' : ''}`);
     return { created, skipped, total: products.length };
+  }
+
+  /**
+   * Makes the product's variants agree with its saved options (the source of
+   * truth — see variant-options.ts). Idempotent; safe to run on every save.
+   *
+   *  - variant whose size/color is no longer an option value -> active=false +
+   *    obsoleteByOptions=true. NEVER deleted or retired: orders, stock items
+   *    and stock movements keep referencing it, and admins still see it (and
+   *    any stock left on it) in the stock table.
+   *  - variant previously switched off by this rule whose value is back in the
+   *    options -> reactivated. A variant an admin turned off by hand is left
+   *    alone (it does not carry obsoleteByOptions).
+   *
+   * Only touches MATRIX products, and only when two option axes can be
+   * identified; otherwise nothing can be judged obsolete and it does nothing.
+   */
+  async reconcileWithOptions(productId: string, opts: { dryRun?: boolean } = {}): Promise<ReconcileResult> {
+    const product = await this.products.findById(productId);
+    if (!product || product.deletedAt) return { deactivated: [], reactivated: [], skipped: 'product not found' };
+    if (product.inventoryModel !== 'MATRIX') return { deactivated: [], reactivated: [], skipped: 'not a MATRIX product' };
+    const valid = validCombinationKeys((product.options ?? []).map((o) => ({ label: o.label, values: o.values ?? [] })));
+    if (!valid) return { deactivated: [], reactivated: [], skipped: 'no size/color options' };
+
+    const rows = await this.variants.find({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } });
+    const deactivated: ReconcileChange[] = [];
+    const reactivated: ReconcileChange[] = [];
+    for (const v of rows) {
+      const size = v.attributes?.size; const color = v.attributes?.color;
+      if (typeof size !== 'string' || typeof color !== 'string') continue; // not a size/color variant
+      const change = { id: v.id, sku: v.sku, size, color };
+      const isValid = valid.has(combinationKey(size, color));
+      if (!isValid && v.active) deactivated.push(change);
+      else if (isValid && !v.active && v.obsoleteByOptions) reactivated.push(change);
+    }
+    if (!opts.dryRun) {
+      if (deactivated.length) {
+        await this.variants.updateMany({ _id: { $in: deactivated.map((c) => c.id) } }, { $set: { active: false, obsoleteByOptions: true }, $inc: { inventoryRevision: 1 } });
+      }
+      if (reactivated.length) {
+        await this.variants.updateMany({ _id: { $in: reactivated.map((c) => c.id) } }, { $set: { active: true, obsoleteByOptions: false }, $inc: { inventoryRevision: 1 } });
+      }
+    }
+    if (deactivated.length || reactivated.length) {
+      this.logger.log(`reconcileWithOptions ${productId}: deactivated=${deactivated.length} reactivated=${reactivated.length}${opts.dryRun ? ' (dry-run)' : ''}`);
+    }
+    return { deactivated, reactivated };
   }
 
   async allForProducts(productIds: string[]) {

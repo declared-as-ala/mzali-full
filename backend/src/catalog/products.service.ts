@@ -232,6 +232,9 @@ export class ProductsService {
     if (input.supplierId !== undefined) doc.supplierId = input.supplierId;
     if (input.posOnly !== undefined) doc.posOnly = input.posOnly;
     await doc.save();
+    // Options are the source of truth for what can be bought: switch off any
+    // variant whose size/color was just removed (and restore ones that came back).
+    if (input.options !== undefined) await this.variants.reconcileWithOptions(doc.id);
     if (nextMediaInput !== undefined) {
       await this.finalizeMedia(previousMediaIds, doc.images.map((image) => image.mediaId).filter((mediaId): mediaId is string => Boolean(mediaId)));
     }

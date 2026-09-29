@@ -5,7 +5,7 @@ import SwitchToVariantModal from './SwitchToVariantModal';
 import { useCallback, useEffect, useState } from 'react';
 import { productStockRows, stockCombinationKey, type StockOption, type StockRow } from '@/lib/product-stock-options';
 
-type Variant = { id: string; sku: string; attributes: Record<string, string>; active: boolean; retired: boolean; stock: { locationId: string; onHand: number; reserved: number }[] };
+type Variant = { id: string; sku: string; attributes: Record<string, string>; active: boolean; retired: boolean; obsoleteByOptions?: boolean; stock: { locationId: string; onHand: number; reserved: number }[] };
 type Config = {
   boutique: { onHand: number; reserved: number };
   options: StockOption[];
@@ -48,7 +48,15 @@ export default function VariantMatrix({ productId, onBusyChange, initialLocation
   const remainingBoutique = total('BOUTIQUE') - allocated('boutique');
   const initialStock = total('DEPOT') === 0 && total('BOUTIQUE') === 0;
   const valid = rows.length > 0 && remainingBoutique === 0 && rows.every(r => [r.depot, r.boutique].every(q => Number.isSafeInteger(q) && q >= 0));
-  const current = config?.variants.filter(v => !v.retired) ?? [];
+  // `live` = every non-archived variant. `current` = the ones matching the product's saved options (what can be
+  // sold and edited). `obsolete` = variants whose size/color was removed from the options: hidden from the
+  // storefront and from the editable table, but their stock is preserved and reported below.
+  const live = config?.variants.filter(v => !v.retired) ?? [];
+  const current = live.filter(v => !v.obsoleteByOptions);
+  const obsolete = live.filter(v => v.obsoleteByOptions);
+  const obsoleteWithStock = obsolete
+    .map(v => ({ v, qty: v.stock.reduce((sum, s) => sum + s.onHand, 0) }))
+    .filter(x => x.qty > 0);
   const missing = rows.filter(r => !current.some(v => stockCombinationKey(v.attributes.size ?? '', v.attributes.color ?? '') === stockCombinationKey(r.size, r.color)));
 
   async function save(add = false) {
@@ -102,7 +110,7 @@ export default function VariantMatrix({ productId, onBusyChange, initialLocation
     ? (config?.boutiqueTrackingMode ?? 'SIMPLE')
     : (config?.depotTrackingMode ?? 'SIMPLE');
 
-  const boutiqueVariantTotal = current.reduce((s, v) => {
+  const boutiqueVariantTotal = live.reduce((s, v) => {
     const stockItem = v.stock.find(si => si.locationId === 'BOUTIQUE');
     return s + (stockItem?.onHand ?? 0);
   }, 0);
@@ -200,6 +208,17 @@ export default function VariantMatrix({ productId, onBusyChange, initialLocation
       </div>
       {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       {message && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
+      {obsoleteWithStock.length > 0 && (
+        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-bold">Variantes supprimées des options mais encore en stock (masquées sur le site) :</p>
+          <ul className="mt-1 list-disc pl-5">
+            {obsoleteWithStock.map(({ v, qty }) => (
+              <li key={v.id}>{v.attributes.size} / {v.attributes.color} — Cette variante supprimée contient encore {qty} unité{qty > 1 ? 's' : ''} de stock.</li>
+            ))}
+          </ul>
+          <p className="mt-1">Le stock est conservé. Réaffectez-le ou ajustez-le depuis l&apos;historique de stock.</p>
+        </div>
+      )}
 
       {!config ? (!error && <p>Chargement…</p>) : (
         <>

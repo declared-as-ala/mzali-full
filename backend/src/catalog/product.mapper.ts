@@ -1,6 +1,7 @@
 import type { Product as ProductContract } from '@contracts';
 import { toDinars } from '@/common/money';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
+import { dedupeOptionValues } from './variant-options';
 import { Product as ProductSchema } from './product.schema';
 
 /**
@@ -80,8 +81,9 @@ export function toProductContract(doc: ProductSchema & { id?: string; _id?: unkn
 
 /** Parses the frontend's comma-separated options string into an array. */
 export function parseOptionValues(values: string | string[]): string[] {
-  if (Array.isArray(values)) return values.map((v) => v.trim()).filter(Boolean);
-  return values.split(',').map((v) => v.trim()).filter(Boolean);
+  // Exact labels are preserved (trim only); blanks and duplicates are dropped.
+  const list = Array.isArray(values) ? values : values.split(',');
+  return dedupeOptionValues(list);
 }
 
 /** Serializes stored option values back to the frontend's comma-separated form. */

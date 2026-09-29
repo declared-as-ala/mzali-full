@@ -47,8 +47,15 @@ const EMPTY: FormState = {
 
 const PRODUCT_DRAFT_PREFIX = 'mzali_product_draft:';
 function productDraftKey(productId?: string | null) { return `${PRODUCT_DRAFT_PREFIX}${productId ?? 'new'}`; }
-function loadProductDraft(productId?: string | null): FormState | null {
-  try { return JSON.parse(sessionStorage.getItem(productDraftKey(productId)) ?? 'null') as FormState | null; } catch { return null; }
+/** A draft is only valid for the exact server state it was made from (`base`).
+ *  If the product changed since (stock screen, options, another admin, ...) or
+ *  the draft predates this format, it is discarded instead of overriding the
+ *  server's data with stale — or, worse, blank — values. */
+function loadProductDraft(productId: string | null | undefined, base: string): FormState | null {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(productDraftKey(productId)) ?? 'null') as { base?: string; form?: FormState } | null;
+    return raw && raw.base === base && raw.form ? raw.form : null;
+  } catch { return null; }
 }
 
 type Props = {
@@ -70,9 +77,13 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
   const [variantId, setVariantId] = useState<string | null>(null);
   const media = useProductMedia();
   const submittingRef = useRef(false);
+  // JSON of the server-side form this editor was hydrated from ('' until loaded).
+  // Drafts are neither written nor restored before hydration completes.
+  const baseRef = useRef('');
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { baseRef.current = ''; return; }
+    baseRef.current = '';
     if (!categories.length) {
       fetch('/api/admin/categories').then(async (r) => r.ok && setCategories(await r.json())).catch(() => {});
     }
@@ -122,13 +133,16 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
             upsellIds: p.upsellIds,
             posOnly: p.posOnly ?? false,
           };
-          setForm(loadProductDraft(productId) ?? serverForm);
+          const base = JSON.stringify(serverForm);
+          baseRef.current = base;
+          setForm(loadProductDraft(productId, base) ?? serverForm);
           media.reset(p.images);
         })
         .catch(() => alert('Erreur de chargement du produit'))
         .finally(() => setLoading(false));
     } else {
-      setForm(loadProductDraft(null) ?? EMPTY);
+      baseRef.current = JSON.stringify(EMPTY);
+      setForm(loadProductDraft(null, baseRef.current) ?? EMPTY);
       media.reset([]);
       setVariantId(null);
     }
@@ -148,7 +162,12 @@ export default function ProductDrawer({ open, onClose, productId, onSaved }: Pro
   useEffect(() => {
     if (!open) return;
     const timer = window.setTimeout(() => {
-      try { sessionStorage.setItem(productDraftKey(productId), JSON.stringify(form)); } catch { /* best effort */ }
+      const base = baseRef.current;
+      if (!base) return; // still loading: `form` is the blank placeholder, never persist it
+      try {
+        if (JSON.stringify(form) === base) sessionStorage.removeItem(productDraftKey(productId)); // nothing to recover
+        else sessionStorage.setItem(productDraftKey(productId), JSON.stringify({ base, form }));
+      } catch { /* best effort */ }
     }, 250);
     return () => window.clearTimeout(timer);
   }, [form, open, productId]);

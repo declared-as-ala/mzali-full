@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { getValidAccessToken } from '@/lib/api-auth';
 import { apiRequest } from '@/services/mzali-api/client';
+import { revalidateStorefront } from '@/lib/revalidate-storefront';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -24,6 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   try {
     const body = await req.json();
     const data = await apiRequest(`/admin/inventory/variants/${id}`, { method: 'PATCH', bearer, body });
+    revalidateStorefront();
     return NextResponse.json(data);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 400 });

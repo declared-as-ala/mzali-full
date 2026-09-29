@@ -1,3 +1,4 @@
+import { revalidateStorefront } from '@/lib/revalidate-storefront';
 import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { productService } from '@/services';
@@ -7,6 +8,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const product = await productService.create(body);
+    revalidateStorefront();
     return NextResponse.json(product);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'create failed' }, { status: 500 });

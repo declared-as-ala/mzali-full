@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { productService } from '@/services';
+import { revalidateStorefront } from '@/lib/revalidate-storefront';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
@@ -15,6 +16,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const { id } = await params;
     const body = await req.json();
     const product = await productService.update(id, body);
+    revalidateStorefront();
     return NextResponse.json(product);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status: 500 });
@@ -26,6 +28,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     await productService.remove(id);
+    revalidateStorefront();
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'delete failed';

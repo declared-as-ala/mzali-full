@@ -35,6 +35,7 @@ import { MigrateSeedLocationsCommand } from './commands/migrate-seed-locations.c
 import { MigrateSettingsCommand } from './commands/migrate-settings.command';
 import { MigrateVerifyCommand } from './commands/migrate-verify.command';
 import { RepairEmployeeRolesCommand } from './commands/repair-employee-roles.command';
+import { ReconcileVariantOptionsCommand } from './commands/reconcile-variant-options.command';
 import { MigrateTentativeStatusCommand } from './commands/migrate-tentative-status.command';
 import { RepairProductImagesCommand } from './commands/repair-product-images.command';
 import { CleanupOrphanMediaCommand } from './commands/cleanup-orphan-media.command';
@@ -90,6 +91,7 @@ import { VerifyInventoryFoundationCommand } from './commands/verify-inventory-fo
     RepairProductImagesCommand,
     CleanupOrphanMediaCommand,
     RepairEmployeeRolesCommand,
+    ReconcileVariantOptionsCommand,
     MigrateTentativeStatusCommand,
     MigrateOrderVariationKeysCommand,
   ],

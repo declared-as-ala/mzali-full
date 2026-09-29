@@ -15,6 +15,11 @@ export class Variant {
   @Prop({ type: Boolean, default: false }) boutiquePool!: boolean;
   @Prop({ type: String }) combinationKey?: string;
   @Prop({ type: Boolean, default: false }) retired!: boolean;
+  /** Set when this variant was switched off because its size/color is no
+   *  longer one of the product's current options (see variant-options.ts).
+   *  Distinguishes that automatic deactivation from an admin's deliberate one,
+   *  so the variant is only ever auto-reactivated if the value comes back. */
+  @Prop({ type: Boolean, default: false }) obsoleteByOptions!: boolean;
   @Prop({ type: Number, default: 0 }) inventoryRevision!: number;
   @Prop({ type: Number, default: null }) lowStockThreshold!: number | null;
 
