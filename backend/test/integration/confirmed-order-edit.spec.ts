@@ -450,7 +450,10 @@ describe('Confirmed-order edit (integration)', () => {
       .set('Authorization', adminAuth)
       .send({ ...fullEditPayload(productId, { color: 'noir' }, 2), reason: 'Augmentation quantité' })
       .expect(400);
-    expect(res.body.message).toContain('Stock insuffisant');
+    // Exact remaining quantity, and structured details so the admin form can mark the line.
+    expect(res.body.message).toMatch(/unité supplémentaire disponible, 1 requise/);
+    expect(res.body.code).toBe('INSUFFICIENT_STOCK');
+    expect(res.body.available).toBe(0);
 
     const order = await orders.findById(orderId);
     expect(order?.items[0]?.qty).toBe(1); // order unchanged — full rollback

@@ -1,4 +1,6 @@
 import { Variant, VariantSchema } from '@/catalog/variant.schema';
+import { Product, ProductSchema } from '@/catalog/product.schema';
+import { ProductVariantsService } from '@/catalog/product-variants.service';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { Connection, createConnection, Types } from 'mongoose';
@@ -33,6 +35,8 @@ suite('Cash sessions with real MongoDB transactions', () => {
   let ctx: PosSaleContext;
   const variantId = new Types.ObjectId().toString();
   const productId = new Types.ObjectId().toString();
+  /** ONE inventory: every till sale/cancel moves the DEPOT quantity of the exact variant. */
+  const depot = async () => (await db.model<StockItem>(StockItem.name).findOne({ variantId, locationId: 'DEPOT' }))!.quantityOnHand;
   const settings = { getInventorySettings: jest.fn(async () => ({ enabled: true })), getRaw: jest.fn(async () => ({ cashToleranceMinor: 1000 })), getCompany: jest.fn(async () => ({ legalName: 'Ahmed Mzali Boutique', address: 'Tunis', phone: '', matriculeFiscal: '', rcNumber: '' })) };
   beforeAll(async () => {
     if (!uri?.includes('mzali_cash_test')) throw new Error('Use an isolated mzali_cash_test database');
@@ -45,6 +49,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
     db.model<PosTerminal>(PosTerminal.name, PosTerminalSchema);
     db.model<Employee>(Employee.name, EmployeeSchema);
     db.model(Variant.name, VariantSchema);
+    db.model<Product>(Product.name, ProductSchema);
     db.model<StockItem>(StockItem.name, StockItemSchema);
     db.model<StockMovement>(StockMovement.name, StockMovementSchema);
     db.model<Counter>(Counter.name, CounterSchema);
@@ -54,7 +59,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
     sales = new PosSalesService(
       db.model<PosSale>(PosSale.name), db.model<PosPayment>(PosPayment.name), db.model<Employee>(Employee.name), {} as never, {} as never,
       { getById: async () => ({ name: 'Chemise', price: 1, categoryIds: [] }) } as never,
-      { findById: async (id: string) => db.model(Variant.name).findById(id) } as never,
+      new ProductVariantsService(db.model<Product>(Product.name) as never, db.model<Variant>(Variant.name) as never),
       stock, new CountersService(db.model<Counter>(Counter.name)), sessions,
       {} as never, {} as never, {} as never, settings as never, db,
     );
@@ -64,21 +69,40 @@ suite('Cash sessions with real MongoDB transactions', () => {
   beforeEach(async () => {
     settings.getInventorySettings.mockResolvedValue({ enabled: true });
     await Promise.all(Object.values(db.models).map((m) => m.deleteMany({})));
+    await db.model<Product>(Product.name).create({ _id: productId, name: 'Chemise', slug: 'chemise', status: 'published', regularPriceMinor: 1000 });
     await db.model(Variant.name).create({ _id: variantId, productId, active: true, sku: 'TEST', attributes: {}, sellingPriceMinor: 1000 });
     const cashier = await db.model<Employee>(Employee.name).create({ email: 'cash@test.invalid', name: 'Caissier Test', role: 'cashier', passwordHash: { algo: 'argon2id', hash: 'unused-test' } });
     const terminal = await db.model<PosTerminal>(PosTerminal.name).create({ terminalCode: 'T1', name: 'Terminal 1', locationId: 'BOUTIQUE', deviceFingerprint: 'test' });
     ctx = { terminalId: terminal.id, cashierId: cashier.id, cashierName: cashier.name, cashierRole: 'cashier', locationId: 'BOUTIQUE' };
-    await db.model<StockItem>(StockItem.name).create([{ variantId, locationId: 'BOUTIQUE', quantityOnHand: 10000 }, { variantId, locationId: 'DEPOT', quantityOnHand: 10000 }]);
+    await db.model<StockItem>(StockItem.name).create([{ variantId, locationId: 'DEPOT', quantityOnHand: 10000 }]);
   });
-  it('sells the Boutique product identity without size or color while preserving Depot stock', async () => {
+  it('sells the exact variant from the single DEPOT inventory', async () => {
     await open();
-    const pool = await stock.boutiqueVariant(productId);
-    const result = await sales.create({ lines: [{ variantId: pool.id, qty: 1 }], payments: [{ method: 'CASH', amountMinor: 1000 }] }, ctx, randomUUID());
-    expect(result.lines[0].variantId).toBe(pool.id);
-    expect(result.lines[0].variantAttributesSnapshot).toEqual({});
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(9999);
-    expect((await db.model(StockItem.name).findOne({ variantId, locationId: 'DEPOT' }))!.quantityOnHand).toBe(10000);
+    const result = await sales.create({ lines: [{ variantId, qty: 1 }], payments: [{ method: 'CASH', amountMinor: 1000 }] }, ctx, randomUUID());
+    expect(result.doc.lines[0].variantId).toBe(variantId);
+    expect(await depot()).toBe(9999);
+    expect(await db.model(StockMovement.name).countDocuments({ variantId, locationId: 'DEPOT', type: 'pos_sale' })).toBe(1);
+    expect(await db.model(StockMovement.name).countDocuments({ locationId: 'BOUTIQUE' })).toBe(0);
   });
+
+  it('a till cart saved before the change (archived Boutique variant id) sells the product\'s live variant', async () => {
+    await open();
+    const pool = await db.model(Variant.name).create({ productId, active: false, retired: true, boutiquePool: true, combinationKey: '__boutique_pool__', sku: 'BOUTIQUE-OLD', attributes: {} });
+    const result = await sales.create({ lines: [{ variantId: pool.id, qty: 2 }], payments: [{ method: 'CASH', amountMinor: 2000 }] }, ctx, randomUUID());
+    expect(result.doc.lines[0].variantId).toBe(variantId);
+    expect(await depot()).toBe(9998);
+  });
+
+  it('cancelling an OLD sale whose line points at the archived Boutique variant restocks DEPOT', async () => {
+    await open();
+    const sold = await sale(2000);
+    const pool = await db.model(Variant.name).create({ productId, active: false, retired: true, boutiquePool: true, combinationKey: '__boutique_pool__', sku: 'BOUTIQUE-OLD', attributes: {} });
+    await db.model<PosSale>(PosSale.name).updateOne({ _id: sold.doc.id }, { $set: { 'lines.0.variantId': pool.id } });
+    expect(await depot()).toBe(9998);
+    await sales.cancel(sold.doc.id, { type: 'employee', id: ctx.cashierId, name: ctx.cashierName });
+    expect(await depot()).toBe(10000);
+  });
+
   const open = (amount = 200000) => sessions.open(ctx.cashierId, ctx.terminalId, null, amount);
   const sale = (amount: number, method: 'CASH' | 'CARD' = 'CASH', key = randomUUID()) => sales.create({ lines: [{ variantId, qty: amount / 1000 }], payments: [{ method, amountMinor: amount }] }, ctx, key);
 
@@ -115,7 +139,8 @@ suite('Cash sessions with real MongoDB transactions', () => {
     const report = await sessions.report(doc.id, 'Z');
     expect(report.cashDifferenceMinor).toBe(-3000);
     expect(report.details?.payments).toEqual({ CASH: 38000, CARD: 100000 });
-    expect((await db.model<StockItem>(StockItem.name).findOne({ locationId: 'DEPOT' }))!.quantityOnHand).toBe(10000);
+    // One inventory: the till sold 5 (after the 20-unit correction) + 33 + 100 = 138 units from DEPOT.
+    expect(await depot()).toBe(10000 - 138);
   });
 
   it('refunds/cancels exactly once with the original payment methods', async () => {
@@ -130,10 +155,10 @@ suite('Cash sessions with real MongoDB transactions', () => {
     expect(current.cashRefundsMinor).toBe(20000);
     expect(current.refundsMinor).toBe(120000);
     expect(await db.model<PosCashMovement>(PosCashMovement.name).countDocuments({ type: 'CASH_REFUND' })).toBe(1);
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(10000);
+    expect((await depot())).toBe(10000);
   });
 
-  it('deduplicates concurrent sale retries across payments, cash and boutique stock', async () => {
+  it('deduplicates concurrent sale retries across payments, cash and stock', async () => {
     await open();
     const key = randomUUID();
     const result = await Promise.all([sale(25000, 'CASH', key), sale(25000, 'CASH', key)]);
@@ -141,7 +166,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
     expect(await db.model<PosSale>(PosSale.name).countDocuments()).toBe(1);
     expect(await db.model<PosPayment>(PosPayment.name).countDocuments()).toBe(1);
     expect(await db.model<PosCashMovement>(PosCashMovement.name).countDocuments({ type: 'CASH_SALE' })).toBe(1);
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(9975);
+    expect((await depot())).toBe(9975);
   });
 
   it('records mixed cash/card/bank payments and gross discounts without inflating cash', async () => {
@@ -162,7 +187,7 @@ suite('Cash sessions with real MongoDB transactions', () => {
     expect(expectedCash(await sessions.getById(doc.id))).toBe(200000);
     expect(await db.model<PosSale>(PosSale.name).countDocuments()).toBe(0);
     expect(await db.model<StockMovement>(StockMovement.name).countDocuments()).toBe(0);
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(10000);
+    expect((await depot())).toBe(10000);
   });
 
   it('rejects a stale day finalization racing a new session', async () => {
@@ -250,23 +275,22 @@ suite('Cash sessions with real MongoDB transactions', () => {
     expect(pdf.length).toBeGreaterThan(2000);
     if (process.env.POS_CASH_PDF_QA) { mkdirSync('../tmp/pdfs', { recursive: true }); writeFileSync('../tmp/pdfs/ticket-z-qa.pdf', pdf); }
   });
-  it('deducts only Boutique and restores tracked POS cancellations after a mode switch', async () => {
+  it('deducts DEPOT and restores tracked POS cancellations after a mode switch', async () => {
     await open(); const sold = await sale(2000);
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(9998);
-    expect((await db.model(StockItem.name).findOne({ variantId, locationId: 'DEPOT' }))!.quantityOnHand).toBe(10000);
+    expect((await depot())).toBe(9998);
     settings.getInventorySettings.mockResolvedValue({ enabled: false });
     await sales.cancel(sold.doc.id, { type: 'employee', id: ctx.cashierId, name: ctx.cashierName });
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(10000);
+    expect((await depot())).toBe(10000);
   });
   it('sells at zero stock in POS mode sans stock without later phantom returns', async () => {
     await open();
-    await db.model(StockItem.name).updateOne({ variantId, locationId: 'BOUTIQUE' }, { $set: { quantityOnHand: 0 } });
+    await db.model(StockItem.name).updateOne({ variantId, locationId: 'DEPOT' }, { $set: { quantityOnHand: 0 } });
     settings.getInventorySettings.mockResolvedValue({ enabled: false });
     const sold = await sale(2000);
     expect(sold.doc.stockTracked).toBe(false);
     settings.getInventorySettings.mockResolvedValue({ enabled: true });
     await sales.cancel(sold.doc.id, { type: 'employee', id: ctx.cashierId, name: ctx.cashierName });
-    expect((await stock.boutiqueBalance(productId)).onHand).toBe(0);
+    expect((await depot())).toBe(0);
     expect(await db.model(StockMovement.name).countDocuments()).toBe(0);
   });
 

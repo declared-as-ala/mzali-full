@@ -27,8 +27,8 @@ export type PosCatalogItem = {
   priceMinor: number;
   imageUrl: string | null;
   categoryIds: string[];
-  boutiqueAvailable: number;
-  depotAvailable: number;
+  /** Live DEPOT quantity of this exact variant: the one inventory shared with the website and the admin. */
+  available: number;
   favorite: boolean;
   bundles: PosProductBundle[];
 };
@@ -51,7 +51,7 @@ export type CartLine = {
   imageUrl: string | null;
   unitPriceMinor: number;
   qty: number;
-  boutiqueAvailable: number;
+  available: number;
   /** Always the product's id — every cart line for a product shares this,
    *  so the server groups all of its units together and automatically
    *  applies the best available quantity offer as qty changes. See
@@ -168,6 +168,9 @@ export type PosDashboardTopProduct = {
   imageUrl: string | null;
   qtySold: number;
   revenueMinor: number;
+  /** DEPOT stock (the only inventory). */
+  stock?: number;
+  /** @deprecated same as `stock`. */
   boutiqueStock: number;
 };
 

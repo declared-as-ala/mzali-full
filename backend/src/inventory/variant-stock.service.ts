@@ -170,7 +170,7 @@ export class VariantStockService {
       soldOutCombinations += r.soldOutVariants;
       if (r.state === 'low') lowStockProducts += 1;
     }
-    let filtered = rows.filter((r) => (!search || r.productName.toLocaleLowerCase('fr').includes(search))
+    const filtered = rows.filter((r) => (!search || r.productName.toLocaleLowerCase('fr').includes(search))
       && (!query.status || (query.status === 'out' ? r.state === 'out' : query.status === 'low' ? r.state === 'low' : r.state === 'in')));
     filtered.sort((a, b) => query.sort === 'available' ? a.available - b.available : a.productName.localeCompare(b.productName, 'fr'));
     const perPage = 30;

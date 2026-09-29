@@ -132,7 +132,7 @@ export default function Cart({
                       <button
                         type="button"
                         onClick={() => onQtyChange(l.variantId, l.qty + 1)}
-                        disabled={l.qty >= l.boutiqueAvailable}
+                        disabled={l.qty >= l.available}
                         className="grid h-7 w-7 place-items-center rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 active:scale-90 disabled:opacity-30 transition"
                         aria-label="Augmenter"
                       >

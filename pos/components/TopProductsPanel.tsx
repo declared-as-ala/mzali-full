@@ -74,7 +74,7 @@ export default function TopProductsPanel() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-bold text-slate-800">{p.name}</p>
-                <p className="text-[11px] text-slate-400">{p.sku ?? '—'} · Stock boutique: {p.boutiqueStock}</p>
+                <p className="text-[11px] text-slate-400">{p.sku ?? '—'} · Stock : {p.stock ?? p.boutiqueStock}</p>
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-xs font-black text-slate-900">{p.qtySold} vendu{p.qtySold > 1 ? 's' : ''}</p>

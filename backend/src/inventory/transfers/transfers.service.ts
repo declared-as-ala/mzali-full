@@ -10,8 +10,6 @@ import { InsufficientStockError, StockLedgerService } from '../stock-ledger.serv
 import { ApproveTransferDto, CreateTransferDto, ReceiveTransferDto } from './dto/transfer.dto';
 import { StockTransfer, StockTransferDocument, TransferLine } from './stock-transfer.schema';
 
-const SEQUENCE_NAME = 'stock-transfer';
-
 @Injectable()
 export class TransfersService {
   constructor(

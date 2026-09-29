@@ -22,7 +22,7 @@ export default function ProductOfferModal({ item, initialQty, onClose, onAdd }: 
 }) {
   const offers = item.bundles.filter((b) => b.quantity >= 2);
   const [qty, setQty] = useState(initialQty ?? offers[0]?.quantity ?? 1);
-  const maxQty = Math.max(1, item.boutiqueAvailable);
+  const maxQty = Math.max(1, item.available);
 
   function selectOffer(offerQty: number) {
     setQty(Math.min(offerQty, maxQty));

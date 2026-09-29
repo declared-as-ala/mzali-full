@@ -64,7 +64,7 @@ test('availability changes are sent without touching stock, and stock is kept wh
   d.active.a2 = false;
   const a = analyze(cfg, d);
   assert.deepEqual(a.rows, [{ variantId: 'a2', active: false }]);
-  assert.equal(a.rows[0].quantity, undefined); // stock 997 is not sent, so it is not modified
+  assert.equal((a.rows[0] as { quantity?: number }).quantity, undefined); // stock 997 is not sent, so it is not modified
 });
 
 test('an invalid or blank quantity blocks saving and is flagged', () => {

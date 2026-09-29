@@ -889,7 +889,6 @@ export class OrdersService {
             const stockLine = [...exactAfter, ...exactBefore].find(l => (l.variantId ?? l.productId) === identity)!;
             const productId = stockLine.productId;
             const variantId = stockLine.variantId;
-            const variantLabel = stockLine.variation ? Object.values(stockLine.variation).filter(Boolean).join(' / ') || 'cette variante' : 'cette variante';
             if (wasCommitted) {
               if (delta > 0) {
                 try {

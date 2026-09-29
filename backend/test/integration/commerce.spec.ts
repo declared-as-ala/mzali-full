@@ -248,7 +248,7 @@ describe('Commerce core (integration): checkout, inventory, coupons, employee sc
     expect(items[0]?.onHand).toBe(3);
 
     const { items: movements } = await inventoryService.movementsFor(productId, 1, 10);
-    expect(movements.map((m) => m.type).reverse()).toEqual(['manual_adjust', 'order_commit', 'manual_adjust']);
+    expect(movements.map((m) => m.type).reverse()).toEqual(['manual_adjust', 'order_commit', 'refund_restock']);
   });
 
   test('tentative-1..5 transitions never touch stock, and stock still commits exactly once at confirme', async () => {

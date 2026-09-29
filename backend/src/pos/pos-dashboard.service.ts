@@ -21,6 +21,9 @@ export type PosDashboardTopProduct = {
   imageUrl: string | null;
   qtySold: number;
   revenueMinor: number;
+  /** DEPOT stock (the only inventory). */
+  stock: number;
+  /** @deprecated same as `stock`. */
   boutiqueStock: number;
 };
 
@@ -62,7 +65,8 @@ export class PosDashboardService {
       imageUrl: r.imageUrl,
       qtySold: r.quantitySold,
       revenueMinor: Math.round(r.revenue * 1000),
-      boutiqueStock: r.boutiqueStock,
+      stock: r.depotStock,
+      boutiqueStock: r.depotStock,
     }));
   }
 }
