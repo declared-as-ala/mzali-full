@@ -310,7 +310,9 @@ export class ProductsService {
   }
 
   private async withLiveAvailabilities(docs: ProductDocument[], contracts?: ProductContract[]): Promise<ProductContract[]> {
-    const [enabled, variants] = await Promise.all([this.availability.enabled(), this.variants.allForProducts(docs.map(d => d.id))]);
+    // Variants whose size/color was removed from the product's options are history, not stock for sale: never sent to the storefront.
+    const [enabled, allVariants] = await Promise.all([this.availability.enabled(), this.variants.allForProducts(docs.map(d => d.id))]);
+    const variants = allVariants.filter(v => !v.obsoleteByOptions);
     const stock = await this.availability.resolveMany(variants.map(v => v.id));
     return docs.map((doc, index) => {
       const rows = variants.filter(v => v.productId === doc.id).map(v => ({ id: v.id, sku: v.sku, size: v.attributes.size ?? '', color: v.attributes.color ?? '', active: v.active, available: stock.get(v.id) ?? 0, price: (v.sellingPriceMinor ?? doc.salePriceMinor ?? doc.regularPriceMinor) / 1000 }));
