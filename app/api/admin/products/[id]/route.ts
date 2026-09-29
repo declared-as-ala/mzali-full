@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
-import { productService } from '@/services';
 import { revalidateStorefront } from '@/lib/revalidate-storefront';
+import { productService } from '@/services';
+import { ApiError } from '@/services/mzali-api/client';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { id } = await params;
   const p = await productService.getByIdAdmin(id);
-  return p ? NextResponse.json(p) : NextResponse.json({ error: 'not found' }, { status: 404 });
+  return p
+    ? NextResponse.json(p, { headers: { 'Cache-Control': 'no-store' } })
+    : NextResponse.json({ error: 'not found' }, { status: 404 });
 }
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -15,11 +18,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const { id } = await params;
     const body = await req.json();
-    const product = await productService.update(id, body);
+    const product = await productService.update(id, body, { requestId: req.headers.get('x-request-id') ?? undefined });
     revalidateStorefront();
     return NextResponse.json(product);
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status: 500 });
+    // Keep the backend's status (notably 409 = the product changed since it was opened).
+    const status = e instanceof ApiError ? e.status : 500;
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'update failed' }, { status });
   }
 }
 

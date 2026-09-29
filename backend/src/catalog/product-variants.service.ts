@@ -107,6 +107,19 @@ export class ProductVariantsService {
     return { deactivated, reactivated };
   }
 
+  /** Purchase price (minor units) shown in the product editor: the first live variant's. */
+  async purchasePriceMinorFor(productId: string): Promise<number | null> {
+    const v = await this.variants.findOne({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } }).sort({ createdAt: 1 });
+    return v?.purchasePriceMinor ?? null;
+  }
+
+  /** Sets the purchase price on every live variant of THIS product (filter is always by productId). */
+  async setPurchasePrice(productId: string, minor: number): Promise<void> {
+    if (!productId) throw new Error('setPurchasePrice requires a productId');
+    if (!(await this.variants.exists({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } }))) await this.generateDefaultVariant(productId);
+    await this.variants.updateMany({ productId, retired: { $ne: true }, boutiquePool: { $ne: true } }, { $set: { purchasePriceMinor: minor } });
+  }
+
   async allForProducts(productIds: string[]) {
     return this.variants.find({ productId: { $in: productIds }, retired: { $ne: true }, boutiquePool: { $ne: true } }).sort({ createdAt: 1 });
   }

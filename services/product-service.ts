@@ -16,7 +16,12 @@ export type ProductInput = {
   media?: { mediaId: string; position: number; isPrimary: boolean }[];
   upsellIds?: string[];
   bundles?: ProductBundle[];
-  options?: { label: string; type: 'text' | 'select' | 'radio'; values: string }[];
+  /** `values` is an array of exact values (preferred) or the legacy comma-joined string. */
+  options?: { label: string; type: 'text' | 'select' | 'radio'; values: string | string[] }[];
+  /** Purchase price (TND); stored on the product's variants. */
+  purchasePrice?: number;
+  /** Revision the editor loaded; the save is refused (409) if it moved. */
+  expectedRevision?: number;
   cost?: number;
   deliveryPrice?: number;
   deliveryCost?: number;
@@ -40,7 +45,7 @@ export interface ProductService {
   listAdmin(query?: ProductListQuery): Promise<ProductListResult>;
   getByIdAdmin(id: string): Promise<Product | null>;
   create(input: ProductInput): Promise<Product>;
-  update(id: string, input: Partial<ProductInput>): Promise<Product>;
+  update(id: string, input: Partial<ProductInput>, meta?: { requestId?: string }): Promise<Product>;
   remove(id: string): Promise<void>;
   reorder(items: { id: string; menuOrder: number }[]): Promise<void>;
 }

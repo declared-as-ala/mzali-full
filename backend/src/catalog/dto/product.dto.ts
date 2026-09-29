@@ -9,8 +9,21 @@ import {
   IsOptional,
   IsString,
   Min,
+  Validate,
   ValidateNested,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
+
+/** Option values arrive either as an array (exact, preferred) or as the legacy
+ *  comma-joined string. An array is what lets a value contain a comma. */
+@ValidatorConstraint({ name: 'stringOrStringArray', async: false })
+class StringOrStringArray implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return typeof value === 'string' || (Array.isArray(value) && value.every((v) => typeof v === 'string'));
+  }
+  defaultMessage(): string { return 'values must be a string or an array of strings'; }
+}
 
 class BundleDto {
   @IsString() id!: string;
@@ -28,8 +41,8 @@ class BundleDto {
 class OptionDto {
   @IsString() label!: string;
   @IsIn(['text', 'select', 'radio']) type!: 'text' | 'select' | 'radio';
-  /** Comma-separated, matching the existing ProductInput contract. */
-  @IsString() values!: string;
+  /** Array of exact values (preferred) or the legacy comma-separated string. */
+  @Validate(StringOrStringArray) values!: string | string[];
 }
 
 export class ProductMediaDto {
@@ -60,6 +73,7 @@ export class CreateProductDto {
   @IsOptional() @IsNumber() deliveryCost?: number;
   @IsOptional() @IsString() supplierId?: string | null;
   @IsOptional() @IsBoolean() posOnly?: boolean;
+  @IsOptional() @IsNumber() purchasePrice?: number;
 }
 
 /** Every field optional — this is a PATCH-style partial update. */
@@ -85,6 +99,10 @@ export class UpdateProductDto {
   @IsOptional() @IsNumber() deliveryCost?: number;
   @IsOptional() @IsString() supplierId?: string | null;
   @IsOptional() @IsBoolean() posOnly?: boolean;
+  /** Purchase price (TND), stored on the product's variants. Send only when changed. */
+  @IsOptional() @IsNumber() purchasePrice?: number;
+  /** Revision the editor loaded; the update is refused with 409 if it has moved. */
+  @IsOptional() @IsInt() @Min(0) expectedRevision?: number;
 }
 
 class ReorderItemDto {

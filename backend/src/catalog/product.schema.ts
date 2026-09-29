@@ -69,7 +69,9 @@ const ProductBundleSchema = SchemaFactory.createForClass(ProductBundle);
 
 export type ProductStatus = 'published' | 'draft' | 'private';
 
-@Schema({ collection: 'products', timestamps: true })
+// optimisticConcurrency: a save() fails (VersionError) if the document changed since it was loaded, so two
+// simultaneous admin saves can never both win — the second is turned into a 409 by ProductsService.update.
+@Schema({ collection: 'products', timestamps: true, optimisticConcurrency: true })
 export class Product {
   @Prop({ type: String, enum: ['LEGACY', 'MATRIX'], default: 'LEGACY' })
   inventoryModel!: 'LEGACY' | 'MATRIX';
@@ -127,6 +129,13 @@ export class Product {
 
   @Prop({ type: [String], default: [] })
   categorySlugs!: string[];
+
+  /** Bumped on every admin edit. The editor sends the revision it loaded and the
+   *  update is refused (409) if it moved since, so a stale drawer can never
+   *  silently overwrite a newer save. Unrelated to `updatedAt`, which stock
+   *  movements also touch. */
+  @Prop({ type: Number, default: 0 })
+  revision!: number;
 
   @Prop({ type: [ProductOptionSchema], default: [] })
   options!: ProductOption[];

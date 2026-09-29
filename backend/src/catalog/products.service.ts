@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, isValidObjectId, Model } from 'mongoose';
+import { Error as MongooseError, FilterQuery, isValidObjectId, Model } from 'mongoose';
 import type { Product as ProductContract, ProductListQuery, ProductListResult } from '@contracts';
 import { clampPagination, paginate } from '@/common/pagination';
 import { normalizePublicMediaUrl } from '@/common/public-media-url';
@@ -173,12 +174,30 @@ export class ProductsService {
       posOnly: input.posOnly ?? false,
     });
     await this.variants.generateDefaultVariant(doc.id);
+    if (input.purchasePrice !== undefined) await this.variants.setPurchasePrice(doc.id, toMinor(input.purchasePrice));
     await this.finalizeMedia([], images.map((image) => image.mediaId).filter((id): id is string => Boolean(id)));
     return toProductContract(doc);
   }
 
-  async update(id: string, input: UpdateProductDto): Promise<ProductContract> {
+  /** Admin editor read: the normal contract plus what only the editor needs. */
+  async getByIdForEdit(id: string): Promise<ProductContract | null> {
+    const product = await this.getById(id);
+    if (!product) return null;
+    const purchasePriceMinor = await this.variants.purchasePriceMinorFor(product.id);
+    return { ...product, meta: { ...product.meta, purchasePriceMinor } };
+  }
+
+  /**
+   * PATCH-style update of exactly ONE product (resolved by `_id`; the document
+   * is loaded, mutated and saved, never an updateMany/bulk filter). Only the
+   * fields present in `input` are touched. Stock fields are deliberately not
+   * writable here: stock belongs to the inventory module.
+   */
+  async update(id: string, input: UpdateProductDto, ctx: { actorId?: string; requestId?: string } = {}): Promise<ProductContract> {
     const doc = await this.findDoc(id);
+    if (input.expectedRevision !== undefined && (doc.revision ?? 0) !== input.expectedRevision) {
+      throw new ConflictException('Ce produit a été modifié depuis son ouverture. Rechargez les données avant d\u2019enregistrer.');
+    }
     if (input.name !== undefined) doc.name = input.name;
     if (input.slug !== undefined) {
       const slug = slugify(input.slug);
@@ -192,8 +211,6 @@ export class ProductsService {
       doc.salePriceMinor = input.salePrice != null ? toMinor(input.salePrice) : null;
     }
     if (input.sku !== undefined) doc.sku = input.sku;
-    if (input.manageStock !== undefined) doc.manageStock = input.manageStock;
-    if (input.stockQuantity !== undefined) doc.stockQuantity = input.stockQuantity;
     if (input.status !== undefined) doc.status = input.status;
     if (input.categoryIds !== undefined) {
       doc.categoryIds = input.categoryIds;
@@ -231,13 +248,60 @@ export class ProductsService {
     if (input.deliveryCost !== undefined) doc.deliveryCostMinor = toMinor(input.deliveryCost);
     if (input.supplierId !== undefined) doc.supplierId = input.supplierId;
     if (input.posOnly !== undefined) doc.posOnly = input.posOnly;
-    await doc.save();
+    const changedFields = doc.modifiedPaths().filter((p) => p !== 'updatedAt' && p !== 'revision');
+    if (input.purchasePrice !== undefined) changedFields.push('purchasePrice');
+    if (changedFields.length) doc.revision = (doc.revision ?? 0) + 1;
+    try {
+      await doc.save();
+    } catch (error) {
+      if (error instanceof MongooseError.VersionError) {
+        throw new ConflictException('Ce produit a été modifié depuis son ouverture. Rechargez les données avant d’enregistrer.');
+      }
+      throw error;
+    }
+    if (input.purchasePrice !== undefined) await this.variants.setPurchasePrice(doc.id, toMinor(input.purchasePrice));
+    // Structured trail for diagnosing "the wrong product changed" reports (no payloads, no images).
+    this.logger.log({ event: 'product.update', productId: doc.id, actorId: ctx.actorId ?? null, requestId: ctx.requestId ?? null, revision: doc.revision, changedFields });
     // Options are the source of truth for what can be bought: switch off any
     // variant whose size/color was just removed (and restore ones that came back).
     if (input.options !== undefined) await this.variants.reconcileWithOptions(doc.id);
     if (nextMediaInput !== undefined) {
       await this.finalizeMedia(previousMediaIds, doc.images.map((image) => image.mediaId).filter((mediaId): mediaId is string => Boolean(mediaId)));
     }
+    return toProductContract(doc);
+  }
+
+  /**
+   * Server-side deep copy. Every nested structure is cloned (nothing is shared
+   * with the original), bundle ids are regenerated, and the copy starts as a
+   * draft with no SKU and no stock.
+   */
+  async duplicate(id: string, ctx: { actorId?: string; requestId?: string } = {}): Promise<ProductContract> {
+    const src = await this.findDoc(id);
+    const plain = src.toObject() as unknown as Product;
+    const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    const name = `${src.name} (copie)`;
+    let slug = slugify(name);
+    for (let n = 2; await this.model.exists({ slug }); n += 1) slug = `${slugify(name)}-${n}`;
+    const images = clone(plain.images ?? []);
+    const doc = await this.model.create({
+      name, slug, status: 'draft', sku: null,
+      description: src.description, shortDescription: src.shortDescription,
+      regularPriceMinor: src.regularPriceMinor, salePriceMinor: src.salePriceMinor ?? null,
+      manageStock: src.manageStock, stockQuantity: null,
+      categoryIds: clone(src.categoryIds ?? []), categorySlugs: clone(src.categorySlugs ?? []),
+      images,
+      upsellIds: clone(src.upsellIds ?? []), crossSellIds: clone(src.crossSellIds ?? []),
+      bundles: clone(plain.bundles ?? []).map((b) => ({ ...b, id: randomUUID() })),
+      options: clone(plain.options ?? []),
+      costMinor: src.costMinor ?? 0, deliveryPriceMinor: src.deliveryPriceMinor ?? 0, deliveryCostMinor: src.deliveryCostMinor ?? 0,
+      supplierId: src.supplierId ?? null, posOnly: src.posOnly ?? false,
+    });
+    await this.variants.generateDefaultVariant(doc.id);
+    const purchase = await this.variants.purchasePriceMinorFor(src.id);
+    if (purchase !== null) await this.variants.setPurchasePrice(doc.id, purchase);
+    await this.finalizeMedia([], images.map((image) => image.mediaId).filter((mediaId): mediaId is string => Boolean(mediaId)));
+    this.logger.log({ event: 'product.duplicate', sourceId: src.id, productId: doc.id, actorId: ctx.actorId ?? null, requestId: ctx.requestId ?? null });
     return toProductContract(doc);
   }
 

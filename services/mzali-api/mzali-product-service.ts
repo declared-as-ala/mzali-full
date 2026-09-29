@@ -84,9 +84,16 @@ export class MzaliApiProductService implements ProductService {
     );
   }
 
-  async update(id: string, input: Partial<ProductInput>): Promise<Product> {
+  async update(id: string, input: Partial<ProductInput>, meta: { requestId?: string } = {}): Promise<Product> {
     return withAuthRetry((bearer) =>
-      apiRequest<Product>(`/admin/products/${id}`, { method: 'PUT', bearer, body: input }),
+      apiRequest<Product>(`/admin/products/${id}`, { method: 'PUT', bearer, body: input, requestId: meta.requestId }),
+    );
+  }
+
+  /** Server-side deep copy (nothing shared with the original). */
+  async duplicate(id: string, meta: { requestId?: string } = {}): Promise<Product> {
+    return withAuthRetry((bearer) =>
+      apiRequest<Product>(`/admin/products/${id}/duplicate`, { method: 'POST', bearer, requestId: meta.requestId }),
     );
   }
 

@@ -25,14 +25,14 @@ function ModeBadge({ mode }: { mode?: 'SIMPLE' | 'VARIANT' }) {
   return <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">GLOBAL</span>;
 }
 
-export default function VariantStockView({ locationId: initialLocation }: { locationId: 'DEPOT' | 'BOUTIQUE' }) {
+export default function VariantStockView({ locationId: initialLocation, initialProductId = '' }: { locationId: 'DEPOT' | 'BOUTIQUE'; initialProductId?: string }) {
   const [locationId, setLocationId] = useState(initialLocation);
   const [allRows, setAllRows] = useState<Row[]>([]);
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState('');
   const [configuring, setConfiguring] = useState<Row | null>(null);
   const [data, setData] = useState<Data>({ items: [], total: 0, totalPages: 0, products: [], sizes: [], colors: [] });
-  const [filters, setFilters] = useState({ search: '', productId: '', size: '', color: '', status: '', sort: 'name' });
+  const [filters, setFilters] = useState({ search: '', productId: initialProductId, size: '', color: '', status: '', sort: 'name' });
   const [page, setPage] = useState(1), [refresh, setRefresh] = useState(0), [error, setError] = useState(''), [loading, setLoading] = useState(true);
 
   useEffect(() => {

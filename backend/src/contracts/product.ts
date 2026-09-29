@@ -41,6 +41,10 @@ export type Product = {
   id: string;
   slug: string;
   name: string;
+  sku?: string | null;
+  /** Edit revision (see Product.revision) — echo it back as `expectedRevision` when saving. */
+  revision?: number;
+  updatedAt?: string;
   status: ProductStatus;
   description: string;
   shortDescription: string;

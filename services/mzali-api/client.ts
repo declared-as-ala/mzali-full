@@ -20,6 +20,8 @@ type RequestOptions = {
   bearer?: string;
   serviceToken?: boolean;
   idempotencyKey?: string;
+  /** Correlates the request with backend logs (X-Request-Id). */
+  requestId?: string;
   query?: Record<string, string | number | boolean | undefined | null>;
 };
 
@@ -39,6 +41,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   if (opts.serviceToken) headers['X-Service-Token'] = SERVICE_TOKEN;
   if (opts.bearer) headers.Authorization = `Bearer ${opts.bearer}`;
   if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
+  if (opts.requestId) headers['X-Request-Id'] = opts.requestId;
 
   const res = await fetch(`${BASE}/api/v1${path}${qs(opts.query)}`, {
     method: opts.method ?? 'GET',

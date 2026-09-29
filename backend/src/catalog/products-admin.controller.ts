@@ -8,6 +8,11 @@ import { CreateProductDto, ReorderProductsDto, UpdateProductDto } from './dto/pr
 import { ProductListQueryDto } from './dto/product-query.dto';
 import { ProductsService } from './products.service';
 
+const requestIdOf = (req: AuthedRequest): string | undefined => {
+  const header = req.headers?.['x-request-id'];
+  return Array.isArray(header) ? header[0] : header;
+};
+
 @ApiTags('admin/products')
 @ApiBearerAuth()
 @Controller()
@@ -41,7 +46,22 @@ export class ProductsAdminController {
   @Get('admin/products/:id')
   @RequirePermissions('products.read')
   get(@Param('id') id: string) {
-    return this.products.getById(id);
+    return this.products.getByIdForEdit(id);
+  }
+
+  @Post('admin/products/:id/duplicate')
+  @RequirePermissions('products.write')
+  async duplicate(@Param('id') id: string, @CurrentUser() user: RequestUser, @Req() req: AuthedRequest) {
+    const created = await this.products.duplicate(id, { actorId: user.userId, requestId: requestIdOf(req) });
+    await this.audit.log({
+      actor: { type: 'employee', id: user.userId, name: user.name },
+      action: 'product.create',
+      entityType: 'product',
+      entityId: created.id,
+      summary: `Duplication du produit ${id} -> ${created.name}`,
+      ip: req.ip,
+    });
+    return created;
   }
 
   @Post('admin/products')
@@ -71,7 +91,7 @@ export class ProductsAdminController {
     @CurrentUser() user: RequestUser,
     @Req() req: AuthedRequest,
   ) {
-    const updated = await this.products.update(id, dto);
+    const updated = await this.products.update(id, dto, { actorId: user.userId, requestId: requestIdOf(req) });
     await this.audit.log({
       actor: { type: 'employee', id: user.userId, name: user.name },
       action: 'product.update',
