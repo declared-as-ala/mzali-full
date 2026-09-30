@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import {
-  availabilityLabel, colorChoices, maxQuantity, sizesForColor, variantById,
-  type LiveStock, type LiveVariant,
+  availabilityLabel, axesOf, changeSelection, colorOptions, maxQuantity, matchLegacy, resolveVariant, selectionOf, sizeOptions, variantById,
+  type AxisChoice, type LiveStock, type LiveVariant, type Selection,
 } from '@/lib/order-stock';
 
 /** Minimal shape of an order line the stock UI needs (the drawer's LineDraft satisfies it). */
@@ -16,9 +16,12 @@ export type StockCtx<L extends StockLine = StockLine> = {
   notices: Record<string, string>;
   onQty: (line: L, value: number) => void;
   onPickVariant: (line: L, variant: LiveVariant) => void;
+  /** The selection no longer resolves to a variant: forget the previous one. */
+  onClearVariant: (line: L) => void;
 };
 
 const plural = (n: number) => (n > 1 ? 's' : '');
+const norm = (v: string) => v.trim().normalize('NFC').toLocaleLowerCase('fr');
 
 /** "Stock total : 31 unités" under the product name; red ÉPUISÉ when nothing is left. */
 export function StockTotalNote({ stock }: { stock?: LiveStock }) {
@@ -46,7 +49,7 @@ export function LineVariant<L extends StockLine>({ l, ctx, matrix, fallback }: {
   const stock = ctx.stocks[l.productId];
   if (matrix) {
     if (!stock) return <span className="text-xs font-semibold text-ink-500">Chargement du stock…</span>;
-    return <VariantStockPicker line={l} stock={stock} onPick={(v) => ctx.onPickVariant(l, v)} />;
+    return <ProductVariantSelector line={l} stock={stock} ctx={ctx} />;
   }
   return (
     <div className="space-y-1.5">
@@ -60,79 +63,65 @@ export function LineVariant<L extends StockLine>({ l, ctx, matrix, fallback }: {
   );
 }
 
-const norm = (v: string) => v.trim().normalize('NFC').toLocaleLowerCase('fr');
+/**
+ * ProductVariantSelector: ONE reusable component for every order line (create, edit, bundle slot).
+ * Two selects — Couleur and Taille — filter each other and resolve one REAL variant (never text).
+ * An axis the product does not have is not shown; sold-out values are red and disabled.
+ */
+function ProductVariantSelector<L extends StockLine>({ line, stock, ctx }: { line: L; stock: LiveStock; ctx: StockCtx<L> }) {
+  const axes = axesOf(stock);
+  const saved = variantById(stock, line.variantId);
+  const legacy = !line.variantId ? matchLegacy(stock, line.variation) : undefined; // display only, nothing is written
+  const current = saved ?? legacy;
+  const [sel, setSel] = useState<Selection>(selectionOf(current));
+  useEffect(() => { setSel(selectionOf(saved ?? legacy)); }, [saved?.id, legacy?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-function VariantStockPicker({ line, stock, onPick }: { line: StockLine; stock: LiveStock; onPick: (v: LiveVariant) => void }) {
-  const chosen = variantById(stock, line.variantId);
-  const [color, setColor] = useState<string>(chosen?.color ?? '');
-  useEffect(() => { if (chosen) setColor(chosen.color); }, [chosen?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const colors = axes.color ? colorOptions(stock, sel.size) : [];
+  const sizes = axes.size ? sizeOptions(stock, sel.color) : [];
+  const resolved = resolveVariant(stock, sel);
+  const staleSaved = Boolean(line.variantId && !saved?.active);
+  const historical = !line.variantId && !legacy && Object.values(line.variation).some(Boolean)
+    ? Object.values(line.variation).filter(Boolean).join(' / ') : '';
 
-  const colors = colorChoices(stock);
-  // A single color needs no choosing.
-  const activeColor = color || (colors.length === 1 ? colors[0].color : '');
-  const sizes = activeColor ? sizesForColor(stock, activeColor) : [];
-  const lineIsStale = Boolean(line.variantId && !chosen?.active);
+  function change(axis: 'color' | 'size', value: string) {
+    const next = changeSelection(stock, sel, axis, value);
+    setSel(next);
+    const v = resolveVariant(stock, next);
+    if (v && v.available > 0) { if (v.id !== line.variantId) ctx.onPickVariant(line, v); }
+    else if (line.variantId) ctx.onClearVariant(line); // the old variant no longer matches what is selected
+  }
 
-  if (!colors.length) return <span className="text-xs font-bold text-red-600">Aucune variante en vente</span>;
+  if (!axes.color && !axes.size) return <span className="text-xs font-bold text-red-600">Aucune variante en vente</span>;
+
+  const label = (c: AxisChoice) => `${c.value}${c.soldOut ? ' — ÉPUISÉ' : ` — ${availabilityLabel(c.available)}`}`;
+  const select = (axis: 'color' | 'size', title: string, options: AxisChoice[]) => (
+    <label className="block">
+      <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-ink-500">{title}</span>
+      <select
+        aria-label={title}
+        value={sel[axis]}
+        onChange={(e) => change(axis, e.target.value)}
+        className={`h-9 w-full min-w-[9.5rem] rounded-lg border bg-white px-2 text-xs font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50 ${sel[axis] ? 'border-brand-300 text-brand-700' : 'border-ink-200 text-ink-700'}`}
+      >
+        <option value="">Sélectionner {axis === 'color' ? 'une couleur' : 'une taille'}</option>
+        {options.map((c) => (
+          <option key={norm(c.value)} value={c.value} disabled={c.soldOut} className={c.soldOut ? 'text-red-500' : ''}>{label(c)}</option>
+        ))}
+      </select>
+    </label>
+  );
 
   return (
-    <div className="min-w-[13rem] space-y-2">
-      {lineIsStale && (
-        <p className="rounded-md bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">Cette variante n’est plus en vente : choisissez-en une autre.</p>
-      )}
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Couleur">
-        {colors.map((c) => (
-          <button
-            key={norm(c.color)}
-            type="button"
-            aria-pressed={norm(activeColor) === norm(c.color)}
-            disabled={c.soldOut}
-            onClick={() => setColor(c.color)}
-            className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition ${
-              c.soldOut ? 'cursor-not-allowed border-red-200 bg-red-50 text-red-500 line-through'
-                : norm(activeColor) === norm(c.color) ? 'border-brand-500 bg-brand-50 text-brand-700'
-                : 'border-ink-200 bg-white text-ink-900 hover:border-brand-300'
-            }`}
-            title={c.soldOut ? 'Toutes les tailles sont épuisées' : `${c.available} disponibles`}
-          >
-            {c.color || 'Standard'}{c.soldOut ? ' — ÉPUISÉ' : ''}
-          </button>
-        ))}
+    <div className="min-w-[10rem] space-y-2">
+      {staleSaved && <p className="rounded-md bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">Cette variante n’est plus en vente : choisissez-en une autre.</p>}
+      {historical && <p className="rounded-md bg-ink-100 px-2 py-1 text-[11px] font-bold text-ink-700">Commande d’origine : {historical} (à confirmer)</p>}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        {axes.color && select('color', 'Couleur', colors)}
+        {axes.size && select('size', 'Taille', sizes)}
       </div>
-
-      {activeColor ? (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Taille">
-          {sizes.map((v) => {
-            const out = v.available <= 0;
-            const selected = v.id === line.variantId;
-            return (
-              <button
-                key={v.id}
-                type="button"
-                disabled={out}
-                aria-pressed={selected}
-                aria-label={`${v.size || 'Standard'} — ${availabilityLabel(v.available)}`}
-                onClick={() => onPick(v)}
-                className={`flex min-w-[3.6rem] flex-col items-center rounded-lg border px-2 py-1 text-xs transition ${
-                  out ? 'cursor-not-allowed border-red-200 bg-red-50 text-red-500'
-                    : selected ? 'border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-500'
-                    : 'border-ink-200 bg-white text-ink-900 hover:border-brand-300'
-                }`}
-              >
-                <span className={`font-black ${out ? 'line-through' : ''}`}>{v.size || 'Standard'}</span>
-                <span className={`text-[10px] font-bold ${out ? 'text-red-600' : v.available <= 3 ? 'text-amber-700' : 'text-emerald-700'}`}>{availabilityLabel(v.available)}</span>
-              </button>
-            );
-          })}
-          {!sizes.length && <span className="text-[11px] font-semibold text-ink-500">Aucune taille en vente pour cette couleur.</span>}
-        </div>
-      ) : (
-        <p className="text-[11px] font-semibold text-ink-500">Choisissez une couleur.</p>
-      )}
-
-      {chosen && chosen.active && (
-        <p className={`text-[11px] font-black ${chosen.available <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-          {chosen.size || 'Standard'} / {chosen.color || 'Standard'} — {availabilityLabel(chosen.available)}
+      {resolved && (
+        <p className={`text-[11px] font-black ${resolved.available <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+          {[resolved.size, resolved.color].filter(Boolean).join(' / ')} — {availabilityLabel(resolved.available)}
         </p>
       )}
     </div>

@@ -118,3 +118,74 @@ export function overbooked(
   }
   return bad;
 }
+
+// ── Two-select variant picker: Couleur + Taille resolve ONE real variant ─────────────────────
+
+export type Selection = { color: string; size: string };
+export type AxisChoice = { value: string; available: number; soldOut: boolean };
+
+/** Which selectors a product needs: an axis with no value on any sellable variant is never shown. */
+export function axesOf(s: LiveStock): { color: boolean; size: boolean } {
+  const vs = sellableVariants(s);
+  return { color: vs.some((v) => v.color.trim() !== ''), size: vs.some((v) => v.size.trim() !== '') };
+}
+
+function choices(vs: LiveVariant[], key: 'color' | 'size'): AxisChoice[] {
+  const out = new Map<string, AxisChoice>();
+  for (const v of vs) {
+    const k = norm(v[key]);
+    const cur = out.get(k);
+    out.set(k, { value: cur?.value ?? v[key], available: (cur?.available ?? 0) + v.available, soldOut: false });
+  }
+  return [...out.values()].map((c) => ({ ...c, soldOut: c.available <= 0 }));
+}
+
+/** Colors offered: only those that exist (with the chosen size, if any). Sold-out ones are flagged. */
+export function colorOptions(s: LiveStock, size: string): AxisChoice[] {
+  const vs = sellableVariants(s).filter((v) => !size || norm(v.size) === norm(size));
+  return choices(vs, 'color').filter((c) => c.value.trim() !== '');
+}
+
+/** Sizes offered: only those that exist (with the chosen color, if any). Sold-out ones are flagged. */
+export function sizeOptions(s: LiveStock, color: string): AxisChoice[] {
+  const vs = sellableVariants(s).filter((v) => !color || norm(v.color) === norm(color));
+  return choices(vs, 'size').filter((c) => c.value.trim() !== '');
+}
+
+/** The exact variant for a selection, or undefined (never a made-up one). */
+export function resolveVariant(s: LiveStock, sel: Selection): LiveVariant | undefined {
+  const axes = axesOf(s);
+  if ((axes.color && !sel.color) || (axes.size && !sel.size)) return undefined;
+  return sellableVariants(s).find((v) => (!axes.color || norm(v.color) === norm(sel.color)) && (!axes.size || norm(v.size) === norm(sel.size)));
+}
+
+/**
+ * Applies one change and drops the OTHER value when it no longer forms a valid, in-stock
+ * combination (e.g. size XL only exists in Blanc: choosing Noir clears XL).
+ */
+export function changeSelection(s: LiveStock, sel: Selection, axis: 'color' | 'size', value: string): Selection {
+  const next: Selection = { ...sel, [axis]: value };
+  const other = axis === 'color' ? 'size' : 'color';
+  if (next[other]) {
+    const v = sellableVariants(s).find((x) => norm(x.color) === norm(next.color || x.color) && norm(x.size) === norm(next.size || x.size));
+    if (!v || v.available <= 0) next[other] = '';
+  }
+  return next;
+}
+
+/** Selection shown for an existing variant. */
+export const selectionOf = (v: LiveVariant | undefined): Selection => ({ color: v?.color ?? '', size: v?.size ?? '' });
+
+/**
+ * Old order lines may carry no variantId, only {size, color}. Resolve ONLY when exactly one current
+ * variant matches; otherwise undefined so the historical values are kept as they are.
+ */
+export function matchLegacy(s: LiveStock, variation: Record<string, string> | undefined): LiveVariant | undefined {
+  if (!variation) return undefined;
+  const pick = (re: RegExp) => Object.entries(variation).find(([k]) => re.test(norm(k)))?.[1] ?? '';
+  const size = pick(/^(taille|tallie|taile|size|pointure)s?$/);
+  const color = pick(/^(couleur|color|colour)s?$/);
+  if (!size && !color) return undefined;
+  const hits = sellableVariants(s).filter((v) => (!size || norm(v.size) === norm(size)) && (!color || norm(v.color) === norm(color)));
+  return hits.length === 1 ? hits[0] : undefined;
+}

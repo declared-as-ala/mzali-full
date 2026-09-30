@@ -293,6 +293,10 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     applyClamp(l, l.qty, stocks[l.productId], v.id);
     void refreshStock(l.productId).then((fresh) => { if (fresh) applyClamp(l, l.qty, fresh, v.id); });
   }
+  function onClearVariant(l: LineDraft) {
+    dropNotice(l.key);
+    setLine(l.key, { variantId: null, variation: {} });
+  }
   /** Before anything is sent: refresh stock and refuse quantities above what is really free. */
   async function stockPreflight(): Promise<boolean> {
     const fresh: Record<string, LiveStock | undefined> = { ...stocks };
@@ -1328,7 +1332,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                     removeLine,
                     removeBundleGroup,
                     switchBundle,
-                    stockCtx: { stocks, held: heldFor, notices: stockNotices, onQty, onPickVariant },
+                    stockCtx: { stocks, held: heldFor, notices: stockNotices, onQty, onPickVariant, onClearVariant },
                   })}
                   {lines.length === 0 && (
                     <tr><td colSpan={7} className="px-3 py-12 text-center text-ink-700">La scène est prête pour vos produits ! ✨🎉</td></tr>
@@ -1633,7 +1637,7 @@ function renderSummaryRows(args: {
 
 /** One <select> per known product attribute, free-form fallback when no options were configured. */
 function VariationSelects({
-  attrs, value, onChange, variants, variantId, onVariantChange,
+  attrs, value, onChange,
 }: {
   variants?: ProductInfo['variants'];
   variantId?: string;
@@ -1642,7 +1646,6 @@ function VariationSelects({
   value: Record<string, string>;
   onChange: (name: string, v: string) => void;
 }) {
-  if (variants) return <select aria-label="Variante exacte" className="input min-w-36" value={variantId ?? ''} onChange={e => onVariantChange?.(e.target.value)}><option value="">Sélectionnez taille / couleur</option>{variantId && !variants.some(v => v.id === variantId) && <option value={variantId}>Variante historique (réconciliation requise)</option>}{variants.filter(v => v.active).map(v => <option key={v.id} value={v.id}>{v.size} / {v.color}</option>)}</select>;
   // If we don't have option metadata yet, just show whatever the order has as chips.
   if (!attrs.length) {
     const entries = Object.entries(value).filter(([, v]) => v);
