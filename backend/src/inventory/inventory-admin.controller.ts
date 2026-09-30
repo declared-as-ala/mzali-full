@@ -89,8 +89,10 @@ export class InventoryAdminController {
   }
 
   /** Live stock of one product (per exact variant when it has variants), read before an order is saved. */
+  // Anyone who can build/edit an order must see live stock while on the phone (the "Employé" role has
+  // orders.write but not inventory.read).
   @Get('availability/:productId')
-  @RequirePermissions('inventory.read')
+  @RequirePermissions('orders.write')
   availability(@Param('productId') productId: string) {
     return this.inventory.getAvailability(productId);
   }
