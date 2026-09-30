@@ -52,10 +52,10 @@ export function LineVariant<L extends StockLine>({ l, ctx, matrix, fallback }: {
     return <ProductVariantSelector line={l} stock={stock} ctx={ctx} />;
   }
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2.5">
       {fallback}
       {stock?.tracked && (
-        <p className={`text-[11px] font-bold ${stock.total <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+        <p className={`text-xs font-bold ${stock.total <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
           {stock.total <= 0 ? 'ÉPUISÉ' : `${stock.total} disponible${plural(stock.total)}`}
         </p>
       )}
@@ -95,13 +95,13 @@ function ProductVariantSelector<L extends StockLine>({ line, stock, ctx }: { lin
 
   const label = (c: AxisChoice) => `${c.value}${c.soldOut ? ' — ÉPUISÉ' : ` — ${availabilityLabel(c.available)}`}`;
   const select = (axis: 'color' | 'size', title: string, options: AxisChoice[]) => (
-    <label className="block">
-      <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-ink-500">{title}</span>
+    <label className="block min-w-0">
+      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-ink-500">{title}</span>
       <select
         aria-label={title}
         value={sel[axis]}
         onChange={(e) => change(axis, e.target.value)}
-        className={`h-9 w-full min-w-[9.5rem] rounded-lg border bg-white px-2 text-xs font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50 ${sel[axis] ? 'border-brand-300 text-brand-700' : 'border-ink-200 text-ink-700'}`}
+        className={`h-10 w-full min-w-0 rounded-lg border bg-white px-2 text-sm font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50 ${sel[axis] ? 'border-brand-300 text-brand-700' : 'border-ink-200 text-ink-700'}`}
       >
         <option value="">Sélectionner {axis === 'color' ? 'une couleur' : 'une taille'}</option>
         {options.map((c) => (
@@ -112,15 +112,15 @@ function ProductVariantSelector<L extends StockLine>({ line, stock, ctx }: { lin
   );
 
   return (
-    <div className="min-w-[10rem] space-y-2">
+    <div className="w-full space-y-2.5">
       {staleSaved && <p className="rounded-md bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">Cette variante n’est plus en vente : choisissez-en une autre.</p>}
       {historical && <p className="rounded-md bg-ink-100 px-2 py-1 text-[11px] font-bold text-ink-700">Commande d’origine : {historical} (à confirmer)</p>}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         {axes.color && select('color', 'Couleur', colors)}
         {axes.size && select('size', 'Taille', sizes)}
       </div>
       {resolved && (
-        <p className={`text-[11px] font-black ${resolved.available <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+        <p className={`text-xs font-black ${resolved.available <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
           {[resolved.size, resolved.color].filter(Boolean).join(' / ')} — {availabilityLabel(resolved.available)}
         </p>
       )}

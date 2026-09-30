@@ -1304,14 +1304,14 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
           {/* Résumé des commandes */}
           <Card title="Résumé des commandes">
             <div className="overflow-x-auto">
-              <table className="w-full table-fixed border-separate border-spacing-0 text-sm min-w-[860px]">
+              <table className="w-full table-fixed border-separate border-spacing-0 text-sm min-w-[1040px]">
                 <colgroup>
-                  <col className="w-[220px]" />
-                  <col className="w-[90px]" />
+                  <col className="w-[210px]" />
+                  <col className="w-[104px]" />
                   <col />
-                  <col className="w-[110px]" />
-                  <col className="w-[90px]" />
-                  <col className="w-[60px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[104px]" />
+                  <col className="w-[48px]" />
                 </colgroup>
                 <thead className="text-[10px] uppercase tracking-wider text-ink-700">
                   <tr className="bg-ink-100">
@@ -1461,11 +1461,12 @@ function renderSummaryRows(args: {
     const attrs = info?.options ?? [];
     const bundles = info?.bundles ?? [];
 
+    rows.push(<tr key={`${g.key}-sp`} aria-hidden="true"><td colSpan={6} className="h-3 p-0" /></tr>);
     if (g.bundleName) {
       // Bundle group header row
       rows.push(
         <tr key={`${g.key}-h`} className="bg-brand-50/50">
-          <td className="rounded-l-xl px-4 py-3 align-middle" colSpan={6}>
+          <td className="rounded-l-xl px-4 py-4 align-top" colSpan={6}>
             <div className="flex flex-wrap items-center gap-3">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-brand-700">
                 Bundle
@@ -1503,8 +1504,8 @@ function renderSummaryRows(args: {
         const isFirst = k === 0;
         const isLast = k === g.items.length - 1;
         rows.push(
-          <tr key={`${g.key}-${l.key}`} className={isLast ? 'border-b-2 border-brand-100/40' : ''}>
-            <td className={`px-4 py-3 align-middle ${isFirst ? '' : 'pt-0'}`}>
+          <tr key={`${g.key}-${l.key}`} className={`bg-brand-50/30 ${isLast ? 'border-b-2 border-brand-100/60' : ''}`}>
+            <td className={`px-4 py-4 align-top ${isFirst ? '' : 'pt-0'}`}>
               {isFirst ? (
                 <div className="flex items-center gap-3">
                   {l.image ? (
@@ -1523,7 +1524,7 @@ function renderSummaryRows(args: {
                 </div>
               )}
             </td>
-            <td className="px-3 py-3 align-middle">
+            <td className="px-3 py-4 align-top">
               <NumberField
                 value={l.qty}
                 onChange={(v) => stockCtx.onQty(l, v)}
@@ -1534,7 +1535,7 @@ function renderSummaryRows(args: {
               />
 <LineQtyNote l={l} ctx={stockCtx} />
             </td>
-            <td className="px-3 py-3 align-middle">
+            <td className="px-3 py-4 align-top">
               <LineVariant l={l} ctx={stockCtx} matrix={Boolean(info?.matrix)} fallback={<VariationSelects
                 variants={info?.matrix ? info.variants : undefined}
                 variantId={l.variantId ?? undefined}
@@ -1544,7 +1545,7 @@ function renderSummaryRows(args: {
                 onChange={(name, v) => setLineVariation(l.key, name, v)}
               />} />
             </td>
-            <td className="px-3 py-3 align-middle text-right">
+            <td className="px-3 py-4 align-top text-right">
               <NumberField
                 value={l.unitPrice}
                 onChange={(v) => setLine(l.key, { unitPrice: v })}
@@ -1554,8 +1555,8 @@ function renderSummaryRows(args: {
                 className="h-9 w-24 rounded-lg border border-ink-200 bg-white px-2 text-right text-sm font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50"
               />
             </td>
-            <td className="px-3 py-3 align-middle text-right text-sm font-black text-ink-900 whitespace-nowrap">{formatPrice(l.qty * l.unitPrice)}</td>
-            <td className="px-3 py-3 align-middle text-right">
+            <td className="px-3 py-4 align-top text-right text-sm font-black leading-9 text-ink-900 whitespace-nowrap">{formatPrice(l.qty * l.unitPrice)}</td>
+            <td className="px-3 py-4 align-top text-right">
               {!isFirst && (
                 <button
                   type="button"
@@ -1575,7 +1576,7 @@ function renderSummaryRows(args: {
       const l = g.items[0];
       rows.push(
         <tr key={`${g.key}-${l.key}`} className="border-t border-ink-200">
-          <td className="px-4 py-3 align-middle">
+          <td className="px-4 py-4 align-top">
             <div className="flex items-center gap-3">
               {l.image ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
@@ -1586,7 +1587,7 @@ function renderSummaryRows(args: {
               <span className="min-w-0"><span className="line-clamp-2 break-words font-bold text-ink-900" title={l.name}>{l.name}</span><StockTotalNote stock={stockCtx.stocks[l.productId]} /></span>
             </div>
           </td>
-          <td className="px-3 py-3 align-middle">
+          <td className="px-3 py-4 align-top">
             <NumberField
               value={l.qty}
               onChange={(v) => stockCtx.onQty(l, v)}
@@ -1597,7 +1598,7 @@ function renderSummaryRows(args: {
             />
 <LineQtyNote l={l} ctx={stockCtx} />
           </td>
-          <td className="px-3 py-3 align-middle">
+          <td className="px-3 py-4 align-top">
             <LineVariant l={l} ctx={stockCtx} matrix={Boolean(info?.matrix)} fallback={<VariationSelects
                 variants={info?.matrix ? info.variants : undefined}
                 variantId={l.variantId ?? undefined}
@@ -1607,7 +1608,7 @@ function renderSummaryRows(args: {
               onChange={(name, v) => setLineVariation(l.key, name, v)}
             />} />
           </td>
-          <td className="px-3 py-3 align-middle text-right">
+          <td className="px-3 py-4 align-top text-right">
             <NumberField
               value={l.unitPrice}
               onChange={(v) => setLine(l.key, { unitPrice: v })}
@@ -1617,8 +1618,8 @@ function renderSummaryRows(args: {
               className="h-9 w-24 rounded-lg border border-ink-200 bg-white px-2 text-right text-sm font-bold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-50"
             />
           </td>
-          <td className="px-3 py-3 align-middle text-right text-sm font-black text-ink-900 whitespace-nowrap">{formatPrice(l.qty * l.unitPrice)}</td>
-          <td className="px-3 py-3 align-middle text-right">
+          <td className="px-3 py-4 align-top text-right text-sm font-black leading-9 text-ink-900 whitespace-nowrap">{formatPrice(l.qty * l.unitPrice)}</td>
+          <td className="px-3 py-4 align-top text-right">
             <button
               type="button"
               onClick={() => removeLine(l.key)}
@@ -1671,19 +1672,19 @@ function VariationSelects({
   };
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="grid gap-3 sm:grid-cols-2">
       {attrs.map((a) => {
         const val = getValueCaseInsensitive(a.name);
         const filled = !!val;
         return (
-          <label key={a.name} className="relative">
-            <span className="pointer-events-none absolute left-2 top-0.5 text-[9px] font-bold uppercase tracking-wider text-ink-700">
+          <label key={a.name} className="block min-w-0">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-ink-500">
               {a.name}
             </span>
             <select
               value={val}
               onChange={(e) => onChange(a.name, e.target.value)}
-              className={`h-10 w-[110px] min-w-0 rounded-lg border bg-white pl-2 pr-6 pt-3 pb-0 text-xs font-bold outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-50 ${
+              className={`h-10 w-full min-w-0 rounded-lg border bg-white px-2 text-sm font-bold outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-50 ${
                 filled ? 'border-brand-300 text-brand-700' : 'border-ink-200 text-ink-700'
               }`}
             >
