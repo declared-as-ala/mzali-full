@@ -1,11 +1,14 @@
 import { OrdersService } from './orders.service';
 
-/** counts() only touches this.model.aggregate() — every other constructor
- *  dependency is padded with {} as never, same pattern as pos-printer.spec.ts. */
-function serviceWithAggregateResult(
-  facets: Record<string, { n?: number; _id?: string; orderCount?: number }[]>,
-) {
-  const model = { aggregate: jest.fn().mockResolvedValue([facets]) };
+type Filter = { $and: Record<string, unknown>[] };
+
+/** counts() uses one index-backed countDocuments() per status plus one (cached) product aggregation —
+ *  every other constructor dependency is padded with {} as never, same pattern as pos-printer.spec.ts. */
+function serviceWithCounts(byStatus: Record<string, number>, productRows: { _id?: string; orderCount?: number }[] = []) {
+  const model = {
+    countDocuments: jest.fn(async (filter: Filter) => byStatus[filter.$and[0].status as string] ?? 0),
+    aggregate: jest.fn().mockResolvedValue(productRows),
+  };
   const service = new OrdersService(
     model as never, {} as never, {} as never, {} as never, {} as never,
     {} as never, {} as never, {} as never, {} as never, {} as never,
@@ -14,27 +17,21 @@ function serviceWithAggregateResult(
   return { service, model };
 }
 
+const filterFor = (model: { countDocuments: jest.Mock }, status: string): Filter =>
+  (model.countDocuments.mock.calls.map((c) => c[0] as Filter)).find((f) => f.$and[0].status === status)!;
+
 describe('OrdersService.counts', () => {
   it('sums the 5 attempt buckets into attempts.total and total', async () => {
-    const { service } = serviceWithAggregateResult({
-      pending: [{ n: 16 }],
-      confirmed: [{ n: 480 }],
-      attempt1: [{ n: 3 }],
-      attempt2: [{ n: 2 }],
-      attempt3: [{ n: 1 }],
-      attempt4: [{ n: 1 }],
-      attempt5: [{ n: 1 }],
-      cancelled: [{ n: 20 }],
-      abandoned: [{ n: 9 }],
-      trash: [{ n: 4 }],
+    const { service } = serviceWithCounts({
+      'en-attente': 16, confirme: 480, 'tentative-1': 3, 'tentative-2': 2, 'tentative-3': 1, 'tentative-4': 1, 'tentative-5': 1,
+      annule: 20, 'checkout-draft': 9, trash: 4,
     });
 
     const result = await service.counts({});
 
     expect(result.attempts).toEqual({ total: 8, attempt1: 3, attempt2: 2, attempt3: 1, attempt4: 1, attempt5: 1 });
-    // total = pending + confirmed + every attempt + cancelled — the "Normal"
-    // tab total, matching the tab split already used elsewhere (abandoned/
-    // trash are separate, intentionally-excluded buckets).
+    // total = pending + confirmed + every attempt + cancelled: the "Normal" tab total
+    // (abandoned/trash are separate, intentionally-excluded buckets).
     expect(result.total).toBe(16 + 480 + 8 + 20);
     expect(result.pending).toBe(16);
     expect(result.confirmed).toBe(480);
@@ -43,10 +40,8 @@ describe('OrdersService.counts', () => {
     expect(result.trash).toBe(4);
   });
 
-  it('treats a missing/empty facet bucket as zero rather than throwing', async () => {
-    // $facet omits a bucket entirely from the result when nothing matches —
-    // this must degrade to 0, not undefined/NaN propagating into totals.
-    const { service } = serviceWithAggregateResult({ pending: [{ n: 5 }] });
+  it('a status with no orders counts as zero', async () => {
+    const { service } = serviceWithCounts({ 'en-attente': 5 });
 
     const result = await service.counts({});
 
@@ -55,42 +50,43 @@ describe('OrdersService.counts', () => {
     expect(result.total).toBe(5);
   });
 
-  it('scopes the $match stage to search and date range, not status', async () => {
-    const { service, model } = serviceWithAggregateResult({});
+  it('each status is its own count (no whole-collection $facet scan)', async () => {
+    const { service, model } = serviceWithCounts({});
+
+    await service.counts({});
+
+    expect(model.countDocuments).toHaveBeenCalledTimes(11);
+    const statuses = model.countDocuments.mock.calls.map((c) => (c[0] as Filter).$and[0].status).sort();
+    expect(statuses).toEqual(['annule', 'checkout-draft', 'confirme', 'en-attente', 'retourne', 'tentative-1', 'tentative-2', 'tentative-3', 'tentative-4', 'tentative-5', 'trash'].sort());
+  });
+
+  it('scopes every status count to the search and date range', async () => {
+    const { service, model } = serviceWithCounts({});
 
     await service.counts({ search: '22334455', after: '2026-08-01T00:00:00.000Z', before: '2026-08-07T23:59:59.999Z' });
 
-    const pipeline = model.aggregate.mock.calls[0][0];
-    const facet = pipeline[0].$facet;
-    const pendingMatch = facet.pending[0].$match;
-    expect(pendingMatch.$and).toBeDefined();
-    const dateClause = pendingMatch.$and.find((c: Record<string, { $gte?: Date; $lte?: Date }>) => c.createdAt);
+    const pending = filterFor(model, 'en-attente');
+    const dateClause = pending.$and.find((c) => c.createdAt) as { createdAt: { $gte: Date; $lte: Date } };
     expect(dateClause.createdAt.$gte).toEqual(new Date('2026-08-01T00:00:00.000Z'));
     expect(dateClause.createdAt.$lte).toEqual(new Date('2026-08-07T23:59:59.999Z'));
+    const search = pending.$and.find((c) => c.$or && (c.$or as Record<string, unknown>[]).some((o) => 'customer.phone' in o));
+    expect(search).toBeDefined();
   });
 
-  it('scopes status count branches to items.productId when productId is specified', async () => {
-    const { service, model } = serviceWithAggregateResult({});
+  it('scopes status counts to items.productId when productId is specified', async () => {
+    const { service, model } = serviceWithCounts({});
 
     await service.counts({ productId: 'prod-123' });
 
-    const pipeline = model.aggregate.mock.calls[0][0];
-    const facet = pipeline[0].$facet;
-    const pendingMatch = facet.pending[0].$match;
-    expect(pendingMatch.$and).toBeDefined();
-    const productClause = pendingMatch.$and.find((c: Record<string, unknown>) => c['items.productId'] === 'prod-123');
+    const productClause = filterFor(model, 'en-attente').$and.find((c) => c['items.productId'] === 'prod-123');
     expect(productClause).toBeDefined();
   });
 
-  it('returns aggregated product order counts from the products facet branch', async () => {
-    const { service } = serviceWithAggregateResult({
-      pending: [{ n: 10 }],
-      confirmed: [{ n: 20 }],
-      products: [
-        { _id: 'prod-dg', orderCount: 325 },
-        { _id: 'prod-pull', orderCount: 181 },
-      ],
-    });
+  it('returns product order counts from the aggregation', async () => {
+    const { service } = serviceWithCounts({ 'en-attente': 10 }, [
+      { _id: 'prod-dg', orderCount: 325 },
+      { _id: 'prod-pull', orderCount: 181 },
+    ]);
 
     const result = await service.counts({ status: 'en-attente' });
 
@@ -100,17 +96,23 @@ describe('OrdersService.counts', () => {
     ]);
   });
 
-  it('scopes the products facet branch by selected status', async () => {
-    const { service, model } = serviceWithAggregateResult({});
+  it('scopes the products breakdown by selected status', async () => {
+    const { service, model } = serviceWithCounts({});
 
     await service.counts({ status: 'en-attente' });
 
-    const pipeline = model.aggregate.mock.calls[0][0];
-    const facet = pipeline[0].$facet;
-    const productsBranch = facet.products;
-    const matchStage = productsBranch[0].$match;
-    expect(matchStage.$and).toBeDefined();
-    const statusClause = matchStage.$and.find((c: Record<string, unknown>) => c.status === 'en-attente');
-    expect(statusClause).toBeDefined();
+    const matchStage = model.aggregate.mock.calls[0][0][0].$match as Filter;
+    expect(matchStage.$and.find((c) => c.status === 'en-attente')).toBeDefined();
+  });
+
+  it('the heavy product breakdown is cached: a second identical call does not re-aggregate', async () => {
+    const { service, model } = serviceWithCounts({}, [{ _id: 'p', orderCount: 1 }]);
+
+    await service.counts({ status: 'confirme' });
+    await service.counts({ status: 'confirme' });
+
+    expect(model.aggregate).toHaveBeenCalledTimes(1);
+    // ...while the cheap status counts stay live
+    expect(model.countDocuments).toHaveBeenCalledTimes(22);
   });
 });

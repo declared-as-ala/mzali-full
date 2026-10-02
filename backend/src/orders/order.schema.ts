@@ -278,6 +278,8 @@ OrderSchema.index({ status: 1, createdAt: -1 });
 OrderSchema.index({ status: 1, confirmedAt: -1, createdAt: -1 });
 OrderSchema.index({ status: 1, confirmedAt: 1, createdAt: 1 });
 OrderSchema.index({ 'customer.phone': 1, createdAt: -1 });
+// Name search: lets MongoDB scan these small index keys and fetch only the matching orders (it used to fetch every order).
+OrderSchema.index({ 'customer.firstName': 1 });
 OrderSchema.index({ createdAt: -1 });
 // Supports the backend product filter: db.orders.find({ 'items.productId': <id> })
 // Combined with status and createdAt so the planner can use it for the most

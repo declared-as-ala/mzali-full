@@ -29,6 +29,7 @@ import { UpdateOrderDto } from './dto/order-update.dto';
 import { computeOrderTotals, computeStockDeltas } from './order-calc';
 import { diffCustomer, diffItems, hasItemChanges, ItemSnapshot, OrderSnapshot, snapshotCustomer, snapshotItems } from './order-diff';
 import { computeVariantVariationKey } from './order-variation-key';
+import { orderSearchCondition } from './order-search';
 import { toOrderContract } from './order.mapper';
 import { COMMIT_STATUSES, DEFAULT_STATUS, DRAFT_STATUS, getAttemptNumber, planStockTransition, stockEffectForStatus } from './order-status';
 import { Order, OrderDocument } from './order.schema';
@@ -390,17 +391,7 @@ export class OrdersService {
     }
 
     if (query.search) {
-      andConditions.push({
-        $or: [
-          { 'customer.firstName': { $regex: query.search, $options: 'i' } },
-          { 'customer.phone': { $regex: query.search, $options: 'i' } },
-          { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
-          { 'carrier.navex.tracking': { $regex: query.search, $options: 'i' } },
-          { 'carrier.firstdelivery.tracking': { $regex: query.search, $options: 'i' } },
-          { 'carrier.axess.tracking': { $regex: query.search, $options: 'i' } },
-          { 'returnInfo.trackingNumber': { $regex: query.search, $options: 'i' } },
-        ],
-      });
+      andConditions.push(orderSearchCondition(query.search));
     }
 
     // Product (+ optional variant) filter — matches any order whose line
@@ -611,17 +602,7 @@ export class OrdersService {
     }
 
     if (query.search) {
-      ands.push({
-        $or: [
-          { 'customer.firstName': { $regex: query.search, $options: 'i' } },
-          { 'customer.phone': { $regex: query.search, $options: 'i' } },
-          { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
-          { 'carrier.navex.tracking': { $regex: query.search, $options: 'i' } },
-          { 'carrier.firstdelivery.tracking': { $regex: query.search, $options: 'i' } },
-          { 'carrier.axess.tracking': { $regex: query.search, $options: 'i' } },
-          { 'returnInfo.trackingNumber': { $regex: query.search, $options: 'i' } },
-        ],
-      });
+      ands.push(orderSearchCondition(query.search));
     }
 
     if (query.after || query.before) {
@@ -643,17 +624,7 @@ export class OrdersService {
     query: Pick<OrderListQueryDto, 'search' | 'after' | 'before' | 'productId' | 'variantId' | 'status' | 'tab'> = {},
   ): Promise<OrderStatusCounts> {
     const searchCondition = query.search
-      ? {
-          $or: [
-            { 'customer.firstName': { $regex: query.search, $options: 'i' } },
-            { 'customer.phone': { $regex: query.search, $options: 'i' } },
-            { orderNumber: Number.isNaN(Number(query.search)) ? -1 : Number(query.search) },
-            { 'carrier.navex.tracking': { $regex: query.search, $options: 'i' } },
-            { 'carrier.firstdelivery.tracking': { $regex: query.search, $options: 'i' } },
-            { 'carrier.axess.tracking': { $regex: query.search, $options: 'i' } },
-            { 'returnInfo.trackingNumber': { $regex: query.search, $options: 'i' } },
-          ],
-        }
+      ? orderSearchCondition(query.search)
       : null;
 
     const hasDate = Boolean(query.after || query.before);
@@ -668,7 +639,7 @@ export class OrdersService {
       ? (await this.buildVariantCondition(query.productId, query.variantId)) ?? { 'items.productId': query.productId }
       : null;
 
-    const countBranch = (status: string) => {
+    const countAnds = (status: string) => {
       const ands: Record<string, unknown>[] = [{ status }];
       if (productCondition) ands.push(productCondition);
       if (searchCondition) ands.push(searchCondition);
@@ -684,7 +655,7 @@ export class OrdersService {
           ands.push({ createdAt: dateRange });
         }
       }
-      return [{ $match: { $and: ands } }, { $count: 'n' }];
+      return ands;
     };
 
     // Scope conditions for product order count aggregation: respects
@@ -719,26 +690,20 @@ export class OrdersService {
       { $sort: { orderCount: -1 } },
     ];
 
-    const [facets] = await this.model.aggregate<Record<string, { n?: number; _id?: string; orderCount?: number }[]>>([
-      {
-        $facet: {
-          pending: countBranch('en-attente'),
-          confirmed: countBranch('confirme'),
-          attempt1: countBranch('tentative-1'),
-          attempt2: countBranch('tentative-2'),
-          attempt3: countBranch('tentative-3'),
-          attempt4: countBranch('tentative-4'),
-          attempt5: countBranch('tentative-5'),
-          cancelled: countBranch('annule'),
-          returned: countBranch('retourne'),
-          abandoned: countBranch('checkout-draft'),
-          trash: countBranch('trash'),
-          products: productBranch as never,
-        },
-      },
+    // One whole-collection $facet used to run here on every call (a full scan of every order, twice per
+    // page load). Each status is now its own count that MongoDB answers from the status index, and the
+    // per-product breakdown (the only genuinely heavy part) is cached for a minute.
+    const statusByKey: Record<string, string> = {
+      pending: 'en-attente', confirmed: 'confirme', attempt1: 'tentative-1', attempt2: 'tentative-2', attempt3: 'tentative-3',
+      attempt4: 'tentative-4', attempt5: 'tentative-5', cancelled: 'annule', returned: 'retourne', abandoned: 'checkout-draft', trash: 'trash',
+    };
+    const keys = Object.keys(statusByKey);
+    const [statusCounts, productRows] = await Promise.all([
+      Promise.all(keys.map((key) => this.model.countDocuments({ $and: countAnds(statusByKey[key]) }))),
+      this.cachedProductBreakdown(productScopeAnds, productBranch),
     ]);
-
-    const n = (key: string): number => (facets?.[key]?.[0] as { n?: number } | undefined)?.n ?? 0;
+    const counted: Record<string, number> = Object.fromEntries(keys.map((key, i) => [key, statusCounts[i]]));
+    const n = (key: string): number => counted[key] ?? 0;
     const attempt1 = n('attempt1');
     const attempt2 = n('attempt2');
     const attempt3 = n('attempt3');
@@ -750,12 +715,10 @@ export class OrdersService {
     const cancelled = n('cancelled');
     const returned = n('returned');
 
-    const products = Array.isArray(facets?.products)
-      ? facets.products.map((p) => ({
-          productId: String(p._id),
-          orderCount: Number(p.orderCount) || 0,
-        }))
-      : [];
+    const products = productRows.map((p) => ({
+      productId: String(p._id),
+      orderCount: Number(p.orderCount) || 0,
+    }));
 
     return {
       total: pending + confirmed + attemptsTotal + cancelled + returned,
@@ -768,6 +731,24 @@ export class OrdersService {
       trash: n('trash'),
       products,
     };
+  }
+
+  private readonly productBreakdownCache = new Map<string, { at: number; rows?: { _id?: string; orderCount?: number }[]; pending?: Promise<{ _id?: string; orderCount?: number }[]> }>();
+
+  /** Per-product order counts for the product filter. Heavy (unwinds every order's items), rarely needs
+   *  to be to-the-second: cached 60 s per scope and shared between concurrent requests. */
+  private async cachedProductBreakdown(scope: unknown, pipeline: unknown[]): Promise<{ _id?: string; orderCount?: number }[]> {
+    const key = JSON.stringify(scope);
+    const hit = this.productBreakdownCache.get(key);
+    if (hit?.rows && Date.now() - hit.at < 60_000) return hit.rows;
+    if (hit?.pending) return hit.pending;
+    const pending = this.model.aggregate<{ _id?: string; orderCount?: number }>(pipeline as never).then((rows) => {
+      this.productBreakdownCache.set(key, { at: Date.now(), rows });
+      return rows;
+    }).catch((error) => { this.productBreakdownCache.delete(key); throw error; });
+    this.productBreakdownCache.set(key, { at: hit?.at ?? 0, rows: hit?.rows, pending });
+    if (this.productBreakdownCache.size > 50) this.productBreakdownCache.delete(this.productBreakdownCache.keys().next().value as string);
+    return pending;
   }
 
   async ordersByPhone(phone: string) {
