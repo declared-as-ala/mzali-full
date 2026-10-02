@@ -2,13 +2,13 @@
   "name": "mzali-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Mzali Boutique commerce backend — NestJS API + worker (modular monolith)",
+  "description": "Mzali Boutique commerce backend \u2014 NestJS API + worker (modular monolith)",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "nest build",
-    "start": "node dist/main.js",
+    "build": "node api.js && nest build",
+    "start": "node api.js && node dist/main.js",
     "start:dev": "nest start --watch",
     "start:worker": "node dist/worker-main.js",
     "start:worker:dev": "nest start --watch --entryFile worker-main",
