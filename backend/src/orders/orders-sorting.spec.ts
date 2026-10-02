@@ -170,19 +170,9 @@ describe('OrdersService - confirmedAt sorting and filtering', () => {
       before: '2026-08-14T23:59:59.999Z',
     });
 
-    type AggregatePipeline = Array<{
-      $facet: {
-        confirmed: Array<{
-          $match: {
-            $and: Array<{ $or?: Array<{ confirmedAt?: { $gte?: Date } }> }>;
-          };
-        }>;
-      };
-    }>;
-    const pipeline = model.aggregate.mock.calls[0][0] as AggregatePipeline;
-    const facet = pipeline[0].$facet;
-    const confirmedMatch = facet.confirmed[0].$match.$and;
-    const dateClause = confirmedMatch.find((c) => c.$or);
+    type CountFilter = { $and: Array<{ status?: string; $or?: Array<{ confirmedAt?: { $gte?: Date } }> }> };
+    const confirmedFilter = (model.countDocuments.mock.calls.map((c) => c[0] as CountFilter)).find((f) => f.$and[0].status === 'confirme')!;
+    const dateClause = confirmedFilter.$and.find((c) => c.$or);
     expect(dateClause).toBeDefined();
     expect(dateClause?.$or?.[0]?.confirmedAt?.$gte).toEqual(new Date('2026-08-14T00:00:00.000Z'));
   });
