@@ -82,7 +82,7 @@ export default function VariantSelector({
                     : 'bg-[#F4F4F4] text-neutral-800 border border-neutral-200/60 hover:bg-neutral-200/70 cursor-pointer'
                 }`}
               >
-                {v.size}
+                {sold ? `${v.size} · Épuisé` : v.size}
               </button>
             );
           })}
