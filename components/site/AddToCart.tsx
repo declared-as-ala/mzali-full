@@ -2,7 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Minus, Plus, ShoppingBag, Check, XCircle, ArrowRight, AlertCircle } from 'lucide-react';
+import {
+  Minus,
+  Plus,
+  ShoppingBag,
+  Check,
+  XCircle,
+  AlertCircle,
+  Tag,
+  Package,
+  Zap,
+  Truck,
+  CreditCard,
+  RotateCcw,
+} from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { getPrimaryProductImage, type Product } from '@/types';
 import VariantSelector from './VariantSelector';
@@ -131,59 +144,60 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       )}
 
-      {/* Bundle Offers Selector */}
+      {/* Bundle Offers Selector (Matching Photo 2) */}
       {product.bundles.length > 0 && (
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">{t.product.offers}</span>
+          <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-neutral-900">
+            <span className="flex items-center gap-1.5 font-extrabold">
+              <Tag size={15} className="text-blue-600" />
+              <span>{t.product.offers}</span>
+            </span>
             {selectedBundle && (
-              <span className="text-xs font-bold text-neutral-900">Sélectionné</span>
+              <span className="text-xs font-bold text-blue-600">Sélectionné</span>
             )}
           </div>
           <div className="grid gap-2">
             {product.bundles.map((b) => {
               const active = b.id === bundleId;
-              const discount = b.regularPrice > b.price
-                ? Math.round(((b.regularPrice - b.price) / b.regularPrice) * 100)
-                : 0;
+              const savings = b.regularPrice > b.price ? b.regularPrice - b.price : 0;
               return (
                 <button
                   key={b.id}
                   type="button"
                   onClick={() => setBundleId(b.id)}
-                  className={`flex items-center justify-between rounded-xl border p-3.5 text-start transition-all duration-150 cursor-pointer ${
+                  className={`flex items-center justify-between rounded-xl p-3 sm:p-3.5 text-start transition-all duration-150 cursor-pointer ${
                     active
-                      ? 'border-neutral-950 bg-neutral-950 text-white shadow-xs'
-                      : 'border-neutral-200/90 bg-[#FBFBFB] hover:bg-neutral-100/80 text-neutral-900'
+                      ? 'border-2 border-blue-600 bg-blue-50/50 text-neutral-900 shadow-2xs'
+                      : 'border border-neutral-200/90 bg-white hover:bg-neutral-50 text-neutral-800'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors ${
                         active
-                          ? 'border-white bg-white text-neutral-950'
-                          : 'border-neutral-400 bg-transparent'
+                          ? 'bg-blue-600 text-white'
+                          : 'border-2 border-neutral-300 bg-transparent'
                       }`}
                     >
                       {active && <Check size={12} strokeWidth={3} />}
                     </span>
                     <div>
-                      <p className={`font-extrabold text-sm sm:text-base leading-tight ${active ? 'text-white' : 'text-neutral-900'}`}>
+                      <p className="font-extrabold text-sm sm:text-base leading-tight text-neutral-900">
                         {b.name}
                       </p>
-                      {b.label && <p className={`text-xs mt-0.5 font-medium ${active ? 'text-neutral-300' : 'text-neutral-500'}`}>{b.label}</p>}
+                      {b.label && <p className="text-xs mt-0.5 font-medium text-neutral-500">{b.label}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-end">
-                    {discount > 0 && (
-                      <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${active ? 'bg-white text-neutral-950' : 'bg-red-600 text-white'}`}>
-                        -{discount}%
+                    {savings > 0 && (
+                      <span className="rounded-md px-2 py-0.5 text-xs font-bold bg-blue-100 text-blue-700">
+                        Économisez {formatPrice(savings)}
                       </span>
                     )}
                     <div>
-                      <p className={`text-base font-black ${active ? 'text-white' : 'text-neutral-950'}`}>{formatPrice(b.price)}</p>
+                      <p className="text-base font-black text-neutral-900">{formatPrice(b.price)}</p>
                       {b.regularPrice > b.price && (
-                        <p className={`text-xs line-through font-medium ${active ? 'text-neutral-400' : 'text-neutral-400'}`}>
+                        <p className="text-xs line-through font-medium text-neutral-400">
                           {formatPrice(b.regularPrice)}
                         </p>
                       )}
@@ -287,8 +301,8 @@ export default function AddToCart({ product }: { product: Product }) {
                 onClick={() => setPicked({ ...picked, [a.name]: opt })}
                 className={`h-10 min-w-[3rem] px-3.5 rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer ${
                   picked[a.name] === opt
-                    ? 'bg-neutral-950 text-white font-black shadow-sm'
-                    : 'bg-[#F4F4F4] text-neutral-800 border border-neutral-200/60 hover:bg-neutral-200/70'
+                    ? 'bg-blue-600 text-white font-black shadow-sm ring-2 ring-blue-100'
+                    : 'bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200/90 shadow-2xs'
                 }`}
               >
                 {opt}
@@ -298,16 +312,21 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       ))}
 
-      {/* Quantity & Desktop Actions */}
-      <div className="pt-2 space-y-3">
+      {/* Quantity & Actions (Matching Photo 2) */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-neutral-900">
+          <Package size={15} className="text-blue-600" />
+          <span>Quantité</span>
+        </div>
+
         <div className="flex items-center gap-3">
-          {/* Quantity Selector — Always accessible */}
-          <div className="flex h-12 items-center rounded-xl border border-neutral-200 bg-[#F7F7F7] shadow-2xs">
+          {/* Quantity Stepper */}
+          <div className="flex h-12 items-center rounded-xl border border-neutral-200 bg-white shadow-2xs">
             <button
               type="button"
               disabled={soldOut}
               onClick={() => setExtra(Math.max(1, extra - 1))}
-              className="grid h-12 w-11 place-items-center text-neutral-700 hover:bg-neutral-200/60 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 transition cursor-pointer"
+              className="grid h-12 w-11 place-items-center text-neutral-700 hover:bg-neutral-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 transition cursor-pointer"
               aria-label={t.product.decreaseQty}
             >
               <Minus size={16} />
@@ -317,35 +336,60 @@ export default function AddToCart({ product }: { product: Product }) {
               type="button"
               disabled={soldOut}
               onClick={() => setExtra(extra + 1)}
-              className="grid h-12 w-11 place-items-center text-neutral-700 hover:bg-neutral-200/60 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 transition cursor-pointer"
+              className="grid h-12 w-11 place-items-center text-neutral-700 hover:bg-neutral-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 transition cursor-pointer"
               aria-label={t.product.increaseQty}
             >
               <Plus size={16} />
             </button>
           </div>
 
-          {/* Desktop Secondary CTA: Ajouter au panier */}
+          {/* Desktop Secondary CTA: Ajouter au panier (Photo 2) */}
           <button
             type="button"
             disabled={soldOut}
             onClick={() => handleAction(false)}
-            className="hidden md:flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-neutral-900 bg-white font-extrabold text-sm sm:text-base text-neutral-900 hover:bg-neutral-50 active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:bg-neutral-50 shadow-2xs"
+            className="hidden md:flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-600 bg-white font-extrabold text-sm sm:text-base text-blue-600 hover:bg-blue-50 active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:bg-neutral-50 shadow-2xs"
           >
             <ShoppingBag size={18} />
             <span>{t.product.addToCart}</span>
           </button>
-        </div>
 
-        {/* Desktop Primary CTA: Acheter maintenant */}
-        <button
-          type="button"
-          disabled={soldOut}
-          onClick={() => handleAction(true)}
-          className="hidden md:flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 hover:bg-black text-white font-black text-base shadow-md active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 disabled:shadow-none"
-        >
-          <span>{t.common.buyNow}</span>
-          <ArrowRight size={18} />
-        </button>
+          {/* Desktop Primary CTA: Acheter maintenant (Photo 2) */}
+          <button
+            type="button"
+            disabled={soldOut}
+            onClick={() => handleAction(true)}
+            className="hidden md:flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm sm:text-base shadow-md shadow-blue-600/20 active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 disabled:shadow-none"
+          >
+            <Zap size={18} fill="currentColor" />
+            <span>{t.common.buyNow}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Trust Strip Box (Photo 2) */}
+      <div className="rounded-2xl border border-blue-100 bg-[#F0F7FF] p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 text-xs font-semibold text-neutral-700">
+        <div className="flex items-center gap-2.5">
+          <Truck size={17} className="text-blue-600 shrink-0" />
+          <div>
+            <p className="font-bold text-neutral-900 leading-tight">Livraison rapide</p>
+            <p className="text-[11px] text-neutral-500">toute la Tunisie</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <CreditCard size={17} className="text-blue-600 shrink-0" />
+          <div>
+            <p className="font-bold text-neutral-900 leading-tight">Paiement</p>
+            <p className="text-[11px] text-neutral-500">à la livraison</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <RotateCcw size={17} className="text-blue-600 shrink-0" />
+          <div>
+            <p className="font-bold text-neutral-900 leading-tight">Échange &amp; retour</p>
+            <p className="text-[11px] text-neutral-500">sous 7 jours</p>
+          </div>
+        </div>
       </div>
 
       {/* REAL FIXED BOTTOM PURCHASE BAR (Mobile Viewport) */}
@@ -376,25 +420,25 @@ export default function AddToCart({ product }: { product: Product }) {
                 className={`flex-1 h-12 rounded-xl border-2 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer ${
                   !validSelection
                     ? 'border-neutral-300 bg-white text-neutral-500'
-                    : 'border-neutral-900 bg-white text-neutral-950 hover:bg-neutral-50 shadow-2xs'
+                    : 'border-blue-600 bg-white text-blue-600 hover:bg-blue-50 shadow-2xs'
                 }`}
               >
                 <ShoppingBag size={17} />
                 <span>{t.product.addToCart}</span>
               </button>
 
-              {/* Solid Black Button: Acheter maintenant */}
+              {/* Solid Royal Blue Button: Acheter maintenant */}
               <button
                 type="button"
                 onClick={() => handleAction(true)}
                 className={`flex-1 h-12 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer ${
                   !validSelection
                     ? 'bg-neutral-800 text-white/90'
-                    : 'bg-neutral-950 hover:bg-black text-white shadow-md'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20'
                 }`}
               >
+                <Zap size={16} fill="currentColor" />
                 <span>{t.common.buyNow}</span>
-                <ArrowRight size={17} />
               </button>
             </div>
           </div>
@@ -425,7 +469,7 @@ function Slot({
           key={a.name}
           value={value[a.name] ?? ''}
           onChange={(e) => onChange(a.name, e.target.value)}
-          className="h-10 min-w-0 rounded-xl border border-neutral-300 bg-white px-2.5 text-xs sm:text-sm font-bold text-neutral-800 outline-none focus:border-neutral-950 focus:ring-1 focus:ring-neutral-950 transition"
+          className="h-10 min-w-0 rounded-xl border border-neutral-300 bg-white px-2.5 text-xs sm:text-sm font-bold text-neutral-800 outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 transition"
         >
           <option value="">-</option>
           {a.options.map((opt) => (

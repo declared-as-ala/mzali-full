@@ -1,5 +1,7 @@
 'use client';
+
 import { useState } from 'react';
+import { Palette, Layers, Check } from 'lucide-react';
 import type { Product } from '@/types';
 
 export default function VariantSelector({
@@ -27,8 +29,11 @@ export default function VariantSelector({
       {colors.length > 0 && (
         <div>
           <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-neutral-700">
-            <span>Couleur</span>
-            {color && <span className="font-extrabold text-neutral-950 capitalize">{color}</span>}
+            <span className="flex items-center gap-1.5 text-neutral-900 font-extrabold">
+              <Palette size={15} className="text-blue-600" />
+              <span>Couleur</span>
+            </span>
+            {color && <span className="font-extrabold text-blue-600 capitalize">{color}</span>}
           </div>
           <div className="flex flex-wrap gap-2">
             {colors.map((c) => {
@@ -38,17 +43,18 @@ export default function VariantSelector({
                   type="button"
                   aria-pressed={isSelected}
                   key={c}
-                  className={`h-10 min-w-[3rem] px-3.5 rounded-xl text-xs font-bold transition-all duration-150 capitalize cursor-pointer flex items-center justify-center ${
+                  className={`h-10 min-w-[3rem] px-3.5 rounded-xl text-xs sm:text-sm font-bold transition-all duration-150 capitalize cursor-pointer flex items-center gap-1.5 justify-center ${
                     isSelected
-                      ? 'bg-neutral-950 text-white font-black shadow-sm'
-                      : 'bg-[#F4F4F4] text-neutral-800 border border-neutral-200/60 hover:bg-neutral-200/70'
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white font-black shadow-sm ring-2 ring-blue-100'
+                      : 'bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200/90 shadow-2xs'
                   }`}
                   onClick={() => {
                     setColor(c);
                     onChange('');
                   }}
                 >
-                  {c}
+                  {isSelected && <Check size={13} strokeWidth={3} />}
+                  <span>{c}</span>
                 </button>
               );
             })}
@@ -56,11 +62,14 @@ export default function VariantSelector({
         </div>
       )}
 
-      {/* Outfit Size Selector — Identical to High-Fashion Mobile Reference */}
+      {/* Outfit Size Selector */}
       <div>
         <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-neutral-700">
-          <span>Taille</span>
-          {selected?.size && <span className="font-extrabold text-neutral-950 uppercase">{selected.size}</span>}
+          <span className="flex items-center gap-1.5 text-neutral-900 font-extrabold">
+            <Layers size={15} className="text-blue-600" />
+            <span>Taille</span>
+          </span>
+          {selected?.size && <span className="font-extrabold text-blue-600 uppercase">{selected.size}</span>}
         </div>
         <div className="flex flex-wrap gap-2">
           {sizesForColor.map((v) => {
@@ -76,10 +85,10 @@ export default function VariantSelector({
                 onClick={() => onChange(v.id)}
                 className={`h-11 min-w-[3.2rem] px-3.5 rounded-xl text-xs sm:text-sm font-bold uppercase transition-all duration-150 flex items-center justify-center ${
                   sold
-                    ? 'cursor-not-allowed bg-[#FAFAFA] text-neutral-300 line-through border border-neutral-200/50'
+                    ? 'cursor-not-allowed bg-neutral-100 text-neutral-400 line-through border border-neutral-200'
                     : isSelected
-                    ? 'bg-neutral-950 text-white font-black shadow-sm'
-                    : 'bg-[#F4F4F4] text-neutral-800 border border-neutral-200/60 hover:bg-neutral-200/70 cursor-pointer'
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white font-black shadow-sm ring-2 ring-blue-100'
+                    : 'bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200/90 shadow-2xs cursor-pointer'
                 }`}
               >
                 {sold ? `${v.size} · Épuisé` : v.size}

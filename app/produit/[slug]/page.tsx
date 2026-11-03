@@ -1,10 +1,13 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import AddToCart from '@/components/site/AddToCart';
 import ProductCard from '@/components/site/ProductCard';
 import ProductGallery from '@/components/site/ProductGallery';
+import ProductTabs from '@/components/site/ProductTabs';
 import { productService, categoryService } from '@/services';
 import { formatPrice } from '@/lib/site-config';
 import { getDictionary } from '@/lib/i18n';
@@ -182,15 +185,44 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <Header categories={categories.map((c) => ({ name: c.name, slug: c.slug }))} />
 
-      <main className="container-shop py-4 sm:py-6 lg:py-10 pb-28 sm:pb-32 lg:pb-12">
+      <main className="container-shop py-4 sm:py-6 lg:py-8 pb-28 sm:pb-32 lg:pb-12">
+        {/* Desktop Breadcrumbs (Photo 2) */}
+        <nav aria-label="Fil d'Ariane" className="hidden md:flex items-center gap-1.5 text-xs text-neutral-500 mb-5 font-medium">
+          <Link href="/" className="hover:text-blue-600 transition">
+            {t.nav.home}
+          </Link>
+          <ChevronRight size={13} className="text-neutral-400" />
+          {currentCategory ? (
+            <>
+              <Link href={`/categorie/${encodeURIComponent(currentCategory.slug)}`} className="hover:text-blue-600 transition">
+                {currentCategory.name}
+              </Link>
+              <ChevronRight size={13} className="text-neutral-400" />
+            </>
+          ) : (
+            <>
+              <Link href="/shop" className="hover:text-blue-600 transition">
+                {t.shop.title}
+              </Link>
+              <ChevronRight size={13} className="text-neutral-400" />
+            </>
+          )}
+          <span className="font-bold text-neutral-800 truncate max-w-xs">{product.name}</span>
+        </nav>
+
         <div className="grid gap-0 sm:gap-8 lg:grid-cols-2 lg:gap-12">
+          {/* Left Column: Gallery + Tabs underneath (Photo 2) */}
           <div className="-mx-4 sm:mx-0">
             <ProductGallery images={product.images} productName={product.name} discount={discount} />
+            <div className="hidden md:block">
+              <ProductTabs description={product.description} shortDescription={product.shortDescription} />
+            </div>
           </div>
 
+          {/* Right Column: Title, Stock, Price, AddToCart Form */}
           <div className="flex flex-col -mt-5 sm:mt-0 rounded-t-[32px] sm:rounded-none bg-white p-5 sm:p-0 shadow-lg sm:shadow-none relative z-10">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-brand-600">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-blue-600">
                 {categoryName}
               </span>
               {product.inStock ? (
@@ -210,37 +242,25 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </h1>
 
             <div className="mt-3 flex items-baseline gap-3">
-              <span className="text-2xl sm:text-3xl font-black text-brand-600">{formatPrice(product.price)}</span>
+              <span className="text-2xl sm:text-3xl font-black text-blue-600">{formatPrice(product.price)}</span>
               {discount > 0 && (
                 <>
                   <span className="text-base sm:text-lg text-neutral-400 line-through font-medium">
                     {formatPrice(product.regularPrice)}
                   </span>
-                  <span className="rounded-lg bg-red-600 px-2 py-0.5 text-xs font-black text-white shadow-2xs">
+                  <span className="rounded-lg bg-red-600 px-2.5 py-0.5 text-xs font-black text-white shadow-2xs">
                     -{discount}%
                   </span>
                 </>
               )}
             </div>
 
-            {product.shortDescription && (
-              <div
-                className="prose prose-sm mt-5 max-w-none text-neutral-600"
-                dangerouslySetInnerHTML={{ __html: product.shortDescription }}
-              />
-            )}
-
             <AddToCart product={product} />
 
-            {product.description && (
-              <details className="mt-6 sm:mt-8 rounded-2xl bg-white p-5 shadow-xs border border-neutral-200/80">
-                <summary className="cursor-pointer font-extrabold text-neutral-900 select-none">{t.product.fullDescription}</summary>
-                <div
-                  className="prose prose-sm mt-3 max-w-none text-neutral-600"
-                  dangerouslySetInnerHTML={{ __html: product.description }}
-                />
-              </details>
-            )}
+            {/* Mobile-only tabs underneath */}
+            <div className="md:hidden">
+              <ProductTabs description={product.description} shortDescription={product.shortDescription} />
+            </div>
           </div>
         </div>
 

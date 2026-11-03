@@ -3,7 +3,26 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, Truck, ShoppingBag, ArrowRight, Loader2, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
+import {
+  ShieldCheck,
+  Truck,
+  ShoppingBag,
+  ArrowRight,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
+  ArrowLeft,
+  User,
+  Phone,
+  MapPin,
+  Home,
+  Mail,
+  ChevronUp,
+  ChevronDown,
+  RotateCcw,
+  Check,
+} from 'lucide-react';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import { useCart } from '@/lib/cart';
@@ -26,6 +45,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [orderSummaryOpen, setOrderSummaryOpen] = useState(true);
 
   const [form, setForm] = useState<{
     firstName: string;
@@ -47,11 +67,7 @@ export default function CheckoutPage() {
     note: '',
   });
 
-  // Localité ("Mo3tamadia") options for the selected Ville — optional but
-  // strongly encouraged: picking the exact delegation here means First
-  // Delivery resolves the destination immediately and exactly, instead of
-  // guessing from the free-text address later. Same shared, live-directory
-  // picker the admin console uses — see app/api/firstdelivery/localities.
+  // Localité ("Mo3tamadia") options for the selected Ville
   type FirstDeliveryLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
   const [localities, setLocalities] = useState<FirstDeliveryLocality[]>([]);
   const [localitiesLoading, setLocalitiesLoading] = useState(false);
@@ -93,110 +109,123 @@ export default function CheckoutPage() {
   }, []);
 
   // Debounced effect to automatically save checkout drafts in background (abandoned checkout recovery)
-  // Trigger ONLY when the customer has entered a valid phone number.
   useEffect(() => {
     if (!items.length || isSubmittingRef.current) return;
 
-    // Minimum requirement for draft creation: valid phone number
     if (!isValidPhone(form.phone)) return;
-
-    const delayDebounceFn = setTimeout(async () => {
-      if (isSubmittingRef.current) return;
-      try {
-        const storedDraftId = draftOrderIdRef.current || (typeof window !== 'undefined' ? sessionStorage.getItem(DRAFT_STORAGE_KEY) : undefined);
-        const payload = {
-          orderId: storedDraftId || undefined,
-          customer: {
-            firstName: form.firstName.trim(),
-            lastName: '',
-            phone: form.phone.trim(),
-            email: form.email.trim(),
-            city: form.city.trim(),
-            locality: form.locality,
-            firstDeliveryLocalityId: form.firstDeliveryLocalityId ?? undefined,
-            address: form.address.trim(),
-            note: form.note.trim(),
-          },
-          items,
-          shipping,
-          paymentMethod: 'cod',
-          source: 'storefront-next',
-          status: 'checkout-draft', // Mark as checkout-draft (Abandoned) in backend
-        };
-
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(idempotencyKeyRef.current ? { 'idempotency-key': `draft_${idempotencyKeyRef.current}` } : {}),
-          },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await res.json();
-        if (res.ok && data?.id) {
-          draftOrderIdRef.current = data.id;
-          if (typeof window !== 'undefined') {
-            sessionStorage.setItem(DRAFT_STORAGE_KEY, data.id);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to auto-save abandoned checkout draft:', err);
-      }
-    }, 1500); // 1.5 seconds debounce
-
-    debounceTimeoutRef.current = delayDebounceFn;
-
-    return () => {
-      if (delayDebounceFn) clearTimeout(delayDebounceFn);
-    };
-  }, [form, items, shipping]);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!items.length) return;
-
-    // Validate phone number
-    setPhoneTouched(true);
-    if (!isValidPhone(form.phone)) {
-      setPhoneError(t.checkout.phoneInvalid);
-      // Focus and scroll to the phone input
-      const phoneInput = document.getElementById('checkout-phone-input');
-      phoneInput?.focus();
-      phoneInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
-    }
-    setPhoneError(null);
-
-    // Prevent double submission synchronously
-    if (isSubmittingRef.current || submitting) return;
-    isSubmittingRef.current = true;
-    setSubmitting(true);
 
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
     }
 
+    debounceTimeoutRef.current = setTimeout(async () => {
+      try {
+        const payload = {
+          items: items.map((i) => ({
+            productId: i.productId,
+            name: i.name,
+            price: i.price,
+            qty: i.qty,
+            variation: i.variation,
+            variantId: i.variantId,
+            bundleId: i.bundleId,
+            bundleName: i.bundleName,
+            bundleSlot: i.bundleSlot,
+          })),
+          customer: {
+            name: form.firstName.trim() || undefined,
+            phone: normalizePhone(form.phone),
+            city: form.city.trim() || undefined,
+            locality: form.locality?.trim() || undefined,
+            firstDeliveryLocalityId: form.firstDeliveryLocalityId ?? undefined,
+            address: form.address.trim() || undefined,
+            email: form.email.trim() || undefined,
+          },
+          shipping,
+          note: form.note.trim() || undefined,
+          draftId: draftOrderIdRef.current,
+        };
+
+        const res = await fetch('/api/orders?draft=true', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.id) {
+            draftOrderIdRef.current = data.id;
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem(DRAFT_STORAGE_KEY, data.id);
+            }
+          }
+        }
+      } catch {
+        // Silently ignore background draft sync errors
+      }
+    }, 800);
+
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, [form, items, shipping]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+
+    setPhoneTouched(true);
+    if (!isValidPhone(form.phone)) {
+      setPhoneError(t.checkout.phoneInvalid);
+      const el = document.getElementById('checkout-phone-input');
+      if (el) {
+        el.focus();
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+
+    if (submitting || isSubmittingRef.current) return;
+
+    if (!items.length) {
+      alert(t.cart.empty);
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setSubmitting(true);
+
     try {
-      const storedDraftId = draftOrderIdRef.current || (typeof window !== 'undefined' ? sessionStorage.getItem(DRAFT_STORAGE_KEY) : undefined);
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+
       const payload = {
-        orderId: storedDraftId || undefined,
+        items: items.map((i) => ({
+          productId: i.productId,
+          name: i.name,
+          price: i.price,
+          qty: i.qty,
+          variation: i.variation,
+          variantId: i.variantId,
+          bundleId: i.bundleId,
+          bundleName: i.bundleName,
+          bundleSlot: i.bundleSlot,
+        })),
         customer: {
-          firstName: form.firstName.trim(),
-          lastName: '',
-          phone: form.phone.trim(),
-          email: form.email.trim(),
-          city: form.city.trim(),
-          locality: form.locality,
+          name: form.firstName.trim() || undefined,
+          phone: normalizePhone(form.phone),
+          city: form.city.trim() || undefined,
+          locality: form.locality?.trim() || undefined,
           firstDeliveryLocalityId: form.firstDeliveryLocalityId ?? undefined,
-          address: form.address.trim(),
-          note: form.note.trim(),
+          address: form.address.trim() || undefined,
+          email: form.email.trim() || undefined,
         },
-        items,
         shipping,
-        paymentMethod: 'cod',
-        source: 'storefront-next',
-        status: 'en-attente',
+        note: form.note.trim() || undefined,
+        draftId: draftOrderIdRef.current,
       };
 
       const finalIdempotencyKey = idempotencyKeyRef.current || `confirm_${Date.now()}_${normalizePhone(form.phone)}`;
@@ -213,7 +242,6 @@ export default function CheckoutPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? t.checkout.orderFailed);
 
-      // Clean up session draft storage on confirmation
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem(DRAFT_STORAGE_KEY);
       }
@@ -222,7 +250,6 @@ export default function CheckoutPage() {
       const num = data.number || data.id;
       router.push(`/merci?id=${data.id ?? ''}&n=${encodeURIComponent(num ?? '')}`);
     } catch (err) {
-      // Re-enable in case of submission failure
       isSubmittingRef.current = false;
       setSubmitting(false);
       const msg = err instanceof Error ? err.message : t.checkout.unknownError;
@@ -235,17 +262,17 @@ export default function CheckoutPage() {
       <>
         <Header categories={[]} />
         <main className="container-shop py-16 text-center">
-          <div className="mx-auto max-w-md rounded-3xl border border-ink-200 bg-white p-8 shadow-card sm:p-10">
-            <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-brand-50 text-brand-600">
+          <div className="mx-auto max-w-md rounded-3xl border border-neutral-200 bg-white p-8 shadow-card sm:p-10">
+            <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-blue-50 text-blue-600">
               <ShoppingBag size={32} />
             </div>
-            <h1 className="text-2xl font-black text-ink-900">{t.cart.empty}</h1>
-            <p className="mt-2 text-sm text-ink-600">
+            <h1 className="text-2xl font-black text-neutral-900">{t.cart.empty}</h1>
+            <p className="mt-2 text-sm text-neutral-600">
               {lang === 'ar' ? 'أضف منتجات إلى السلة لإتمام طلبك.' : 'Ajoutez des articles à votre panier pour passer votre commande.'}
             </p>
             <Link
               href="/"
-              className="btn-primary mt-6 inline-flex w-full items-center justify-center gap-2 text-base font-bold"
+              className="btn-primary mt-6 inline-flex w-full items-center justify-center gap-2 text-base font-bold bg-blue-600 hover:bg-blue-700 text-white"
             >
               {t.cart.continueShopping}
               <ArrowRight size={18} className={isRtl ? 'rotate-180' : ''} />
@@ -260,43 +287,186 @@ export default function CheckoutPage() {
   return (
     <>
       <Header categories={[]} />
-      <main className="container-shop py-6 pb-28 sm:py-10 lg:pb-10">
-        <div className="mb-6 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-black text-ink-900 sm:text-3xl">{t.checkout.title}</h1>
-            <p className="text-xs text-ink-600 sm:text-sm">
-              {lang === 'ar' ? 'توصيل سريع ودفع عند الاستلام في جميع أنحاء تونس' : 'Livraison rapide et paiement à la livraison partout en Tunisie'}
-            </p>
+
+      <main className="container-shop py-4 sm:py-8 pb-32 lg:pb-12">
+        {/* Top Header & Mobile Back Button (Matching Photo 4) */}
+        <div className="mb-4 sm:mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              aria-label="Retour"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-neutral-200/90 bg-white text-neutral-800 shadow-2xs hover:bg-neutral-50 active:scale-95 transition cursor-pointer"
+            >
+              <ArrowLeft size={18} className={isRtl ? 'rotate-180' : ''} />
+            </button>
+            <div>
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-neutral-900">{t.checkout.title}</h1>
+              <p className="text-xs text-neutral-500">
+                {lang === 'ar' ? 'توصيل سريع ودفع عند الاستلام في جميع أنحاء تونس' : 'Livraison rapide et paiement à la livraison partout en Tunisie'}
+              </p>
+            </div>
           </div>
-          <div className="mt-2 flex items-center gap-2 self-start rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 sm:mt-0 sm:self-auto">
-            <ShieldCheck size={16} />
-            <span>{t.checkout.paymentNote}</span>
+
+          {/* Stepper / Timeline (Matching Photo 4) */}
+          <div className="mt-5 flex items-center justify-between max-w-md mx-auto px-2">
+            {/* Step 1: Vos informations (Active) */}
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm ring-4 ring-blue-100">
+                <User size={15} />
+              </div>
+              <span className="text-[11px] sm:text-xs font-bold text-blue-600">Vos informations</span>
+            </div>
+            <div className="h-0.5 flex-1 bg-blue-600 mx-2 -mt-5" />
+
+            {/* Step 2: Livraison */}
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-400">
+                <Truck size={15} />
+              </div>
+              <span className="text-[11px] sm:text-xs font-medium text-neutral-500">Livraison</span>
+            </div>
+            <div className="h-0.5 flex-1 bg-neutral-200 mx-2 -mt-5" />
+
+            {/* Step 3: Confirmation */}
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-400">
+                <Check size={15} strokeWidth={2.5} />
+              </div>
+              <span className="text-[11px] sm:text-xs font-medium text-neutral-500">Confirmation</span>
+            </div>
+          </div>
+
+          {/* Trust Strip (Matching Photo 4) */}
+          <div className="mt-5 rounded-2xl border border-blue-100 bg-[#F0F7FF] p-3 flex items-center justify-between text-center gap-1 text-[11px] sm:text-xs font-semibold text-neutral-700">
+            <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1">
+              <Truck size={15} className="text-blue-600 shrink-0" />
+              <span>Livraison toute la Tunisie</span>
+            </div>
+            <div className="h-5 w-px bg-blue-200/80 mx-1" />
+            <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1">
+              <ShieldCheck size={15} className="text-blue-600 shrink-0" />
+              <span>Paiement à la livraison</span>
+            </div>
+            <div className="h-5 w-px bg-blue-200/80 mx-1" />
+            <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1">
+              <RotateCcw size={15} className="text-blue-600 shrink-0" />
+              <span>Échange &amp; retour 7 jours</span>
+            </div>
           </div>
         </div>
 
         <form id="checkout-form" onSubmit={submit} className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
-          {/* Customer Information (Top on Mobile, Left 7-cols on Desktop) */}
+          {/* Mobile Collapsible Order Summary Card (Photo 4) */}
+          <div className="lg:hidden rounded-2xl border border-neutral-200/90 bg-white p-4 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setOrderSummaryOpen(!orderSummaryOpen)}
+              className="w-full flex items-center justify-between cursor-pointer"
+            >
+              <div className="flex items-center gap-2 font-black text-sm text-neutral-900">
+                <ShoppingBag size={18} className="text-blue-600" />
+                <span>
+                  Votre commande ({items.reduce((s, i) => s + i.qty, 0)} {lang === 'ar' ? 'قطع' : 'articles'})
+                </span>
+              </div>
+              {orderSummaryOpen ? (
+                <ChevronUp size={18} className="text-neutral-500" />
+              ) : (
+                <ChevronDown size={18} className="text-neutral-500" />
+              )}
+            </button>
+
+            {orderSummaryOpen && (
+              <div className="mt-3 pt-3 border-t border-neutral-100 space-y-3">
+                <ul className="divide-y divide-neutral-100 max-h-64 overflow-y-auto">
+                  {items.map((i) => {
+                    const varSummary = i.variation
+                      ? Object.entries(i.variation)
+                          .filter(([, v]) => v)
+                          .map(([k, v]) => `${k}: ${v}`)
+                          .join(' · ')
+                      : '';
+                    return (
+                      <li key={i.lineId} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                        <div className="relative h-13 w-13 shrink-0 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={i.image} alt={i.name} className="h-full w-full object-contain p-1" />
+                        </div>
+                        <div className="min-w-0 flex-1 text-xs sm:text-sm">
+                          <p className="line-clamp-1 font-bold text-neutral-900">{i.name}</p>
+                          <p className="text-[11px] text-neutral-500">
+                            {varSummary ? `${varSummary} · ` : ''}×{i.qty}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="font-bold text-xs sm:text-sm text-neutral-900">
+                            {formatPrice(i.price * i.qty)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => remove(i.lineId)}
+                            className="text-neutral-400 hover:text-red-500 p-1 cursor-pointer"
+                            aria-label={t.cart.remove}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="border-t border-neutral-100 pt-2.5 space-y-1.5 text-xs text-neutral-600">
+                  <div className="flex justify-between">
+                    <span>{t.cart.subtotal}</span>
+                    <span className="font-bold text-neutral-900">{formatPrice(total)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="flex items-center gap-1">
+                      <span>{t.cart.shipping}</span>
+                      <span className="text-[10px] text-neutral-400">ⓘ</span>
+                    </span>
+                    <span className="font-bold text-neutral-900">{formatPrice(shipping)}</span>
+                  </div>
+                </div>
+
+                {/* Total highlight banner (Photo 4) */}
+                <div className="rounded-xl bg-[#EFF6FF] border border-blue-100/70 p-3 flex items-center justify-between text-neutral-900">
+                  <span className="font-black text-sm">Total à payer</span>
+                  <span className="font-black text-lg text-blue-600">{formatPrice(grand)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Customer Information (Left 7-cols on Desktop) */}
           <div className="space-y-6 lg:col-span-7">
-            <div className="card space-y-5 p-4 sm:p-6">
-              <div className="flex items-center justify-between border-b border-ink-100 pb-3">
-                <h2 className="text-base font-black text-ink-900 sm:text-lg">
-                  {t.checkout.contactInfo}
+            <div className="card space-y-5 p-4 sm:p-6 rounded-2xl border border-neutral-200/90 bg-white shadow-2xs">
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                <h2 className="text-base font-black text-neutral-900 sm:text-lg flex items-center gap-2">
+                  <User size={18} className="text-blue-600" />
+                  <span>{t.checkout.contactInfo}</span>
                 </h2>
-                <span className="rounded-md bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-700">
+                <span className="rounded-md bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700">
                   {lang === 'ar' ? 'الهاتف فقط إجباري' : 'Seul le téléphone est requis'}
                 </span>
               </div>
 
-              {/* Phone Field (REQUIRED - Prominent) */}
+              {/* Phone Field (REQUIRED - with Phone Icon) */}
               <div>
-                <label htmlFor="checkout-phone-input" className="block text-sm font-bold text-ink-900">
+                <label htmlFor="checkout-phone-input" className="block text-sm font-bold text-neutral-900">
                   <div className="flex items-center justify-between">
                     <span>{t.checkout.phone}</span>
                     <span className="text-xs font-bold text-rose-600">
                       {lang === 'ar' ? 'إجباري' : 'Requis'}
                     </span>
                   </div>
-                  <div className="relative mt-1">
+                  <div className="relative mt-1.5">
+                    <Phone
+                      size={17}
+                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
+                    />
                     <input
                       id="checkout-phone-input"
                       type="tel"
@@ -321,8 +491,8 @@ export default function CheckoutPage() {
                           setPhoneError(null);
                         }
                       }}
-                      className={`input text-base sm:text-lg font-semibold tracking-wide ${
-                        phoneError ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100' : 'border-ink-300'
+                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} text-base font-semibold tracking-wide border-neutral-300 focus:border-blue-600 focus:ring-blue-100 ${
+                        phoneError ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100' : ''
                       }`}
                     />
                   </div>
@@ -333,137 +503,174 @@ export default function CheckoutPage() {
                     <span>{phoneError}</span>
                   </p>
                 )}
-                <p className="mt-1 text-[11px] text-ink-500">
+                <p className="mt-1.5 text-[11px] text-neutral-500">
                   {lang === 'ar'
                     ? 'سنتصل بك على هذا الرقم لتأكيد تفاصيل التوصيل.'
                     : 'Nous vous appellerons sur ce numéro pour confirmer la livraison.'}
                 </p>
               </div>
 
-              {/* Optional Fields Grid */}
-              <div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-2">
-                {/* Full Name (Optional) */}
-                <label className="block text-sm font-semibold text-ink-700">
+              {/* Fields Grid with Clean Icons */}
+              <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+                {/* Full Name */}
+                <label className="block text-sm font-semibold text-neutral-700">
                   <div className="flex items-center justify-between">
                     <span>{t.checkout.fullName}</span>
-                    <span className="text-[11px] font-normal text-ink-400">
+                    <span className="text-[11px] font-normal text-neutral-400">
                       {lang === 'ar' ? 'اختياري' : 'Optionnel'}
                     </span>
                   </div>
-                  <input
-                    type="text"
-                    autoComplete="name"
-                    placeholder={lang === 'ar' ? 'الاسم واللقب' : 'Votre nom et prénom'}
-                    className="input mt-1 font-normal text-ink-900"
-                    value={form.firstName}
-                    onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                  />
+                  <div className="relative mt-1">
+                    <User
+                      size={17}
+                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
+                    />
+                    <input
+                      type="text"
+                      autoComplete="name"
+                      placeholder={lang === 'ar' ? 'الاسم واللقب' : 'Votre nom et prénom'}
+                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
+                      value={form.firstName}
+                      onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                    />
+                  </div>
                 </label>
 
-                {/* City (Optional) */}
-                <label className="block text-sm font-semibold text-ink-700">
+                {/* City */}
+                <label className="block text-sm font-semibold text-neutral-700">
                   <div className="flex items-center justify-between">
                     <span>{t.checkout.city}</span>
-                    <span className="text-[11px] font-normal text-ink-400">
+                    <span className="text-[11px] font-normal text-neutral-400">
                       {lang === 'ar' ? 'اختياري' : 'Optionnel'}
                     </span>
                   </div>
-                  <select
-                    className="input mt-1 font-normal text-ink-900"
-                    value={form.city}
-                    onChange={(e) => setForm({ ...form, city: e.target.value, locality: '', firstDeliveryLocalityId: null })}
-                  >
-                    <option value="">{t.checkout.selectCity || 'Sélectionner Ville (optionnel)'}</option>
-                    {SITE.cities.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative mt-1">
+                    <MapPin
+                      size={17}
+                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
+                    />
+                    <select
+                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
+                      value={form.city}
+                      onChange={(e) =>
+                        setForm({ ...form, city: e.target.value, locality: '', firstDeliveryLocalityId: null })
+                      }
+                    >
+                      <option value="">{t.checkout.selectCity || 'Sélectionner votre ville'}</option>
+                      {SITE.cities.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </label>
 
-                {/* Localité / Mo3tamadia (Optional) — shown once a Ville is
-                    picked. Picking the exact delegation here means the
-                    delivery company can resolve the destination exactly
-                    instead of guessing from the address later. */}
+                {/* Localité / Mo3tamadia (if city picked) */}
                 {form.city && (
-                  <label className="block text-sm font-semibold text-ink-700">
+                  <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
                     <div className="flex items-center justify-between">
                       <span>{lang === 'ar' ? 'المعتمدية' : 'Localité (Mo3tamadia)'}</span>
-                      <span className="text-[11px] font-normal text-ink-400">
+                      <span className="text-[11px] font-normal text-neutral-400">
                         {lang === 'ar' ? 'اختياري' : 'Optionnel'}
                       </span>
                     </div>
-                    <select
-                      className="input mt-1 font-normal text-ink-900"
-                      value={form.firstDeliveryLocalityId ?? ''}
-                      disabled={localitiesLoading}
-                      onChange={(e) => {
-                        const id = e.target.value ? Number(e.target.value) : null;
-                        const picked = localities.find((l) => l.locality_id === id);
-                        setForm({ ...form, firstDeliveryLocalityId: id, locality: picked?.delegation_name ?? '' });
-                      }}
-                    >
-                      <option value="">
-                        {localitiesLoading ? (lang === 'ar' ? 'تحميل…' : 'Chargement…') : (lang === 'ar' ? 'اختر المعتمدية (اختياري)' : 'Sélectionner localité (optionnel)')}
-                      </option>
-                      {Object.entries(
-                        localities.reduce<Record<string, typeof localities>>((groups, l) => {
-                          (groups[l.delegation_name] ??= []).push(l);
-                          return groups;
-                        }, {}),
-                      ).map(([delegation, group]) => (
-                        <optgroup key={delegation} label={delegation}>
-                          {group.map((l) => (
-                            <option key={l.locality_id} value={l.locality_id}>{l.locality_name}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                    <div className="relative mt-1">
+                      <MapPin
+                        size={17}
+                        className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
+                      />
+                      <select
+                        className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
+                        value={form.firstDeliveryLocalityId ?? ''}
+                        disabled={localitiesLoading}
+                        onChange={(e) => {
+                          const id = e.target.value ? Number(e.target.value) : null;
+                          const picked = localities.find((l) => l.locality_id === id);
+                          setForm({ ...form, firstDeliveryLocalityId: id, locality: picked?.delegation_name ?? '' });
+                        }}
+                      >
+                        <option value="">
+                          {localitiesLoading
+                            ? lang === 'ar'
+                              ? 'تحميل…'
+                              : 'Chargement…'
+                            : lang === 'ar'
+                            ? 'اختر المعتمدية (اختياري)'
+                            : 'Sélectionner localité (optionnel)'}
+                        </option>
+                        {Object.entries(
+                          localities.reduce<Record<string, typeof localities>>((groups, l) => {
+                            (groups[l.delegation_name] ??= []).push(l);
+                            return groups;
+                          }, {}),
+                        ).map(([delegation, group]) => (
+                          <optgroup key={delegation} label={delegation}>
+                            {group.map((l) => (
+                              <option key={l.locality_id} value={l.locality_id}>
+                                {l.locality_name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
                   </label>
                 )}
 
-                {/* Address (Optional) */}
-                <label className="block text-sm font-semibold text-ink-700 sm:col-span-2">
+                {/* Address */}
+                <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
                   <div className="flex items-center justify-between">
                     <span>{t.checkout.address}</span>
-                    <span className="text-[11px] font-normal text-ink-400">
+                    <span className="text-[11px] font-normal text-neutral-400">
                       {lang === 'ar' ? 'اختياري' : 'Optionnel'}
                     </span>
                   </div>
-                  <input
-                    type="text"
-                    autoComplete="street-address"
-                    placeholder={lang === 'ar' ? 'النهج، الحي، المكان المميز...' : 'Rue, quartier, repère...'}
-                    className="input mt-1 font-normal text-ink-900"
-                    value={form.address}
-                    onChange={(e) => setForm({ ...form, address: e.target.value })}
-                  />
+                  <div className="relative mt-1">
+                    <Home
+                      size={17}
+                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
+                    />
+                    <input
+                      type="text"
+                      autoComplete="street-address"
+                      placeholder={lang === 'ar' ? 'النهج، الحي، المكان المميز...' : 'Rue, quartier, repère...'}
+                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
+                      value={form.address}
+                      onChange={(e) => setForm({ ...form, address: e.target.value })}
+                    />
+                  </div>
                 </label>
 
-                {/* Email (Optional) */}
-                <label className="block text-sm font-semibold text-ink-700 sm:col-span-2">
+                {/* Email */}
+                <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
                   <div className="flex items-center justify-between">
                     <span>{t.checkout.email}</span>
-                    <span className="text-[11px] font-normal text-ink-400">
+                    <span className="text-[11px] font-normal text-neutral-400">
                       {lang === 'ar' ? 'اختياري' : 'Optionnel'}
                     </span>
                   </div>
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    placeholder="exemple@email.com"
-                    className="input mt-1 font-normal text-ink-900"
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  />
+                  <div className="relative mt-1">
+                    <Mail
+                      size={17}
+                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
+                    />
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="exemple@email.com"
+                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
+                      value={form.email}
+                      onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    />
+                  </div>
                 </label>
 
-                {/* Note (Optional) */}
-                <label className="block text-sm font-semibold text-ink-700 sm:col-span-2">
+                {/* Note */}
+                <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
                   <div className="flex items-center justify-between">
                     <span>{t.checkout.note}</span>
-                    <span className="text-[11px] font-normal text-ink-400">
+                    <span className="text-[11px] font-normal text-neutral-400">
                       {lang === 'ar' ? 'اختياري' : 'Optionnel'}
                     </span>
                   </div>
@@ -474,7 +681,7 @@ export default function CheckoutPage() {
                         ? 'أي تفاصيل إضافية بخصوص التوصيل أو المقاس...'
                         : 'Instructions spéciales pour le livreur...'
                     }
-                    className="input mt-1 font-normal text-ink-900"
+                    className="input mt-1 font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100"
                     value={form.note}
                     onChange={(e) => setForm({ ...form, note: e.target.value })}
                   />
@@ -482,70 +689,72 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Reassurance Banner */}
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 text-emerald-900">
-              <div className="flex items-start gap-3">
-                <Truck className="mt-0.5 shrink-0 text-emerald-600" size={20} />
-                <div className="text-xs sm:text-sm">
-                  <p className="font-bold">
-                    {lang === 'ar' ? 'توصيل في 24 إلى 48 ساعة' : 'Livraison rapide sous 24h à 48h'}
-                  </p>
-                  <p className="mt-0.5 text-emerald-700">
-                    {lang === 'ar'
-                      ? 'الدفع نقداً عند استلام الطرد. يمكنك فحص المنتج والتأكد من طلبيتك.'
-                      : 'Payez en espèces à la livraison. Vous pouvez vérifier votre colis en toute tranquillité.'}
-                  </p>
-                </div>
+            {/* Delivery Reassurance Banner (Matching Photo 4) */}
+            <div className="rounded-2xl border border-emerald-200 bg-[#F0FDF4] p-3.5 sm:p-4 text-emerald-950 flex items-start gap-3">
+              <Truck className="mt-0.5 shrink-0 text-emerald-600" size={20} />
+              <div className="text-xs sm:text-sm">
+                <p className="font-bold">
+                  {lang === 'ar' ? 'توصيل سريع في 24 إلى 48 ساعة' : 'Livraison rapide sous 24h à 48h'}
+                </p>
+                <p className="mt-0.5 text-emerald-700">
+                  {lang === 'ar'
+                    ? 'الدفع نقداً عند استلام الطرد. يمكنك فحص المنتج والتأكد من طلبيتك.'
+                    : 'Payez en espèces à la livraison. Vous pouvez vérifier votre colis en toute tranquillité.'}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Order Summary & Desktop Confirmation Card (Right 5-cols on Desktop) */}
-          <aside className="space-y-6 lg:col-span-5">
-            <div className="card p-4 sm:p-6 lg:sticky lg:top-24">
-              <div className="flex items-center justify-between border-b border-ink-100 pb-3">
-                <h2 className="text-base font-black text-ink-900 sm:text-lg">
-                  {t.checkout.yourOrder}
+          {/* Desktop Order Summary (Right 5-cols on Desktop) */}
+          <aside className="hidden lg:block space-y-6 lg:col-span-5">
+            <div className="card p-5 sm:p-6 rounded-2xl border border-neutral-200/90 bg-white shadow-card lg:sticky lg:top-24">
+              <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                <h2 className="text-base font-black text-neutral-900 sm:text-lg flex items-center gap-2">
+                  <ShoppingBag size={18} className="text-blue-600" />
+                  <span>{t.checkout.yourOrder}</span>
                 </h2>
-                <span className="rounded-full bg-ink-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">
+                <span className="rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-bold text-neutral-700">
                   {items.reduce((s, i) => s + i.qty, 0)} {lang === 'ar' ? 'قطع' : 'articles'}
                 </span>
               </div>
 
-              {/* Compact Product List */}
-              <ul className="divide-y divide-ink-100 overflow-y-auto max-h-72 py-2">
+              {/* Product List */}
+              <ul className="divide-y divide-neutral-100 overflow-y-auto max-h-72 py-2">
                 {items.map((i) => {
                   const varSummary = i.variation
-                    ? Object.entries(i.variation).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(' · ')
+                    ? Object.entries(i.variation)
+                        .filter(([, v]) => v)
+                        .map(([k, v]) => `${k}: ${v}`)
+                        .join(' · ')
                     : '';
                   return (
                     <li key={i.lineId} className="flex items-center gap-3 py-3 first:pt-1 last:pb-1">
-                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-ink-100 bg-ink-50">
+                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={i.image} alt={i.name} className="h-full w-full object-cover" />
+                        <img src={i.image} alt={i.name} className="h-full w-full object-contain p-1" />
                       </div>
                       <div className="min-w-0 flex-1 text-xs sm:text-sm">
-                        <p className="line-clamp-1 font-bold text-ink-900">
+                        <p className="line-clamp-1 font-bold text-neutral-900">
                           {i.name}
                           {i.bundleSlot ? (
-                            <span className="ms-1 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-black text-brand-700">
+                            <span className="ms-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-black text-blue-700">
                               {t.product.item} {i.bundleSlot}
                             </span>
                           ) : null}
                         </p>
-                        <p className="mt-0.5 text-ink-500">
-                          <span className="font-semibold text-ink-700">×{i.qty}</span>
+                        <p className="mt-0.5 text-neutral-500">
+                          <span className="font-semibold text-neutral-700">×{i.qty}</span>
                           {varSummary ? ` · ${varSummary}` : ''}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="whitespace-nowrap text-xs font-bold text-ink-900 sm:text-sm">
+                        <span className="whitespace-nowrap text-xs font-bold text-neutral-900 sm:text-sm">
                           {formatPrice(i.price * i.qty)}
                         </span>
                         <button
                           type="button"
                           onClick={() => remove(i.lineId)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-400 transition-colors hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-400"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
                           title={t.cart.remove}
                           aria-label={t.cart.remove}
                         >
@@ -557,29 +766,32 @@ export default function CheckoutPage() {
                 })}
               </ul>
 
-              {/* Price Calculation Summary */}
-              <div className="space-y-2 border-t border-ink-100 pt-3 text-xs sm:text-sm">
-                <div className="flex justify-between text-ink-600">
+              {/* Price Breakdown */}
+              <div className="space-y-2 border-t border-neutral-100 pt-3 text-xs sm:text-sm">
+                <div className="flex justify-between text-neutral-600">
                   <span>{t.cart.subtotal}</span>
-                  <span className="font-semibold text-ink-900">{formatPrice(total)}</span>
+                  <span className="font-semibold text-neutral-900">{formatPrice(total)}</span>
                 </div>
-                <div className="flex justify-between text-ink-600">
-                  <span>{t.cart.shipping}</span>
-                  <span className="font-semibold text-ink-900">{formatPrice(shipping)}</span>
+                <div className="flex justify-between text-neutral-600">
+                  <span className="flex items-center gap-1">
+                    <span>{t.cart.shipping}</span>
+                    <span className="text-[11px] text-neutral-400">ⓘ</span>
+                  </span>
+                  <span className="font-semibold text-neutral-900">{formatPrice(shipping)}</span>
                 </div>
-                <div className="flex items-baseline justify-between border-t border-ink-200 pt-3">
-                  <span className="text-base font-black text-ink-900 sm:text-lg">{t.cart.total}</span>
-                  <span className="text-xl font-black text-brand-600 sm:text-2xl">{formatPrice(grand)}</span>
+                <div className="flex items-baseline justify-between border-t border-neutral-200 pt-3">
+                  <span className="text-base font-black text-neutral-900 sm:text-lg">{t.cart.total}</span>
+                  <span className="text-xl font-black text-blue-600 sm:text-2xl">{formatPrice(grand)}</span>
                 </div>
               </div>
 
-              {/* Desktop Final Confirmation Button (Hidden on mobile since mobile has sticky bottom bar) */}
-              <div className="mt-6 hidden lg:block">
+              {/* Desktop Submit Button */}
+              <div className="mt-6">
                 <button
                   type="submit"
                   id="checkout-submit-btn-desktop"
                   disabled={submitting || !items.length}
-                  className="btn-cta w-full py-4 text-base font-black shadow-lg shadow-emerald-600/20 sm:text-lg disabled:opacity-50"
+                  className="w-full py-4 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-black text-base sm:text-lg flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 disabled:opacity-50 cursor-pointer transition-all"
                 >
                   {submitting ? (
                     <span className="inline-flex items-center gap-2">
@@ -589,11 +801,12 @@ export default function CheckoutPage() {
                   ) : (
                     <span className="inline-flex items-center gap-2">
                       <CheckCircle2 size={20} />
-                      {t.checkout.confirm}
+                      <span>{t.checkout.confirm}</span>
+                      <ArrowRight size={20} />
                     </span>
                   )}
                 </button>
-                <p className="mt-2 text-center text-xs text-ink-500">
+                <p className="mt-2 text-center text-xs text-neutral-500">
                   {t.checkout.paymentNote}
                 </p>
               </div>
@@ -602,19 +815,19 @@ export default function CheckoutPage() {
         </form>
       </main>
 
-      {/* Pinned Mobile Confirmation Bottom Bar (Always visible on mobile view without scrolling) */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-200 bg-white/95 backdrop-blur-md px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_25px_rgba(0,0,0,0.1)] lg:hidden">
+      {/* Pinned Mobile Confirmation Bottom Bar (Matching Photo 4) */}
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200/90 bg-white/95 backdrop-blur-md px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-[0_-4px_25px_rgba(0,0,0,0.1)] lg:hidden">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-ink-500">{t.cart.total}</p>
-            <p className="truncate text-lg font-black text-brand-600">{formatPrice(grand)}</p>
+            <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">{t.cart.total}</p>
+            <p className="truncate text-xl font-black text-blue-600">{formatPrice(grand)}</p>
           </div>
           <button
             type="submit"
             form="checkout-form"
             id="checkout-submit-btn-mobile"
             disabled={submitting || !items.length}
-            className="btn-cta flex-1 max-w-[240px] py-3.5 text-sm font-black shadow-md shadow-emerald-600/20 active:scale-[0.98] disabled:opacity-50 sm:text-base"
+            className="flex-1 max-w-[260px] py-3.5 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-black text-sm sm:text-base flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 disabled:opacity-50 cursor-pointer transition-all"
           >
             {submitting ? (
               <span className="inline-flex items-center gap-2">
@@ -622,9 +835,10 @@ export default function CheckoutPage() {
                 {t.checkout.submitting}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-2">
                 <CheckCircle2 size={18} />
-                {t.checkout.confirm}
+                <span>{t.checkout.confirm}</span>
+                <ArrowRight size={18} />
               </span>
             )}
           </button>
