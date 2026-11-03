@@ -430,8 +430,11 @@ export class OrdersService {
       ? { confirmedAt: sortDir, createdAt: sortDir }
       : { createdAt: sortDir };
 
+    const dbQuery = this.model.find(filter).sort(sortObj as unknown as Record<string, 1 | -1>).skip(skip).limit(perPage);
     const [docs, total] = await Promise.all([
-      this.model.find(filter).sort(sortObj as unknown as Record<string, 1 | -1>).skip(skip).limit(perPage).lean(),
+      (typeof (dbQuery as unknown as { lean?: () => unknown })?.lean === 'function'
+        ? (dbQuery as unknown as { lean: () => Promise<OrderDocument[]> }).lean()
+        : dbQuery) as Promise<OrderDocument[]>,
       this.model.countDocuments(filter),
     ]);
 
@@ -440,8 +443,15 @@ export class OrdersService {
         const confirmedEntry = [...doc.statusHistory].reverse().find((e) => e.to === 'confirme' || e.to === 'completed');
         if (confirmedEntry?.at) {
           doc.confirmedAt = new Date(confirmedEntry.at);
-          const leanDoc = doc as unknown as { _id: unknown; confirmedAt?: Date };
-          void this.model.updateOne({ _id: leanDoc._id }, { $set: { confirmedAt: leanDoc.confirmedAt } }).catch(() => {});
+          if (typeof (doc as unknown as { save?: () => Promise<unknown> }).save === 'function') {
+            void (doc as unknown as { save: () => Promise<unknown> }).save().catch(() => {});
+          } else {
+            const leanDoc = doc as unknown as { _id?: unknown; id?: unknown; confirmedAt?: Date };
+            const docId = leanDoc._id ?? leanDoc.id;
+            if (docId) {
+              void this.model.updateOne({ _id: docId }, { $set: { confirmedAt: leanDoc.confirmedAt } }).catch(() => {});
+            }
+          }
         }
       }
     }
