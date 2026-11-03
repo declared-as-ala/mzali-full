@@ -9,7 +9,7 @@ import { Category, CategoryDocument } from './category.schema';
 
 @Injectable()
 export class CategoriesService {
-  private readonly cache = new Map<string, { at: number; data: any }>();
+  private readonly cache = new Map<string, { at: number; data: CategoryContract[] | CategoryContract }>();
   private readonly CACHE_TTL_MS = 60_000; // 60 seconds
 
   constructor(@InjectModel(Category.name) private readonly model: Model<Category>) {}
@@ -20,7 +20,7 @@ export class CategoriesService {
     if (query.parentId !== undefined) filter.parentId = query.parentId;
     const cacheKey = JSON.stringify(query);
     const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.at < this.CACHE_TTL_MS) return cached.data;
+    if (cached && Date.now() - cached.at < this.CACHE_TTL_MS) return cached.data as CategoryContract[];
 
     const q = this.model.find(filter).sort({ menuOrder: 1, name: 1 });
     if (query.perPage) q.limit(query.perPage);
@@ -33,7 +33,7 @@ export class CategoriesService {
   async getBySlug(slug: string): Promise<CategoryContract | null> {
     const cacheKey = `slug:${slug}`;
     const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.at < this.CACHE_TTL_MS) return cached.data;
+    if (cached && Date.now() - cached.at < this.CACHE_TTL_MS) return cached.data as CategoryContract;
     const doc = await this.model.findOne({ slug }).lean();
     const result = doc ? toCategoryContract(doc) : null;
     if (result) this.cache.set(cacheKey, { at: Date.now(), data: result });

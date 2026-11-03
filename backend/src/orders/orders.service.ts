@@ -440,7 +440,8 @@ export class OrdersService {
         const confirmedEntry = [...doc.statusHistory].reverse().find((e) => e.to === 'confirme' || e.to === 'completed');
         if (confirmedEntry?.at) {
           doc.confirmedAt = new Date(confirmedEntry.at);
-          void this.model.updateOne({ _id: (doc as any)._id }, { $set: { confirmedAt: (doc as any).confirmedAt } }).catch(() => {});
+          const leanDoc = doc as unknown as { _id: unknown; confirmedAt?: Date };
+          void this.model.updateOne({ _id: leanDoc._id }, { $set: { confirmedAt: leanDoc.confirmedAt } }).catch(() => {});
         }
       }
     }
