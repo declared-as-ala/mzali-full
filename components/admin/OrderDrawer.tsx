@@ -193,6 +193,9 @@ function clearDraftFromStorage(orderId: string | null | undefined): void {
 
 let _productsPickerCache: ProductPickerItem[] | null = null;
 let _productsPickerPromise: Promise<ProductPickerItem[]> | null = null;
+const _productInfoCache = new Map<string, ProductInfo>();
+const _productInfoPromises = new Map<string, Promise<ProductInfo | null>>();
+const _localitiesCache = new Map<string, FirstDeliveryLocality[]>();
 
 async function fetchProductsPickerCached(apiBase: string): Promise<ProductPickerItem[]> {
   if (_productsPickerCache && _productsPickerCache.length > 0) return _productsPickerCache;
@@ -212,6 +215,9 @@ async function fetchProductsPickerCached(apiBase: string): Promise<ProductPicker
 export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase = '/api/admin' }: Props) {
   const isEdit = Boolean(orderId);
   const [loading, setLoading] = useState(() => Boolean(orderId));
+  const latestRequestIdRef = useRef(0);
+  const [loadedOrderId, setLoadedOrderId] = useState<string | null>(null);
+  const isReady = !isEdit || (loadedOrderId === orderId && !loading);
   const [saving, setSaving] = useState(false);
   const [products, setProducts] = useState<ProductPickerItem[]>([]);
   const [statusList, setStatusList] = useState<string[]>([]);
@@ -339,64 +345,74 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     toast.error(message);
   }
 
-  async function ensureProductInfo(pid: string): Promise<ProductInfo | null> {
-    if (productInfo[pid]) {
-      const info = productInfo[pid];
+    async function ensureProductInfo(pid: string): Promise<ProductInfo | null> {
+    if (productInfo[pid]) return productInfo[pid];
+    if (_productInfoCache.has(pid)) {
+      const cached = _productInfoCache.get(pid)!;
+      setProductInfo((prev) => (prev[pid] ? prev : { ...prev, [pid]: cached }));
       setLines((prev) => prev.map((l) => {
         if (l.productId !== pid) return l;
         const normalizedVariation: Record<string, string> = {};
         for (const [k, v] of Object.entries(l.variation)) {
-          const matchedOpt = info.options.find((opt) => opt.name.toLowerCase().trim() === k.toLowerCase().trim());
+          const matchedOpt = cached.options.find((opt) => opt.name.toLowerCase().trim() === k.toLowerCase().trim());
           if (matchedOpt) {
             normalizedVariation[matchedOpt.name] = v;
           } else {
             normalizedVariation[k] = v;
           }
         }
-        return { ...l, image: info.image ?? l.image, variation: normalizedVariation };
+        return { ...l, image: cached.image ?? l.image, variation: normalizedVariation };
       }));
-      return info;
+      return cached;
     }
-    try {
-      const res = await fetch(`${apiBase}/products/${pid}`);
-      if (!res.ok) return null;
-      const p = await res.json();
-      const opts = (p.attributes ?? []).map((a: { name: string; options: string[] }) => ({
-        name: a.name,
-        values: a.options ?? [],
-      }));
-      const info: ProductInfo = {
-        options: opts,
-        matrix: p.inventoryModel === 'MATRIX',
-        variants: p.variants,
-        bundles: (p.bundles ?? []).map((b: { id: string; name: string; quantity: number; price: number }) => ({
-          id: b.id, name: b.name, quantity: b.quantity, price: b.price,
-        })),
-        // Historical order lines can retain an obsolete image host. Product
-        // detail URLs are normalized by the API to the current public media
-        // origin, so use the catalog image whenever the product still exists.
-        image: getPrimaryProductImage<{ url: string; isPrimary?: boolean }>(p.images ?? [])?.url,
-      };
-      setProductInfo((prev) => ({ ...prev, [pid]: info }));
 
-      setLines((prev) => prev.map((l) => {
-        if (l.productId !== pid) return l;
-        const normalizedVariation: Record<string, string> = {};
-        for (const [k, v] of Object.entries(l.variation)) {
-          const matchedOpt = opts.find((opt: { name: string; values: string[] }) => opt.name.toLowerCase().trim() === k.toLowerCase().trim());
-          if (matchedOpt) {
-            normalizedVariation[matchedOpt.name] = v;
-          } else {
-            normalizedVariation[k] = v;
+    if (_productInfoPromises.has(pid)) {
+      return _productInfoPromises.get(pid)!;
+    }
+
+    const pPromise = fetch(`${apiBase}/products/${pid}`)
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const p = await res.json();
+        const opts = (p.attributes ?? []).map((a: { name: string; options: string[] }) => ({
+          name: a.name,
+          values: a.options ?? [],
+        }));
+        const info: ProductInfo = {
+          options: opts,
+          matrix: p.inventoryModel === 'MATRIX',
+          variants: p.variants,
+          bundles: (p.bundles ?? []).map((b: { id: string; name: string; quantity: number; price: number }) => ({
+            id: b.id, name: b.name, quantity: b.quantity, price: b.price,
+          })),
+          image: getPrimaryProductImage<{ url: string; isPrimary?: boolean }>(p.images ?? [])?.url,
+        };
+        _productInfoCache.set(pid, info);
+        setProductInfo((prev) => ({ ...prev, [pid]: info }));
+
+        setLines((prev) => prev.map((l) => {
+          if (l.productId !== pid) return l;
+          const normalizedVariation: Record<string, string> = {};
+          for (const [k, v] of Object.entries(l.variation)) {
+            const matchedOpt = opts.find((opt: { name: string; values: string[] }) => opt.name.toLowerCase().trim() === k.toLowerCase().trim());
+            if (matchedOpt) {
+              normalizedVariation[matchedOpt.name] = v;
+            } else {
+              normalizedVariation[k] = v;
+            }
           }
-        }
-        return { ...l, image: info.image ?? l.image, variation: normalizedVariation };
-      }));
+          return { ...l, image: info.image ?? l.image, variation: normalizedVariation };
+        }));
 
-      return info;
-    } catch {
-      return null;
-    }
+        return info;
+      })
+      .catch(() => null)
+      .finally(() => {
+        _productInfoPromises.delete(pid);
+      });
+
+    _productInfoPromises.set(pid, pPromise);
+    return pPromise;
   }
 
   const lineSubtotal = useMemo(() => lines.reduce((s, l) => s + l.qty * l.unitPrice, 0), [lines]);
@@ -410,11 +426,20 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   // the picker can't drift from what First Delivery actually recognizes.
   useEffect(() => {
     if (!open || !customer.city) { setLocalities([]); return; }
+    const cached = _localitiesCache.get(customer.city);
+    if (cached) {
+      setLocalities(cached);
+      setLocalitiesLoading(false);
+      return;
+    }
     let cancelled = false;
     setLocalitiesLoading(true);
     fetch(`/api/firstdelivery/localities?governorate=${encodeURIComponent(customer.city)}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((d) => { if (!cancelled && Array.isArray(d)) setLocalities(d); })
+      .then((d) => {
+        if (Array.isArray(d)) _localitiesCache.set(customer.city, d);
+        if (!cancelled && Array.isArray(d)) setLocalities(d);
+      })
       .catch(() => { if (!cancelled) setLocalities([]); })
       .finally(() => { if (!cancelled) setLocalitiesLoading(false); });
     return () => { cancelled = true; };
@@ -451,10 +476,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
   /** Fetch the order and hydrate the form. Also re-baselines originalRef +
    *  version, so a concurrency-conflict reload keeps change detection honest. */
   async function loadOrder(id: string) {
+    const reqId = ++latestRequestIdRef.current;
     setLoading(true);
-    setProductInfo({});
     try {
       const res = await fetch(`${apiBase}/orders/${id}`);
+      if (reqId !== latestRequestIdRef.current) return;
       if (res.status === 401) {
         window.location.href = adminLoginHref(`from=${encodeURIComponent(window.location.pathname + window.location.search)}`);
         return;
@@ -520,10 +546,15 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       const uniqueIds = Array.from(new Set(o.items.map((i) => i.productId)));
       uniqueIds.forEach((pid) => { void ensureProductInfo(pid); });
       restoreDraftIfAny(id);
+      setLoadedOrderId(id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Erreur de chargement de la commande');
+      if (reqId === latestRequestIdRef.current) {
+        toast.error(e instanceof Error ? e.message : 'Erreur de chargement de la commande');
+      }
     } finally {
-      setLoading(false);
+      if (reqId === latestRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -581,6 +612,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     originalRef.current = null;
     setClampNotes({});
     setStockErrors({});
+    setLoadedOrderId(null);
     restoreDraftIfAny(null);
   }
 
@@ -1075,7 +1107,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 </span>
               )}
             </div>
-            {!loading && (
+            {isReady && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-medium text-ink-700">
                 {customer.firstName && <span className="font-bold text-ink-900">{customer.firstName}</span>}
                 <span className="font-black text-brand-600">{formatPrice(total)}</span>
@@ -1094,7 +1126,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         </button>
       }
     >
-      {loading ? <OrderDrawerSkeleton /> : (
+      {!isReady ? <OrderDrawerSkeleton /> : (
         <div className="space-y-5">
           {isSensitiveOrder && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">

@@ -1,12 +1,12 @@
-﻿'use client';
+'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Minus, Plus, ShoppingBag, Zap, Check, XCircle } from 'lucide-react';
+import { Minus, Plus, ShoppingBag, Check, XCircle, ArrowRight } from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { getPrimaryProductImage, type Product } from '@/types';
 import VariantSelector from './VariantSelector';
-import { SITE } from '@/lib/site-config';
+import { SITE, formatPrice } from '@/lib/site-config';
 import { useLanguage } from '@/components/site/LanguageProvider';
 
 export default function AddToCart({ product }: { product: Product }) {
@@ -33,8 +33,11 @@ export default function AddToCart({ product }: { product: Product }) {
   const matrix = product.inventoryModel === 'MATRIX';
   const [variantId, setVariantId] = useState('');
   const [bundleVariants, setBundleVariants] = useState<string[]>([]);
-  const selectedVariant = product.variants?.find(v => v.id === variantId);
-  const snapshot = (id: string) => { const v = product.variants?.find(v => v.id === id); return v ? { Taille: v.size, Couleur: v.color } : undefined; };
+  const selectedVariant = product.variants?.find((v) => v.id === variantId);
+  const snapshot = (id: string) => {
+    const v = product.variants?.find((item) => item.id === id);
+    return v ? { Taille: v.size, Couleur: v.color } : undefined;
+  };
 
   const variantAttrs = (matrix ? [] : product.attributes).filter((a) => a.options.length);
 
@@ -69,11 +72,12 @@ export default function AddToCart({ product }: { product: Product }) {
   const cartQty = bundleQty * extra;
 
   const chosenIds = bundleActive ? Array.from({ length: bundleQty }, (_, i) => bundleVariants[i]) : [variantId];
-  const validSelection = !matrix || chosenIds.every(id => {
-    const v = product.variants?.find(v => v.id === id && v.active);
-    const needed = chosenIds.filter(other => other === id).length * extra;
+  const validSelection = !matrix || chosenIds.every((id) => {
+    const v = product.variants?.find((variant) => variant.id === id && variant.active);
+    const needed = chosenIds.filter((other) => other === id).length * extra;
     return v && (product.inventoryEnabled === false || v.available >= needed);
   });
+
   const doAdd = (buyNow = false) => {
     if (soldOut || !validSelection) return;
     if (bundleActive) {
@@ -81,7 +85,7 @@ export default function AddToCart({ product }: { product: Product }) {
         for (let slot = 0; slot < bundleQty; slot++) {
           add({
             productId: product.id,
-            variantId: matrix ? bundleVariants[slot] : product.variants?.find(v => v.active)?.id,
+            variantId: matrix ? bundleVariants[slot] : product.variants?.find((v) => v.active)?.id,
             name: selectedBundle ? `${product.name} — ${selectedBundle.name}` : product.name,
             price: cartUnitPrice,
             qty: 1,
@@ -96,7 +100,7 @@ export default function AddToCart({ product }: { product: Product }) {
     } else {
       add({
         productId: product.id,
-        variantId: matrix ? variantId : product.variants?.find(v => v.active)?.id,
+        variantId: matrix ? variantId : product.variants?.find((v) => v.active)?.id,
         name: product.name,
         price: cartUnitPrice,
         qty: cartQty,
@@ -123,20 +127,27 @@ export default function AddToCart({ product }: { product: Product }) {
     if (c === 'red') return 'bg-red-500';
     if (c === 'green') return 'bg-emerald-500';
     if (c === 'blue') return 'bg-blue-500';
-    return 'bg-brand-500';
+    return 'bg-neutral-900';
   }
 
   return (
-    <div className="mt-6 space-y-4">
+    <div className="mt-5 space-y-5">
       {soldOut && (
-        <p className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-black uppercase tracking-widest text-red-700 shadow-sm">
-          <XCircle size={16} />{t.product.outOfStock}
-        </p>
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 shadow-2xs">
+          <XCircle size={18} className="text-red-600 shrink-0" />
+          <span>{t.product.outOfStock}</span>
+        </div>
       )}
 
+      {/* Bundle Offers Selector */}
       {product.bundles.length > 0 && (
-        <div>
-          <p className="mb-2 text-sm font-bold text-ink-700">{t.product.offers}</p>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-neutral-700">{t.product.offers}</span>
+            {selectedBundle && (
+              <span className="text-xs font-bold text-neutral-900">Sélectionné</span>
+            )}
+          </div>
           <div className="grid gap-2">
             {product.bundles.map((b) => {
               const active = b.id === bundleId;
@@ -148,31 +159,41 @@ export default function AddToCart({ product }: { product: Product }) {
                   key={b.id}
                   type="button"
                   onClick={() => setBundleId(b.id)}
-                  className={`flex items-center justify-between rounded-xl border-2 px-4 py-3 text-start transition ${
-                    active ? 'border-brand-500 bg-brand-50' : 'border-ink-200 bg-white hover:border-brand-200'
+                  className={`flex items-center justify-between rounded-xl border p-3.5 text-start transition-all duration-150 cursor-pointer ${
+                    active
+                      ? 'border-neutral-950 bg-neutral-950 text-white shadow-xs'
+                      : 'border-neutral-200/90 bg-[#FBFBFB] hover:bg-neutral-100/80 text-neutral-900'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    {active && (
-                      <span className="grid h-6 w-6 place-items-center rounded-full bg-brand-500 text-white">
-                        <Check size={14} />
-                      </span>
-                    )}
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                        active
+                          ? 'border-white bg-white text-neutral-950'
+                          : 'border-neutral-400 bg-transparent'
+                      }`}
+                    >
+                      {active && <Check size={12} strokeWidth={3} />}
+                    </span>
                     <div>
-                      <p className="font-black text-ink-900">{b.name}</p>
-                      {b.label && <p className="text-xs text-ink-700">{b.label}</p>}
+                      <p className={`font-extrabold text-sm sm:text-base leading-tight ${active ? 'text-white' : 'text-neutral-900'}`}>
+                        {b.name}
+                      </p>
+                      {b.label && <p className={`text-xs mt-0.5 font-medium ${active ? 'text-neutral-300' : 'text-neutral-500'}`}>{b.label}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-end">
                     {discount > 0 && (
-                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-black text-white ${badgeColorClasses(b.badgeColor)}`}>
+                      <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${active ? 'bg-white text-neutral-950' : 'bg-red-600 text-white'}`}>
                         -{discount}%
                       </span>
                     )}
                     <div>
-                      <p className="text-lg font-black text-brand-500">{b.price} {SITE.currency.symbol}</p>
+                      <p className={`text-base font-black ${active ? 'text-white' : 'text-neutral-950'}`}>{formatPrice(b.price)}</p>
                       {b.regularPrice > b.price && (
-                        <p className="text-xs text-ink-300 line-through">{b.regularPrice} {SITE.currency.symbol}</p>
+                        <p className={`text-xs line-through font-medium ${active ? 'text-neutral-400' : 'text-neutral-400'}`}>
+                          {formatPrice(b.regularPrice)}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -183,45 +204,92 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       )}
 
+      {/* Non-matrix Bundle Items Slot Selector */}
       {bundleActive && variantAttrs.length > 0 && (
-        <div className="rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 p-5 text-white shadow-soft">
-          <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="rounded-2xl border border-neutral-200 bg-[#F8F9FA] p-4 shadow-2xs">
+          <div className="mb-3 flex items-start justify-between gap-3 border-b border-neutral-200/80 pb-2.5">
             <div>
-              <p className="text-lg font-black leading-tight">{selectedBundle?.name}</p>
-              {selectedBundle?.label && <p className="text-xs opacity-90">{selectedBundle.label}</p>}
+              <p className="text-sm font-bold text-neutral-900">{selectedBundle?.name}</p>
+              {selectedBundle?.label && <p className="text-xs text-neutral-500">{selectedBundle.label}</p>}
             </div>
-            <p className="text-xl font-black">{selectedBundle?.price} {SITE.currency.symbol}</p>
+            <p className="text-base font-black text-neutral-950">{formatPrice(selectedBundle?.price ?? 0)}</p>
           </div>
 
           <div
-            className="grid items-center gap-x-3 gap-y-2"
-            style={{ gridTemplateColumns: `60px repeat(${variantAttrs.length}, minmax(0, 1fr))` }}
+            className="grid items-center gap-x-2 sm:gap-x-3 gap-y-2"
+            style={{ gridTemplateColumns: `50px repeat(${variantAttrs.length}, minmax(0, 1fr))` }}
           >
             <span />
             {variantAttrs.map((a) => (
-              <span key={a.name} className="text-xs font-bold opacity-90">{a.name}</span>
+              <span key={a.name} className="text-xs font-bold text-neutral-700">{a.name}</span>
             ))}
 
             {Array.from({ length: bundleQty }).map((_, i) => (
-              <Slot key={i} index={i} attrs={variantAttrs} value={bundleItems[i] ?? {}} itemLabel={t.product.item} onChange={(n, v) => updateBundleItem(i, n, v)} />
+              <Slot
+                key={i}
+                index={i}
+                attrs={variantAttrs}
+                value={bundleItems[i] ?? {}}
+                itemLabel={t.product.item}
+                onChange={(n, v) => updateBundleItem(i, n, v)}
+              />
             ))}
           </div>
         </div>
       )}
 
-      {matrix && (bundleActive ? Array.from({ length: bundleQty }, (_, i) => <div key={i} className="rounded-2xl border p-4"><p className="mb-3 font-bold">Article {i + 1}</p><VariantSelector variants={product.variants ?? []} stockEnabled={product.inventoryEnabled !== false} value={bundleVariants[i]} onChange={id => setBundleVariants(prev => { const next = [...prev]; next[i] = id; return next; })} /></div>) : <VariantSelector variants={product.variants ?? []} stockEnabled={product.inventoryEnabled !== false} value={variantId} onChange={setVariantId} />)}
-      {matrix && !validSelection && <p className="text-sm text-ink-500">Choisissez une taille et une couleur disponibles pour chaque article.</p>}
+      {/* Matrix Variants Selector */}
+      {matrix && (
+        bundleActive ? (
+          <div className="space-y-3">
+            {Array.from({ length: bundleQty }, (_, i) => (
+              <div key={i} className="rounded-2xl border border-neutral-200 bg-[#FAFAFA] p-4 shadow-2xs">
+                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-700">Article {i + 1}</p>
+                <VariantSelector
+                  variants={product.variants ?? []}
+                  stockEnabled={product.inventoryEnabled !== false}
+                  value={bundleVariants[i]}
+                  onChange={(id) =>
+                    setBundleVariants((prev) => {
+                      const next = [...prev];
+                      next[i] = id;
+                      return next;
+                    })
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <VariantSelector
+            variants={product.variants ?? []}
+            stockEnabled={product.inventoryEnabled !== false}
+            value={variantId}
+            onChange={setVariantId}
+          />
+        )
+      )}
+
+      {matrix && !validSelection && (
+        <p className="text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-xl px-3 py-2">
+          Veuillez sélectionner une taille et une couleur disponibles.
+        </p>
+      )}
+
+      {/* Single Product Attributes (non-matrix) */}
       {!bundleActive && variantAttrs.map((a) => (
-        <div key={a.name}>
-          <p className="mb-2 text-sm font-bold text-ink-700">{a.name}</p>
+        <div key={a.name} className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-neutral-700">{a.name}</p>
           <div className="flex flex-wrap gap-2">
             {a.options.map((opt) => (
               <button
                 key={opt}
                 type="button"
                 onClick={() => setPicked({ ...picked, [a.name]: opt })}
-                className={`rounded-lg border px-4 py-2 text-sm font-bold transition ${
-                  picked[a.name] === opt ? 'border-brand-500 bg-brand-50 text-brand-500' : 'border-ink-200 hover:border-brand-300'
+                className={`h-10 min-w-[3rem] px-3.5 rounded-xl text-xs font-bold transition-all duration-150 cursor-pointer ${
+                  picked[a.name] === opt
+                    ? 'bg-neutral-950 text-white font-black shadow-sm'
+                    : 'bg-[#F4F4F4] text-neutral-800 border border-neutral-200/60 hover:bg-neutral-200/70'
                 }`}
               >
                 {opt}
@@ -231,26 +299,63 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       ))}
 
-      <div className="flex items-center gap-3">
-        <div className="flex items-center rounded-xl border border-ink-200">
-          <button disabled={soldOut} onClick={() => setExtra(Math.max(1, extra - 1))} className="grid h-12 w-12 place-items-center text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40" aria-label={t.product.decreaseQty}><Minus size={16} /></button>
-          <span className="w-12 text-center font-bold">{extra}</span>
-          <button disabled={soldOut} onClick={() => setExtra(extra + 1)} className="grid h-12 w-12 place-items-center text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40" aria-label={t.product.increaseQty}><Plus size={16} /></button>
+      {/* Quantity & Actions Bar */}
+      <div className="pt-2 space-y-3">
+        <div className="flex items-center gap-3">
+          {/* Quantity Selector */}
+          <div className="flex h-12 items-center rounded-xl border border-neutral-200 bg-[#F7F7F7] shadow-2xs">
+            <button
+              type="button"
+              disabled={soldOut}
+              onClick={() => setExtra(Math.max(1, extra - 1))}
+              className="grid h-12 w-11 place-items-center text-neutral-700 hover:bg-neutral-200/60 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 transition cursor-pointer"
+              aria-label={t.product.decreaseQty}
+            >
+              <Minus size={16} />
+            </button>
+            <span className="w-10 text-center font-bold text-neutral-900 text-sm select-none">{extra}</span>
+            <button
+              type="button"
+              disabled={soldOut}
+              onClick={() => setExtra(extra + 1)}
+              className="grid h-12 w-11 place-items-center text-neutral-700 hover:bg-neutral-200/60 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 transition cursor-pointer"
+              aria-label={t.product.increaseQty}
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+
+          {/* Secondary CTA: Ajouter au panier */}
+          <button
+            type="button"
+            disabled={soldOut || !validSelection}
+            onClick={() => doAdd(false)}
+            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white font-extrabold text-sm sm:text-base text-neutral-800 hover:border-neutral-950 hover:bg-neutral-50 active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ShoppingBag size={18} />
+            <span>{t.product.addToCart}</span>
+          </button>
         </div>
-        <button disabled={soldOut || !validSelection} onClick={() => doAdd(false)} className="btn-ghost flex-1 disabled:cursor-not-allowed disabled:opacity-40">
-          <ShoppingBag size={18} /> {t.product.addToCart}
+
+        {/* Primary CTA: Acheter maintenant (High Fashion Solid Black) */}
+        <button
+          type="button"
+          ref={mainCtaRef}
+          disabled={soldOut || !validSelection}
+          onClick={() => doAdd(true)}
+          className="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 hover:bg-black text-white font-black text-base shadow-md active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+        >
+          <span>{t.common.buyNow}</span>
+          <ArrowRight size={18} />
         </button>
       </div>
-      <button ref={mainCtaRef} disabled={soldOut || !validSelection} onClick={() => doAdd(true)} className="btn-cta w-full shake-cta disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">
-        <Zap size={18} /> {t.common.buyNow}
-      </button>
 
-      {/* Sticky Mobile Purchase Action */}
+      {/* Sticky Mobile Purchase Action — Exactly Matching Mockup Bottom Bar */}
       {showStickyMobile && !soldOut && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md p-3 border-t border-ink-200 shadow-2xl flex items-center justify-between gap-3 md:hidden">
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md px-5 py-3.5 border-t border-neutral-200/80 shadow-2xl flex items-center justify-between gap-4 md:hidden">
           <div className="flex flex-col min-w-0 pr-2">
-            <span className="truncate text-xs font-bold text-ink-900">{product.name}</span>
-            <span className="text-base font-black text-brand-500">{effectivePrice} {SITE.currency.symbol}</span>
+            <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Sous-total</span>
+            <span className="text-xl font-black text-neutral-950 leading-tight">{formatPrice(effectivePrice)}</span>
           </div>
           <button
             type="button"
@@ -262,9 +367,10 @@ export default function AddToCart({ product }: { product: Product }) {
                 doAdd(true);
               }
             }}
-            className="btn-cta py-2.5 px-5 text-sm font-black shrink-0 shadow-md shadow-emerald-600/20 active:scale-[0.98] disabled:opacity-50"
+            className="h-12 px-7 rounded-xl bg-neutral-950 hover:bg-black text-white text-sm font-black shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
           >
-            <Zap size={16} /> {t.common.buyNow}
+            <span>{t.common.buyNow}</span>
+            <ArrowRight size={16} />
           </button>
         </div>
       )}
@@ -273,7 +379,11 @@ export default function AddToCart({ product }: { product: Product }) {
 }
 
 function Slot({
-  index, attrs, value, itemLabel, onChange,
+  index,
+  attrs,
+  value,
+  itemLabel,
+  onChange,
 }: {
   index: number;
   attrs: { name: string; options: string[] }[];
@@ -283,13 +393,13 @@ function Slot({
 }) {
   return (
     <>
-      <span className="text-sm font-bold opacity-90">{itemLabel} {index + 1}</span>
+      <span className="text-xs font-bold text-neutral-700">{itemLabel} {index + 1}</span>
       {attrs.map((a) => (
         <select
           key={a.name}
           value={value[a.name] ?? ''}
           onChange={(e) => onChange(a.name, e.target.value)}
-          className="h-10 min-w-0 rounded-lg border border-white/40 bg-white px-2 text-sm font-bold text-ink-900 outline-none focus:border-brand-300 focus:ring-2 focus:ring-white/30"
+          className="h-10 min-w-0 rounded-xl border border-neutral-300 bg-white px-2.5 text-xs sm:text-sm font-bold text-neutral-800 outline-none focus:border-neutral-950 focus:ring-1 focus:ring-neutral-950 transition"
         >
           <option value="">-</option>
           {a.options.map((opt) => (
@@ -300,8 +410,3 @@ function Slot({
     </>
   );
 }
-
-
-
-
-

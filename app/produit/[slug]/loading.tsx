@@ -20,14 +20,14 @@ export default function ProductLoading() {
 
       <main className="container-shop py-6 lg:py-10 flex-1 animate-pulse">
         <div className="grid gap-8 lg:grid-cols-2 lg:gap-10">
-          {/* Gallery Skeleton */}
+          {/* Gallery Skeleton — matching 3:4 / 4:5 aspect ratio */}
           <div className="space-y-3">
-            <div className="relative w-full overflow-hidden rounded-2xl bg-ink-200 aspect-square shadow-sm" />
-            <div className="flex gap-2">
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-ink-200 shrink-0" />
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-ink-200 shrink-0" />
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-ink-200 shrink-0" />
-              <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-ink-200 shrink-0" />
+            <div className="relative w-full overflow-hidden rounded-2xl sm:rounded-3xl bg-ink-200 aspect-[3/4] sm:aspect-[4/5] shadow-xs" />
+            <div className="flex gap-2 sm:gap-2.5 overflow-x-auto pb-1">
+              <div className="h-18 w-14 sm:h-22 sm:w-18 rounded-xl bg-ink-200 shrink-0" />
+              <div className="h-18 w-14 sm:h-22 sm:w-18 rounded-xl bg-ink-200 shrink-0" />
+              <div className="h-18 w-14 sm:h-22 sm:w-18 rounded-xl bg-ink-200 shrink-0" />
+              <div className="h-18 w-14 sm:h-22 sm:w-18 rounded-xl bg-ink-200 shrink-0" />
             </div>
           </div>
 
@@ -51,8 +51,8 @@ export default function ProductLoading() {
             {/* Bundle Offer Boxes */}
             <div className="space-y-2 pt-2">
               <div className="h-4 w-32 rounded bg-ink-200" />
-              <div className="h-14 w-full rounded-xl border-2 border-ink-200 bg-ink-100" />
-              <div className="h-14 w-full rounded-xl border-2 border-ink-200 bg-ink-100" />
+              <div className="h-14 w-full rounded-2xl border-2 border-ink-200 bg-ink-100" />
+              <div className="h-14 w-full rounded-2xl border-2 border-ink-200 bg-ink-100" />
             </div>
 
             {/* Quantity and Actions */}
@@ -60,17 +60,17 @@ export default function ProductLoading() {
               <div className="h-12 w-36 rounded-xl border border-ink-200 bg-ink-100" />
               <div className="h-12 flex-1 rounded-xl bg-ink-200" />
             </div>
-            <div className="h-14 w-full rounded-xl bg-brand-400" />
+            <div className="h-13 w-full rounded-xl bg-cta/40" />
           </div>
         </div>
 
         {/* Related Products Skeleton */}
         <section className="mt-16">
           <div className="h-7 w-44 rounded-md bg-ink-200 mb-6" />
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="flex flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white p-3 space-y-3">
-                <div className="w-full aspect-[4/5] rounded-xl bg-ink-200" />
+                <div className="w-full aspect-[3/4] rounded-xl bg-ink-200" />
                 <div className="h-4 w-3/4 rounded bg-ink-200" />
                 <div className="h-5 w-1/3 rounded bg-brand-200" />
               </div>
@@ -89,4 +89,3 @@ export default function ProductLoading() {
     </div>
   );
 }
-
