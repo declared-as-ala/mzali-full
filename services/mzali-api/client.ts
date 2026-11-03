@@ -47,7 +47,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
     method: opts.method ?? 'GET',
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    cache: 'no-store',
+    ...(opts.serviceToken && (!opts.method || opts.method === 'GET') ? { next: { revalidate: 30 } } : { cache: 'no-store' }),
   });
 
   if (res.status === 204) return undefined as T;

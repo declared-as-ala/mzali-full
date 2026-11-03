@@ -197,6 +197,7 @@ export class ShippingService {
         });
       case 'firstdelivery':
         return this.firstDelivery.createShipment({
+          orderId: order.id,
           receiverName,
           receiverGov: order.customer.city,
           // Text fallback only used when no locality id resolves below —

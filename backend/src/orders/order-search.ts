@@ -31,7 +31,19 @@ export function orderSearchCondition(raw: string): Record<string, unknown> {
     return { $or: or };
   }
 
-  if (!hasDigit) or.push({ 'customer.firstName': { $regex: e, $options: 'i' } });
+  // Handle phone numbers entered with spaces, dashes, parentheses or +216 prefix
+  const cleanPhone = q.replace(/[\s\-().]/g, '').replace(/^\+?216/, '').replace(/^0+/, '');
+  if (/^\d{3,}$/.test(cleanPhone) && cleanPhone !== q) {
+    const pattern = cleanPhone.length <= 4 ? `^${cleanPhone}` : cleanPhone;
+    or.push({ 'customer.phone': { $regex: pattern } });
+    for (const field of TRACKING) or.push({ [field]: { $regex: pattern, $options: 'i' } });
+    return { $or: or };
+  }
+
+  if (!hasDigit) {
+    or.push({ 'customer.firstName': { $regex: e, $options: 'i' } });
+    or.push({ 'customer.lastName': { $regex: e, $options: 'i' } });
+  }
   for (const field of TRACKING) or.push({ [field]: { $regex: hasDigit ? e : `^${e}`, $options: 'i' } });
   return { $or: or };
 }

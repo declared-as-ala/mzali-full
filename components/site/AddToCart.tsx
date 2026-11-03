@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Minus, Plus, ShoppingBag, Zap, Check, XCircle } from 'lucide-react';
 import { useCart } from '@/lib/cart';
@@ -13,6 +13,21 @@ export default function AddToCart({ product }: { product: Product }) {
   const router = useRouter();
   const add = useCart((s) => s.add);
   const { t } = useLanguage();
+  const mainCtaRef = useRef<HTMLButtonElement>(null);
+  const [showStickyMobile, setShowStickyMobile] = useState(false);
+
+  useEffect(() => {
+    const el = mainCtaRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowStickyMobile(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const soldOut = !product.inStock;
   const matrix = product.inventoryModel === 'MATRIX';
@@ -226,9 +241,33 @@ export default function AddToCart({ product }: { product: Product }) {
           <ShoppingBag size={18} /> {t.product.addToCart}
         </button>
       </div>
-      <button disabled={soldOut || !validSelection} onClick={() => doAdd(true)} className="btn-cta w-full shake-cta disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">
+      <button ref={mainCtaRef} disabled={soldOut || !validSelection} onClick={() => doAdd(true)} className="btn-cta w-full shake-cta disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none">
         <Zap size={18} /> {t.common.buyNow}
       </button>
+
+      {/* Sticky Mobile Purchase Action */}
+      {showStickyMobile && !soldOut && (
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md p-3 border-t border-ink-200 shadow-2xl flex items-center justify-between gap-3 md:hidden">
+          <div className="flex flex-col min-w-0 pr-2">
+            <span className="truncate text-xs font-bold text-ink-900">{product.name}</span>
+            <span className="text-base font-black text-brand-500">{effectivePrice} {SITE.currency.symbol}</span>
+          </div>
+          <button
+            type="button"
+            disabled={!validSelection}
+            onClick={() => {
+              if (!validSelection && mainCtaRef.current) {
+                window.scrollTo({ top: mainCtaRef.current.offsetTop - 150, behavior: 'smooth' });
+              } else {
+                doAdd(true);
+              }
+            }}
+            className="btn-cta py-2.5 px-5 text-sm font-black shrink-0 shadow-md shadow-emerald-600/20 active:scale-[0.98] disabled:opacity-50"
+          >
+            <Zap size={16} /> {t.common.buyNow}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

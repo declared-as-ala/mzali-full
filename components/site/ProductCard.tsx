@@ -14,7 +14,7 @@ export default function ProductCard({ product, lang = 'fr' }: { product: Product
   const soldOut = !product.inStock;
 
   return (
-    <Link
+    <Link prefetch={true}
       href={`/produit/${product.slug}`}
       className={`group relative flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-card ${
         soldOut
@@ -33,7 +33,7 @@ export default function ProductCard({ product, lang = 'fr' }: { product: Product
             className={`absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-105 ${
               soldOut ? 'opacity-50 grayscale' : ''
             }`}
-            loading="lazy"
+            loading="lazy" decoding="async" width={300} height={375}
           />
         )}
 

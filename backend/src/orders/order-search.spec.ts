@@ -22,6 +22,12 @@ describe('orderSearchCondition', () => {
     expect(clauses('22334455')).toContainEqual({ orderNumber: 22334455 });
   });
 
+  it('handles formatted phones with spaces or country prefix', () => {
+    expect(regexOf('22 334 455', 'customer.phone')).toBe('22334455');
+    expect(regexOf('+216 22334455', 'customer.phone')).toBe('22334455');
+    expect(regexOf('22-334-455', 'customer.phone')).toBe('22334455');
+  });
+
   it('a text search looks at the name (and tracking prefixes) but not the order number or phone', () => {
     expect(fields('ahmed')).toContain('customer.firstName');
     expect(fields('ahmed')).not.toContain('orderNumber');

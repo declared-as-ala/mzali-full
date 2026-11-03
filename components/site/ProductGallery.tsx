@@ -47,7 +47,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
           src={activeImage.url}
           alt={activeImage.alt || productName}
           className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-          loading="eager"
+          loading="eager" decoding="async" fetchPriority="high"
         />
         {discount > 0 && (
           <span className="absolute left-3 top-3 rounded-md bg-red-600 px-2.5 py-1 text-xs font-black text-white shadow z-10">

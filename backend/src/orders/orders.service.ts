@@ -431,7 +431,7 @@ export class OrdersService {
       : { createdAt: sortDir };
 
     const [docs, total] = await Promise.all([
-      this.model.find(filter).sort(sortObj as unknown as Record<string, 1 | -1>).skip(skip).limit(perPage),
+      this.model.find(filter).sort(sortObj as unknown as Record<string, 1 | -1>).skip(skip).limit(perPage).lean(),
       this.model.countDocuments(filter),
     ]);
 
@@ -440,7 +440,7 @@ export class OrdersService {
         const confirmedEntry = [...doc.statusHistory].reverse().find((e) => e.to === 'confirme' || e.to === 'completed');
         if (confirmedEntry?.at) {
           doc.confirmedAt = new Date(confirmedEntry.at);
-          void doc.save().catch(() => {});
+          void this.model.updateOne({ _id: (doc as any)._id }, { $set: { confirmedAt: (doc as any).confirmedAt } }).catch(() => {});
         }
       }
     }

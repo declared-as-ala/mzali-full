@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { describeFetchError } from '@/common/fetch-error';
 import { sanitizeCarrierPhone } from './carrier-phone';
 import type { CarrierResult } from './navex.service';
 
 export type FirstDeliveryShipmentInput = {
+  orderId?: string;
   receiverName: string;
   receiverGov: string;
   receiverCity?: string;
@@ -25,6 +26,7 @@ export type FirstDeliveryShipmentInput = {
    * free text on the way out.
    */
   localityId?: number;
+  requestId?: string;
 };
 
 export type FDLocality = { locality_id: number; locality_name: string; delegation_name: string; governorate_name: string };
@@ -127,6 +129,7 @@ function extractError(payload: unknown): string | undefined {
 /** Ported from lib/firstdelivery.ts — same request shapes and locality resolution. */
 @Injectable()
 export class FirstDeliveryService {
+  private readonly logger = new Logger(FirstDeliveryService.name);
   private localitiesCache: FDLocality[] | null = null;
   private localitiesCachedAt = 0;
   private readonly LOCALITIES_TTL_MS = 12 * 60 * 60 * 1000;
@@ -234,6 +237,26 @@ export class FirstDeliveryService {
       const withinExplicit = explicit.filter((l) => addr && this.addressContains(addr, this.normGov(l.locality_name)));
       if (withinExplicit.length === 1) return { status: 'resolved', locality: withinExplicit[0] };
       return { status: 'ambiguous', candidates: withinExplicit.length > 1 ? withinExplicit : explicit };
+    }
+
+    // 1.5) Chief-town / governorate delegation matching:
+    // If the entered city matches the governorate name (e.g. city "Sousse" in governorate "Sousse",
+    // or city "Tunis", "Sfax", "Bizerte", etc.), match delegations that belong to that city's
+    // metropolitan center (e.g. "Sousse Ville", "Sousse Jaouhara", "Sousse Riadh", "Sousse Medina"),
+    // NEVER unrelated delegations like "Akouda" or "Bou Ficha".
+    if (c) {
+      const chiefDelegations = pool.filter((l) => {
+        const del = this.normGov(l.delegation_name);
+        return del === `${c} ville` || del === c || del.startsWith(`${c} `);
+      });
+      if (chiefDelegations.length > 0) {
+        if (addr) {
+          const withinChief = chiefDelegations.filter((l) => this.addressContains(addr, this.normGov(l.locality_name)));
+          if (withinChief.length === 1) return { status: 'resolved', locality: withinChief[0] };
+          if (withinChief.length > 1) return { status: 'ambiguous', candidates: withinChief };
+        }
+        return { status: 'ambiguous', candidates: chiefDelegations };
+      }
     }
 
     // 2) No explicit delegation/locality selection — fall back to matching
@@ -348,14 +371,39 @@ export class FirstDeliveryService {
       },
     };
 
+    this.logger.log({
+      event: 'firstdelivery.shipment.sending',
+      orderId: s.orderId ?? 'unknown',
+      governorate: locality.governorate_name,
+      delegation: locality.delegation_name,
+      localityId: locality.locality_id,
+      localityName: locality.locality_name,
+      isExplicitLocality: Boolean(s.localityId),
+      itemsCount: s.itemsCount,
+      codAmount: s.codAmount,
+      requestId: s.requestId,
+    });
+
     try {
       const res = await fetch(`${this.base()}/create`, { method: 'POST', headers: this.authHeaders(), body: JSON.stringify(body) });
       const raw = await readBody(res);
       const ok = isSuccess(res.status, raw);
       const barcode = extractBarcode(raw);
+      this.logger.log({
+        event: 'firstdelivery.shipment.result',
+        orderId: s.orderId ?? 'unknown',
+        ok,
+        barcode: barcode ?? null,
+        httpStatus: res.status,
+      });
       if (ok) return { ok: true, barcode, raw };
       return { ok: false, raw, error: extractError(raw) ?? `HTTP ${res.status}` };
     } catch (e) {
+      this.logger.error({
+        event: 'firstdelivery.shipment.error',
+        orderId: s.orderId ?? 'unknown',
+        error: describeFetchError(e),
+      });
       return { ok: false, raw: null, error: describeFetchError(e) };
     }
   }

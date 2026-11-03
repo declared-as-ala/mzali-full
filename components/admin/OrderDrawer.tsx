@@ -191,9 +191,27 @@ function clearDraftFromStorage(orderId: string | null | undefined): void {
   try { window.localStorage.removeItem(draftKey(orderId)); } catch { /* ignore */ }
 }
 
+let _productsPickerCache: ProductPickerItem[] | null = null;
+let _productsPickerPromise: Promise<ProductPickerItem[]> | null = null;
+
+async function fetchProductsPickerCached(apiBase: string): Promise<ProductPickerItem[]> {
+  if (_productsPickerCache && _productsPickerCache.length > 0) return _productsPickerCache;
+  if (_productsPickerPromise) return _productsPickerPromise;
+  _productsPickerPromise = fetch(`${apiBase}/products-picker?status=published&excludePosOnly=true`)
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list: ProductPickerItem[]) => {
+      const published = Array.isArray(list) ? list.filter((p) => p.status === 'published' && !p.posOnly) : [];
+      _productsPickerCache = published;
+      return published;
+    })
+    .catch(() => [])
+    .finally(() => { _productsPickerPromise = null; });
+  return _productsPickerPromise;
+}
+
 export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase = '/api/admin' }: Props) {
   const isEdit = Boolean(orderId);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(orderId));
   const [saving, setSaving] = useState(false);
   const [products, setProducts] = useState<ProductPickerItem[]>([]);
   const [statusList, setStatusList] = useState<string[]>([]);
@@ -409,16 +427,9 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
     // anyway (checkout/order-update both reject them server-side), so they
     // shouldn't be offered here to begin with.
     if (!products.length) {
-      fetch(`${apiBase}/products-picker?status=published&excludePosOnly=true`).then(async (r) => {
-        if (r.ok) {
-          const list: ProductPickerItem[] = await r.json();
-          // Filter to only published products ("Affiché"), not private and not POS only
-          const publishedOnline = Array.isArray(list)
-            ? list.filter((p) => p.status === 'published' && !p.posOnly)
-            : [];
-          setProducts(publishedOnline);
-        }
-      }).catch(() => {});
+      void fetchProductsPickerCached(apiBase).then((list) => {
+        if (list.length) setProducts(list);
+      });
     }
     // Load available order-status slugs — 'tentative' is the sentinel for
     // "any attempt", resolved to a real tentative-N status on save (see
@@ -428,9 +439,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
       setStatusList(['en-attente', 'confirme', 'tentative', 'annule']);
     }
     if (orderId) {
+      setLoading(true);
       void loadOrder(orderId);
     } else {
       resetForCreate();
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, orderId]);
@@ -1081,18 +1094,7 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
         </button>
       }
     >
-      {loading ? (
-        <div className="flex min-h-[400px] flex-col items-center justify-center p-8 text-center">
-          <div className="relative mb-4 flex items-center justify-center">
-            {/* Outer glowing ring */}
-            <div className="absolute h-16 w-16 animate-ping rounded-full bg-brand-500/10 duration-1000" />
-            {/* Spinning indicator */}
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-ink-100 border-t-brand-500" />
-          </div>
-          <h3 className="text-base font-black text-ink-900">Chargement de la commande</h3>
-          <p className="mt-1 text-xs text-ink-700">Récupération des informations de la boutique...</p>
-        </div>
-      ) : (
+      {loading ? <OrderDrawerSkeleton /> : (
         <div className="space-y-5">
           {isSensitiveOrder && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -1197,10 +1199,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                   onSelectLocality={setFdSelectedLocalityId}
                   onSend={() => {
                     const localityId =
-                      fdPreview.status === 'resolved' ? fdPreview.localityId
+                      customer.firstDeliveryLocalityId ??
+                      (fdPreview.status === 'resolved' ? fdPreview.localityId
                       : fdPreview.status === 'ambiguous' ? fdSelectedLocalityId ?? undefined
-                      : undefined;
-                    void sendToFirstDelivery(fdStatus === 'failed', localityId);
+                      : undefined);
+                    void sendToFirstDelivery(fdStatus === 'failed', localityId ?? undefined);
                   }}
                 />
               </div>
@@ -1215,7 +1218,11 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                 <select
                   className="input"
                   value={customer.city}
-                  onChange={(e) => setCustomer({ ...customer, city: e.target.value, locality: '', firstDeliveryLocalityId: null })}
+                  onChange={(e) => {
+                    setCustomer({ ...customer, city: e.target.value, locality: '', firstDeliveryLocalityId: null });
+                    setFdPreview({ status: 'idle' });
+                    setFdSelectedLocalityId(null);
+                  }}
                 >
                   <option value="">Sélectionner Ville</option>
                   {SITE.cities.map((c) => <option key={c}>{c}</option>)}
@@ -1229,6 +1236,19 @@ export default function OrderDrawer({ open, onClose, orderId, onSaved, apiBase =
                     const id = e.target.value ? Number(e.target.value) : null;
                     const picked = localities.find((l) => l.locality_id === id);
                     setCustomer({ ...customer, firstDeliveryLocalityId: id, locality: picked?.delegation_name ?? '' });
+                    if (id) {
+                      setFdSelectedLocalityId(id);
+                      if (picked) {
+                        setFdPreview({
+                          status: 'resolved',
+                          governorate: picked.governorate_name,
+                          delegation: picked.delegation_name,
+                          locality: picked.locality_name,
+                          localityId: picked.locality_id,
+                          address: customer.address,
+                        });
+                      }
+                    }
                   }}
                   disabled={!customer.city || localitiesLoading}
                 >
@@ -1860,5 +1880,81 @@ function Field({ label, children, className = '' }: { label: string; children: R
       <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-ink-700">{label}</span>
       {children}
     </label>
+  );
+}
+
+function OrderDrawerSkeleton() {
+  return (
+    <div className="space-y-5 animate-pulse">
+      {/* Details skeleton */}
+      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-card">
+        <div className="h-5 w-44 rounded-md bg-ink-200 mb-4" />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <div className="h-3.5 w-16 rounded bg-ink-200" />
+            <div className="h-10 w-full rounded-xl bg-ink-100" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-3.5 w-24 rounded bg-ink-200" />
+            <div className="h-10 w-full rounded-xl bg-ink-100" />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="h-24 rounded-xl border border-ink-200 bg-ink-50/50 p-3" />
+          <div className="h-24 rounded-xl border border-ink-200 bg-ink-50/50 p-3" />
+          <div className="h-24 rounded-xl border border-ink-200 bg-ink-50/50 p-3" />
+        </div>
+      </div>
+
+      {/* Customer skeleton */}
+      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-card">
+        <div className="h-5 w-36 rounded-md bg-ink-200 mb-4" />
+        <div className="grid gap-4 md:grid-cols-2">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="space-y-2">
+              <div className="h-3.5 w-20 rounded bg-ink-200" />
+              <div className="h-10 w-full rounded-xl bg-ink-100" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Order lines skeleton */}
+      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-card">
+        <div className="h-5 w-48 rounded-md bg-ink-200 mb-4" />
+        <div className="h-10 w-full rounded-xl bg-ink-100 mb-4" />
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-3 rounded-xl border border-ink-200 bg-ink-50/30 p-3">
+              <div className="h-12 w-12 rounded-lg bg-ink-200 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-40 rounded bg-ink-200" />
+                <div className="h-3 w-24 rounded bg-ink-100" />
+              </div>
+              <div className="h-8 w-24 rounded-lg bg-ink-200" />
+              <div className="h-6 w-16 rounded bg-ink-200" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Summary skeleton */}
+      <div className="rounded-2xl border border-ink-200 bg-white p-5 shadow-card">
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <div className="h-4 w-20 rounded bg-ink-200" />
+            <div className="h-4 w-16 rounded bg-ink-200" />
+          </div>
+          <div className="flex justify-between">
+            <div className="h-4 w-20 rounded bg-ink-200" />
+            <div className="h-4 w-16 rounded bg-ink-200" />
+          </div>
+          <div className="flex justify-between pt-2 border-t border-ink-200">
+            <div className="h-5 w-16 rounded bg-ink-200" />
+            <div className="h-5 w-20 rounded bg-brand-200" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

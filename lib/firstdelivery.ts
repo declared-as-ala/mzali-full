@@ -122,61 +122,76 @@ function normGov(s: string | undefined | null): string {
   }
   const clean = str
     .replace(/^(la|le|les|el)\s+/, '')
-    .replace(/[^a-z0-9]/g, '')
-    .trim();
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
   if (clean === 'manouba' || clean === 'mannouba') return 'manouba';
   if (clean === 'kef') return 'kef';
   return clean;
 }
 
-function normStr(s: string | undefined | null): string {
-  if (!s) return '';
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+function addressContains(haystack: string, needle: string): boolean {
+  if (!needle || needle.length < 3) return false;
+  return ` ${haystack} `.includes(` ${needle} `);
 }
 
-/**
- * KNOWN BUG, not fixed here: this legacy path is only reachable when
- * `COMMERCE_PROVIDER=woocommerce`, which is not the current production
- * setting (`mzali-api` is — see backend/src/shipping/first-delivery.service.ts,
- * which has the real fix). This copy still has the original priority bug
- * where a free-text address substring match against every locality in the
- * governorate is tried BEFORE the exact city/delegation match, which can
- * silently resolve to the wrong delegation (e.g. "Akouda" for a customer
- * who only entered "Sousse"). If this provider is ever reactivated, port
- * the fixed `resolveLocalityDetailed`/`addressContains` logic from the
- * backend service here before relying on it again.
- */
-async function resolveLocality(gov: string, city = '', address = ''): Promise<FDLocality | null> {
+async function resolveLocality(gov: string, city = '', address = '', localityId?: number): Promise<FDLocality | null> {
   const localities = await getLocalities();
+  if (localityId) {
+    const direct = localities.find((l) => l.locality_id === localityId);
+    if (direct) return direct;
+  }
   const g = normGov(gov);
   const c = normGov(city);
   const addr = normGov(address);
 
-  // Match all localities in the governorate (e.g. "Manouba" matches "La Manouba", "Kef" matches "Le Kef")
   const sameGov = localities.filter((l) => g && normGov(l.governorate_name) === g);
   const pool = sameGov.length > 0 ? sameGov : localities;
 
-  // 1. Try to match locality name from address (e.g. "بجاوة" -> "bjeoua" matches locality Bjeoua)
-  const hit =
-    pool.find((l) => {
-      const name = normGov(l.locality_name);
-      return name.length >= 3 && addr.includes(name);
-    })
-    // 2. Try to match delegation name from address (e.g. "Oued Ellil" in address)
-    ?? pool.find((l) => {
-      const del = normGov(l.delegation_name);
-      return del.length >= 3 && addr.includes(del);
-    })
-    // 3. Match city to locality name
-    ?? pool.find((l) => c && normGov(l.locality_name) === c)
-    // 4. Match city to delegation name (e.g. "Manouba" matches delegation "Mannouba")
-    ?? pool.find((l) => c && normGov(l.delegation_name) === c)
-    // 5. Match governorate to delegation name
-    ?? pool.find((l) => g && normGov(l.delegation_name) === g)
-    // 6. Safe fallback to the governorate's chief locality
-    ?? sameGov[0];
+  // 1) Explicit match: city matches delegation or locality
+  const delegationMatches = c ? pool.filter((l) => normGov(l.delegation_name) === c) : [];
+  const localityMatches = c ? pool.filter((l) => normGov(l.locality_name) === c) : [];
+  const explicit = delegationMatches.length > 0 ? delegationMatches : localityMatches;
 
-  return hit ?? null;
+  if (explicit.length === 1) return explicit[0];
+  if (explicit.length > 1) {
+    const withinExplicit = explicit.filter((l) => addr && addressContains(addr, normGov(l.locality_name)));
+    if (withinExplicit.length === 1) return withinExplicit[0];
+    return null; // Ambiguous, never pick an arbitrary one
+  }
+
+  // 1.5) Chief-town matching (e.g. Sousse -> Sousse Ville, Sousse Jaouhara)
+  if (c) {
+    const chief = pool.filter((l) => {
+      const del = normGov(l.delegation_name);
+      return del === `${c} ville` || del === c || del.startsWith(`${c} `);
+    });
+    if (chief.length > 0) {
+      if (addr) {
+        const withinChief = chief.filter((l) => addressContains(addr, normGov(l.locality_name)));
+        if (withinChief.length === 1) return withinChief[0];
+      }
+      return null; // Ambiguous, ask admin
+    }
+  }
+
+  // 2) Free-text address matching against localities
+  if (addr) {
+    const localityHits = pool.filter((l) => addressContains(addr, normGov(l.locality_name)));
+    if (localityHits.length > 0) {
+      const maxLen = Math.max(...localityHits.map((l) => normGov(l.locality_name).length));
+      const best = localityHits.filter((l) => normGov(l.locality_name).length === maxLen);
+      if (best.length === 1) return best[0];
+      return null;
+    }
+
+    const delegationHits = pool.filter((l) => addressContains(addr, normGov(l.delegation_name)));
+    if (delegationHits.length === 1) return delegationHits[0];
+    return null;
+  }
+
+  if (sameGov.length === 1) return sameGov[0];
+  return null;
 }
 
 export type FirstDeliveryResult = {
@@ -187,6 +202,7 @@ export type FirstDeliveryResult = {
 };
 
 export type FirstDeliveryShipmentInput = {
+  orderId?: string;
   receiverName: string;
   receiverGov: string;
   receiverCity?: string;
@@ -199,6 +215,7 @@ export type FirstDeliveryShipmentInput = {
   note?: string;
   estFragile?: 'oui' | 'non';
   ouvrirColis?: 'oui' | 'non';
+  localityId?: number;
 };
 
 function extractBarcode(payload: unknown): string | undefined {
@@ -257,8 +274,8 @@ export const firstDelivery = {
     if (!gov && !ville) return { ok: false, raw: null, error: 'First Delivery : sélectionnez une ville et enregistrez la commande avant de renvoyer.' };
 
     // locality_id is mandatory since 2026-06-01
-    const locality = await resolveLocality(gov, ville, adresse);
-    if (!locality) return { ok: false, raw: null, error: 'First Delivery : localité introuvable ou indisponible. Vérifiez la ville et le gouvernorat de la commande.' };
+    const locality = await resolveLocality(gov, ville, adresse, s.localityId);
+    if (!locality) return { ok: false, raw: null, error: 'First Delivery : localité introuvable ou ambiguë. Sélectionnez la localité exacte dans la commande avant d\'envoyer.' };
 
     const body = {
       Client: {

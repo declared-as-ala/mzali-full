@@ -59,6 +59,8 @@ export async function POST(req: Request) {
       itemsCount,
       productLabel,
       note: String((order.meta?._mzem_private_note as string) ?? ''),
+      localityId: typeof localityId === 'number' && localityId > 0 ? localityId : undefined,
+      orderId: String(orderId),
     });
 
     const meta: { key: string; value: unknown }[] = [

@@ -9,21 +9,35 @@ import { Category, CategoryDocument } from './category.schema';
 
 @Injectable()
 export class CategoriesService {
+  private readonly cache = new Map<string, { at: number; data: any }>();
+  private readonly CACHE_TTL_MS = 60_000; // 60 seconds
+
   constructor(@InjectModel(Category.name) private readonly model: Model<Category>) {}
 
   async list(query: CategoryListQuery = {}): Promise<CategoryContract[]> {
     const filter: Record<string, unknown> = {};
     if (query.hideEmpty) filter.productCount = { $gt: 0 };
     if (query.parentId !== undefined) filter.parentId = query.parentId;
+    const cacheKey = JSON.stringify(query);
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.at < this.CACHE_TTL_MS) return cached.data;
+
     const q = this.model.find(filter).sort({ menuOrder: 1, name: 1 });
     if (query.perPage) q.limit(query.perPage);
-    const docs = await q;
-    return docs.map((d) => toCategoryContract(d));
+    const docs = await q.lean();
+    const result = docs.map((d) => toCategoryContract(d));
+    this.cache.set(cacheKey, { at: Date.now(), data: result });
+    return result;
   }
 
   async getBySlug(slug: string): Promise<CategoryContract | null> {
-    const doc = await this.model.findOne({ slug });
-    return doc ? toCategoryContract(doc) : null;
+    const cacheKey = `slug:${slug}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached && Date.now() - cached.at < this.CACHE_TTL_MS) return cached.data;
+    const doc = await this.model.findOne({ slug }).lean();
+    const result = doc ? toCategoryContract(doc) : null;
+    if (result) this.cache.set(cacheKey, { at: Date.now(), data: result });
+    return result;
   }
 
   async tree(): Promise<CategoryTreeNode[]> {
@@ -41,6 +55,7 @@ export class CategoriesService {
       parentId: input.parentId ?? null,
       description: input.description ?? '',
     });
+    this.cache.clear();
     return toCategoryContract(doc);
   }
 
@@ -62,6 +77,7 @@ export class CategoriesService {
       doc.parentId = input.parentId;
     }
     await doc.save();
+    this.cache.clear();
     return toCategoryContract(doc);
   }
 
@@ -72,6 +88,7 @@ export class CategoriesService {
       throw new BadRequestException('Impossible de supprimer une catégorie qui a des sous-catégories');
     }
     await doc.deleteOne();
+    this.cache.clear();
   }
 
   private async findDoc(id: string): Promise<CategoryDocument> {
