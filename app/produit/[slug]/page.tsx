@@ -182,7 +182,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <Header categories={categories.map((c) => ({ name: c.name, slug: c.slug }))} />
 
-      <main className="container-shop py-4 sm:py-6 lg:py-10">
+      <main className="container-shop py-4 sm:py-6 lg:py-10 pb-28 sm:pb-32 lg:pb-12">
         <div className="grid gap-0 sm:gap-8 lg:grid-cols-2 lg:gap-12">
           <div className="-mx-4 sm:mx-0">
             <ProductGallery images={product.images} productName={product.name} discount={discount} />
@@ -233,7 +233,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             <AddToCart product={product} />
 
             {product.description && (
-              <details className="mt-8 rounded-2xl bg-white p-5 shadow-xs border border-neutral-200/80">
+              <details className="mt-6 sm:mt-8 rounded-2xl bg-white p-5 shadow-xs border border-neutral-200/80">
                 <summary className="cursor-pointer font-extrabold text-neutral-900 select-none">{t.product.fullDescription}</summary>
                 <div
                   className="prose prose-sm mt-3 max-w-none text-neutral-600"
@@ -245,7 +245,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         </div>
 
         {related.length > 0 && (
-          <section className="mt-14 sm:mt-16">
+          <section className="mt-8 sm:mt-14">
             <h2 className="mb-5 text-xl sm:text-2xl font-black uppercase tracking-tight text-neutral-900">
               {t.product.related}
             </h2>

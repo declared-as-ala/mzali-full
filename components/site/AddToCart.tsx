@@ -2,32 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Minus, Plus, ShoppingBag, Check, XCircle, ArrowRight } from 'lucide-react';
+import { Minus, Plus, ShoppingBag, Check, XCircle, ArrowRight, AlertCircle } from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { getPrimaryProductImage, type Product } from '@/types';
 import VariantSelector from './VariantSelector';
-import { SITE, formatPrice } from '@/lib/site-config';
+import { formatPrice } from '@/lib/site-config';
 import { useLanguage } from '@/components/site/LanguageProvider';
 
 export default function AddToCart({ product }: { product: Product }) {
   const router = useRouter();
   const add = useCart((s) => s.add);
   const { t } = useLanguage();
-  const mainCtaRef = useRef<HTMLButtonElement>(null);
-  const [showStickyMobile, setShowStickyMobile] = useState(false);
-
-  useEffect(() => {
-    const el = mainCtaRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setShowStickyMobile(!entry.isIntersecting && entry.boundingClientRect.top < 0);
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const variantSectionRef = useRef<HTMLDivElement>(null);
+  const [showPromptWarning, setShowPromptWarning] = useState(false);
 
   const soldOut = !product.inStock;
   const matrix = product.inventoryModel === 'MATRIX';
@@ -115,19 +102,24 @@ export default function AddToCart({ product }: { product: Product }) {
     }
   };
 
+  const handleAction = (buyNow: boolean) => {
+    if (soldOut) return;
+    if (!validSelection) {
+      setShowPromptWarning(true);
+      if (variantSectionRef.current) {
+        variantSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return;
+    }
+    doAdd(buyNow);
+  };
+
   function updateBundleItem(idx: number, attrName: string, value: string) {
     setBundleItems((prev) => {
       const next = prev.slice();
       next[idx] = { ...(next[idx] ?? {}), [attrName]: value };
       return next;
     });
-  }
-
-  function badgeColorClasses(c: 'red' | 'green' | 'blue' | 'purple'): string {
-    if (c === 'red') return 'bg-red-500';
-    if (c === 'green') return 'bg-emerald-500';
-    if (c === 'blue') return 'bg-blue-500';
-    return 'bg-neutral-900';
   }
 
   return (
@@ -239,42 +231,49 @@ export default function AddToCart({ product }: { product: Product }) {
       )}
 
       {/* Matrix Variants Selector */}
-      {matrix && (
-        bundleActive ? (
-          <div className="space-y-3">
-            {Array.from({ length: bundleQty }, (_, i) => (
-              <div key={i} className="rounded-2xl border border-neutral-200 bg-[#FAFAFA] p-4 shadow-2xs">
-                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-700">Article {i + 1}</p>
-                <VariantSelector
-                  variants={product.variants ?? []}
-                  stockEnabled={product.inventoryEnabled !== false}
-                  value={bundleVariants[i]}
-                  onChange={(id) =>
-                    setBundleVariants((prev) => {
-                      const next = [...prev];
-                      next[i] = id;
-                      return next;
-                    })
-                  }
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <VariantSelector
-            variants={product.variants ?? []}
-            stockEnabled={product.inventoryEnabled !== false}
-            value={variantId}
-            onChange={setVariantId}
-          />
-        )
-      )}
+      <div ref={variantSectionRef} className="space-y-3">
+        {matrix && (
+          bundleActive ? (
+            <div className="space-y-3">
+              {Array.from({ length: bundleQty }, (_, i) => (
+                <div key={i} className="rounded-2xl border border-neutral-200 bg-[#FAFAFA] p-4 shadow-2xs">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wider text-neutral-700">Article {i + 1}</p>
+                  <VariantSelector
+                    variants={product.variants ?? []}
+                    stockEnabled={product.inventoryEnabled !== false}
+                    value={bundleVariants[i]}
+                    onChange={(id) => {
+                      setShowPromptWarning(false);
+                      setBundleVariants((prev) => {
+                        const next = [...prev];
+                        next[i] = id;
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <VariantSelector
+              variants={product.variants ?? []}
+              stockEnabled={product.inventoryEnabled !== false}
+              value={variantId}
+              onChange={(id) => {
+                setShowPromptWarning(false);
+                setVariantId(id);
+              }}
+            />
+          )
+        )}
 
-      {matrix && !validSelection && (
-        <p className="text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-xl px-3 py-2">
-          Veuillez sélectionner une taille et une couleur disponibles.
-        </p>
-      )}
+        {matrix && !validSelection && (
+          <div className="flex items-center gap-2 rounded-xl bg-amber-50/90 border border-amber-200 px-3.5 py-2.5 text-xs font-semibold text-amber-900">
+            <AlertCircle size={16} className="text-amber-700 shrink-0" />
+            <span>Veuillez sélectionner une taille et une couleur disponibles.</span>
+          </div>
+        )}
+      </div>
 
       {/* Single Product Attributes (non-matrix) */}
       {!bundleActive && variantAttrs.map((a) => (
@@ -299,10 +298,10 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       ))}
 
-      {/* Quantity & Actions Bar */}
+      {/* Quantity & Desktop Actions */}
       <div className="pt-2 space-y-3">
         <div className="flex items-center gap-3">
-          {/* Quantity Selector */}
+          {/* Quantity Selector — Always accessible */}
           <div className="flex h-12 items-center rounded-xl border border-neutral-200 bg-[#F7F7F7] shadow-2xs">
             <button
               type="button"
@@ -325,55 +324,82 @@ export default function AddToCart({ product }: { product: Product }) {
             </button>
           </div>
 
-          {/* Secondary CTA: Ajouter au panier */}
+          {/* Desktop Secondary CTA: Ajouter au panier */}
           <button
             type="button"
-            disabled={soldOut || !validSelection}
-            onClick={() => doAdd(false)}
-            className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-300 bg-white font-extrabold text-sm sm:text-base text-neutral-800 hover:border-neutral-950 hover:bg-neutral-50 active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={soldOut}
+            onClick={() => handleAction(false)}
+            className="hidden md:flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-neutral-900 bg-white font-extrabold text-sm sm:text-base text-neutral-900 hover:bg-neutral-50 active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:border-neutral-200 disabled:text-neutral-400 disabled:bg-neutral-50 shadow-2xs"
           >
             <ShoppingBag size={18} />
             <span>{t.product.addToCart}</span>
           </button>
         </div>
 
-        {/* Primary CTA: Acheter maintenant (High Fashion Solid Black) */}
+        {/* Desktop Primary CTA: Acheter maintenant */}
         <button
           type="button"
-          ref={mainCtaRef}
-          disabled={soldOut || !validSelection}
-          onClick={() => doAdd(true)}
-          className="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 hover:bg-black text-white font-black text-base shadow-md active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+          disabled={soldOut}
+          onClick={() => handleAction(true)}
+          className="hidden md:flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 hover:bg-black text-white font-black text-base shadow-md active:scale-[0.99] transition-all cursor-pointer disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400 disabled:shadow-none"
         >
           <span>{t.common.buyNow}</span>
           <ArrowRight size={18} />
         </button>
       </div>
 
-      {/* Sticky Mobile Purchase Action — Exactly Matching Mockup Bottom Bar */}
-      {showStickyMobile && !soldOut && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md px-5 py-3.5 border-t border-neutral-200/80 shadow-2xl flex items-center justify-between gap-4 md:hidden">
-          <div className="flex flex-col min-w-0 pr-2">
-            <span className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Sous-total</span>
-            <span className="text-xl font-black text-neutral-950 leading-tight">{formatPrice(effectivePrice)}</span>
+      {/* REAL FIXED BOTTOM PURCHASE BAR (Mobile Viewport) */}
+      <div className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-t border-neutral-200/90 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] px-3.5 sm:px-4 py-2.5 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))] md:hidden transition-all">
+        {soldOut ? (
+          <div className="w-full h-12 rounded-xl bg-neutral-100 border border-neutral-200 text-neutral-400 font-bold text-sm flex items-center justify-center cursor-not-allowed select-none">
+            {t.product.outOfStock}
           </div>
-          <button
-            type="button"
-            disabled={!validSelection}
-            onClick={() => {
-              if (!validSelection && mainCtaRef.current) {
-                window.scrollTo({ top: mainCtaRef.current.offsetTop - 150, behavior: 'smooth' });
-              } else {
-                doAdd(true);
-              }
-            }}
-            className="h-12 px-7 rounded-xl bg-neutral-950 hover:bg-black text-white text-sm font-black shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-50"
-          >
-            <span>{t.common.buyNow}</span>
-            <ArrowRight size={16} />
-          </button>
-        </div>
-      )}
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {(!validSelection || showPromptWarning) && (
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-900 border border-amber-200/80 animate-in fade-in duration-200">
+                <span className="truncate">Veuillez sélectionner votre taille / couleur</span>
+                <button
+                  type="button"
+                  onClick={() => variantSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                  className="shrink-0 underline text-amber-950 font-extrabold cursor-pointer"
+                >
+                  Choisir
+                </button>
+              </div>
+            )}
+            <div className="flex items-center gap-2.5">
+              {/* Outlined Button: Ajouter au panier */}
+              <button
+                type="button"
+                onClick={() => handleAction(false)}
+                className={`flex-1 h-12 rounded-xl border-2 font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer ${
+                  !validSelection
+                    ? 'border-neutral-300 bg-white text-neutral-500'
+                    : 'border-neutral-900 bg-white text-neutral-950 hover:bg-neutral-50 shadow-2xs'
+                }`}
+              >
+                <ShoppingBag size={17} />
+                <span>{t.product.addToCart}</span>
+              </button>
+
+              {/* Solid Black Button: Acheter maintenant */}
+              <button
+                type="button"
+                onClick={() => handleAction(true)}
+                className={`flex-1 h-12 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] cursor-pointer ${
+                  !validSelection
+                    ? 'bg-neutral-800 text-white/90'
+                    : 'bg-neutral-950 hover:bg-black text-white shadow-md'
+                }`}
+              >
+                <span>{t.common.buyNow}</span>
+                <ArrowRight size={17} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

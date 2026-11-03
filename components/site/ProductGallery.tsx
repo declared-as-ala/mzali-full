@@ -21,6 +21,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
   const router = useRouter();
   const [activeIdx, setActiveIdx] = useState(() => Math.max(0, images.findIndex((image) => image.isPrimary)));
   const [isOpen, setIsOpen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   if (!images || images.length === 0) return null;
 
@@ -36,12 +37,32 @@ export default function ProductGallery({ images, productName, discount }: Produc
     setActiveIdx((prev) => (prev === images.length - 1 ? 0 : prev + 1));
   };
 
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX === null) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (Math.abs(diff) > 45) {
+      if (diff > 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
+    }
+    setTouchStartX(null);
+  };
+
   return (
     <div className="relative w-full">
       {/* Editorial Luxury Hero Canvas */}
       <div
-        className="group relative w-full h-[54vh] min-h-[380px] sm:h-[62vh] sm:min-h-[460px] md:h-auto md:aspect-[3/4] overflow-hidden rounded-2xl sm:rounded-3xl bg-[#EEF0ED] border border-neutral-200/60 cursor-zoom-in shadow-xs transition-shadow duration-300 flex items-center justify-center select-none"
+        className="group relative w-full aspect-[4/5] sm:aspect-[3/4] max-h-[62vh] sm:max-h-[70vh] overflow-hidden rounded-2xl sm:rounded-3xl bg-[#EEF0ED] border border-neutral-200/60 cursor-zoom-in shadow-xs transition-shadow duration-300 flex items-center justify-center select-none"
         onClick={() => setIsOpen(true)}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
       >
         {/* Mobile floating Back Button & Actions */}
         <div className="absolute top-3.5 inset-x-3.5 z-20 flex items-center justify-between pointer-events-auto md:hidden">
@@ -52,7 +73,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
               router.back();
             }}
             aria-label="Retour"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 backdrop-blur-md text-neutral-800 shadow-sm hover:bg-white active:scale-95 transition"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/85 backdrop-blur-md text-neutral-800 shadow-sm hover:bg-white active:scale-95 transition cursor-pointer"
           >
             <ArrowLeft size={18} />
           </button>
@@ -71,8 +92,8 @@ export default function ProductGallery({ images, productName, discount }: Produc
                   navigator.share({ title: productName, url: window.location.href }).catch(() => {});
                 }
               }}
-              aria-label="Options"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80 backdrop-blur-md text-neutral-800 shadow-sm hover:bg-white active:scale-95 transition"
+              aria-label="Partager"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/85 backdrop-blur-md text-neutral-800 shadow-sm hover:bg-white active:scale-95 transition cursor-pointer"
             >
               <MoreHorizontal size={18} />
             </button>
@@ -91,7 +112,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
         <img
           src={activeImage.url}
           alt={activeImage.alt || productName}
-          className="h-full w-full object-contain p-3 sm:p-5 pb-18 sm:pb-20 md:pb-5 transition-transform duration-500 ease-out group-hover:scale-[1.02]"
+          className="h-full w-full object-contain p-2 sm:p-4 pb-14 sm:pb-16 md:pb-4 transition-transform duration-500 ease-out group-hover:scale-[1.02]"
           loading="eager"
           decoding="async"
           fetchPriority="high"
@@ -104,7 +125,7 @@ export default function ProductGallery({ images, productName, discount }: Produc
               type="button"
               onClick={handlePrev}
               aria-label="Image précédente"
-              className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-800 shadow-md backdrop-blur-xs transition hover:bg-white hover:scale-105 active:scale-95 opacity-0 group-hover:opacity-100"
+              className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-800 shadow-md backdrop-blur-xs transition hover:bg-white hover:scale-105 active:scale-95 opacity-0 group-hover:opacity-100 cursor-pointer"
             >
               <ChevronLeft size={22} />
             </button>
@@ -112,17 +133,17 @@ export default function ProductGallery({ images, productName, discount }: Produc
               type="button"
               onClick={handleNext}
               aria-label="Image suivante"
-              className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-800 shadow-md backdrop-blur-xs transition hover:bg-white hover:scale-105 active:scale-95 opacity-0 group-hover:opacity-100"
+              className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-20 h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-800 shadow-md backdrop-blur-xs transition hover:bg-white hover:scale-105 active:scale-95 opacity-0 group-hover:opacity-100 cursor-pointer"
             >
               <ChevronRight size={22} />
             </button>
           </>
         )}
 
-        {/* Floating Thumbnail Cards — Signature High-Fashion Mobile Layout */}
+        {/* Floating Thumbnail Cards — Centered at bottom without obscuring product */}
         {images.length > 1 && (
           <div
-            className="absolute bottom-3.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 sm:gap-2.5 p-1 rounded-2xl bg-white/50 backdrop-blur-md shadow-md border border-white/80 max-w-[92vw] overflow-x-auto scrollbar-none"
+            className="absolute bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 p-1 rounded-xl bg-white/75 backdrop-blur-md shadow-sm border border-white/80 max-w-[90vw] overflow-x-auto scrollbar-none"
             onClick={(e) => e.stopPropagation()}
           >
             {images.map((img, idx) => {
@@ -133,10 +154,10 @@ export default function ProductGallery({ images, productName, discount }: Produc
                   type="button"
                   onClick={() => setActiveIdx(idx)}
                   aria-label={`Image ${idx + 1}`}
-                  className={`relative h-13 w-11 sm:h-15 sm:w-13 shrink-0 overflow-hidden rounded-xl bg-white/90 border-2 transition-all duration-200 flex items-center justify-center ${
+                  className={`relative h-11 w-9 sm:h-13 sm:w-11 shrink-0 overflow-hidden rounded-lg bg-white/90 border-2 transition-all duration-200 flex items-center justify-center cursor-pointer ${
                     isActive
-                      ? 'border-neutral-900 ring-2 ring-neutral-900/10 shadow-md scale-105'
-                      : 'border-white/80 opacity-75 hover:opacity-100'
+                      ? 'border-neutral-900 ring-2 ring-neutral-900/10 shadow-sm scale-105'
+                      : 'border-white/80 opacity-70 hover:opacity-100'
                   }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
