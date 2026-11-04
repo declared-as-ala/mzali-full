@@ -336,24 +336,6 @@ export default function CheckoutPage() {
               <span className="text-[11px] sm:text-xs font-medium text-neutral-500">Confirmation</span>
             </div>
           </div>
-
-          {/* Trust Strip (Matching Photo 4) */}
-          <div className="mt-5 rounded-2xl border border-blue-100 bg-[#F0F7FF] p-3 flex items-center justify-between text-center gap-1 text-[11px] sm:text-xs font-semibold text-neutral-700">
-            <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1">
-              <Truck size={15} className="text-blue-600 shrink-0" />
-              <span>Livraison toute la Tunisie</span>
-            </div>
-            <div className="h-5 w-px bg-blue-200/80 mx-1" />
-            <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1">
-              <ShieldCheck size={15} className="text-blue-600 shrink-0" />
-              <span>Paiement à la livraison</span>
-            </div>
-            <div className="h-5 w-px bg-blue-200/80 mx-1" />
-            <div className="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1">
-              <RotateCcw size={15} className="text-blue-600 shrink-0" />
-              <span>Échange &amp; retour 7 jours</span>
-            </div>
-          </div>
         </div>
 
         <form id="checkout-form" onSubmit={submit} className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">

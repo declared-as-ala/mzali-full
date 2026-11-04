@@ -166,7 +166,7 @@ export default function Footer() {
                 <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-white/80">
                   <MapPin size={15} />
                 </span>
-                <span className="font-semibold">Tunis, Tunisie</span>
+                <span className="font-semibold">Monastir, Tunisie</span>
               </div>
             </div>
           </div>
@@ -175,7 +175,7 @@ export default function Footer() {
         {/* Bottom Copyright */}
         <div className="mt-8 border-t border-white/10 pt-6 text-center text-xs text-white/45 sm:flex sm:items-center sm:justify-between sm:text-left">
           <span>© {new Date().getFullYear()} {t.common.brandName}. Tous droits réservés.</span>
-          <span className="mt-2 block sm:mt-0 text-white/60 font-semibold">Tunis, Tunisie</span>
+          <span className="mt-2 block sm:mt-0 text-white/60 font-semibold">Monastir, Tunisie</span>
         </div>
       </div>
     </footer>
