@@ -629,3 +629,4 @@ export default function PosProductsView({
     </div>
   );
 }
+

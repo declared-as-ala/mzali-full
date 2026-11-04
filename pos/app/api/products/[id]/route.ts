@@ -37,3 +37,4 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status });
   }
 }
+

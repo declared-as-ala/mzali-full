@@ -81,6 +81,7 @@ export type ProductListQuery = {
   onSale?: boolean;
   featured?: boolean;
   excludePosOnly?: boolean;
+  posOnly?: boolean;
 };
 
 export type ProductListResult = {

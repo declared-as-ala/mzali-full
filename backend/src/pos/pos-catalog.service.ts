@@ -29,7 +29,7 @@ export class PosCatalogService {
     private readonly locations: LocationsService,
     private readonly ledger: StockLedgerService,
     private readonly settings: SettingsService,
-  ) {}
+  ) { }
 
   async getCatalog(): Promise<PosCatalogResponse> {
     const [productList, categoryList, depotCode, posSettings] = await Promise.all([

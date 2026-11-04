@@ -10,3 +10,4 @@ export default async function PosProductsPage() {
 
   return <PosProductsView cashierName={session.name} role={session.role} />;
 }
+
