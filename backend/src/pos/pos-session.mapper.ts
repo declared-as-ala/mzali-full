@@ -2,14 +2,19 @@ import { expectedCash } from './cash-accounting';
 import type { PosCashierSession as PosCashierSessionContract } from '@contracts';
 import { PosCashierSessionDocument } from './pos-cashier-session.schema';
 
-export function toPosSessionContract(doc: PosCashierSessionDocument): PosCashierSessionContract {
+export function toPosSessionContract(
+  doc: PosCashierSessionDocument,
+  names?: { cashierName?: string; terminalName?: string },
+): PosCashierSessionContract {
   return {
     id: doc.id,
     expectedCashMinor: expectedCash(doc),
     cashRefundsMinor: doc.cashRefundsMinor ?? 0,
     closingNote: doc.closingNote ?? null,
     cashierId: doc.cashierId,
+    cashierName: names?.cashierName,
     terminalId: doc.terminalId,
+    terminalName: names?.terminalName,
     registerId: doc.registerId,
     openingCashMinor: doc.openingCashMinor,
     openedAt: doc.openedAt.toISOString(),

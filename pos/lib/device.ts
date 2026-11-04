@@ -5,45 +5,55 @@ import { sessionFetch } from './session-client';
 const FINGERPRINT_KEY = 'pos_device_fingerprint';
 const TERMINAL_KEY = 'pos_terminal_code';
 
-/** Persistent, random per-device identifier — not real hardware
- *  fingerprinting, just a stable id so the backend can recognize "this
- *  browser/device" across requests (see docs/pos-platform/security-model.md
- *  §"POS terminal binding"). */
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp(`(^|;\\s*)(${name})=([^;]*)`));
+  return match ? decodeURIComponent(match[3]) : null;
+}
+
+function setCookie(name: string, value: string, days = 3650) {
+  if (typeof document === 'undefined') return;
+  const maxAge = days * 86400;
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; samesite=lax`;
+}
+
+/** Persistent, stable per-device identifier across localStorage and cookies */
 export function getDeviceFingerprint(): string {
-  let value = localStorage.getItem(FINGERPRINT_KEY);
+  if (typeof window === 'undefined') return 'server-device';
+  let value = localStorage.getItem(FINGERPRINT_KEY) || getCookie(FINGERPRINT_KEY);
   if (!value) {
     value = crypto.randomUUID();
-    localStorage.setItem(FINGERPRINT_KEY, value);
   }
+  localStorage.setItem(FINGERPRINT_KEY, value);
+  setCookie(FINGERPRINT_KEY, value);
   return value;
 }
 
-/** Persistent, random per-device terminal id — no pairing code, no admin
- *  approval step. The backend (PosTerminalsService.validate) silently
- *  provisions a terminal record for whatever code it first sees, so this
- *  only needs to be stable per browser/device, not coordinated with
- *  anyone. Randomly generated so two devices never collide the way a
- *  shared hardcoded default would. */
+/** Persistent, stable per-device terminal code across localStorage and cookies */
 export function getTerminalCode(): string {
-  let value = localStorage.getItem(TERMINAL_KEY);
+  if (typeof window === 'undefined') return 'TERM-DEFAULT';
+  let value = localStorage.getItem(TERMINAL_KEY) || getCookie(TERMINAL_KEY);
   if (!value) {
     value = `TERM-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-    localStorage.setItem(TERMINAL_KEY, value);
   }
+  localStorage.setItem(TERMINAL_KEY, value);
+  setCookie(TERMINAL_KEY, value);
   return value;
 }
 
 export function setTerminalCode(code: string): void {
+  if (typeof window === 'undefined') return;
   localStorage.setItem(TERMINAL_KEY, code);
+  setCookie(TERMINAL_KEY, code);
 }
 
 export function clearTerminalCode(): void {
+  if (typeof window === 'undefined') return;
   localStorage.removeItem(TERMINAL_KEY);
+  setCookie(TERMINAL_KEY, '', -1);
 }
 
-/** fetch() wrapper for the POS app's own /api/* routes — attaches the
- *  device fingerprint (always) and terminal code (once paired) as headers
- *  so each Route Handler can forward them to the backend. */
+/** fetch() wrapper for the POS app's own /api/* routes */
 export async function posFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set('x-device-fingerprint', getDeviceFingerprint());

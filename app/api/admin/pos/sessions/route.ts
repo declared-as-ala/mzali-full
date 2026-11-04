@@ -3,12 +3,19 @@ import { isAdmin } from '@/lib/auth';
 import { getValidAccessToken } from '@/lib/api-auth';
 import { apiRequest } from '@/services/mzali-api/client';
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const bearer = await getValidAccessToken();
   if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const url = new URL(req.url);
+  const cashierId = url.searchParams.get('cashierId') || undefined;
+  const terminalId = url.searchParams.get('terminalId') || undefined;
+  const status = url.searchParams.get('status') || undefined;
   try {
-    const data = await apiRequest('/admin/pos/sessions', { bearer });
+    const data = await apiRequest('/admin/pos/sessions', {
+      bearer,
+      query: { cashierId, terminalId, status },
+    });
     return NextResponse.json(data, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 });

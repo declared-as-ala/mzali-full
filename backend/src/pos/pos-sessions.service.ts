@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model } from 'mongoose';
 import { SettingsService } from '@/settings/settings.service';
 import { PosCashierSession, PosCashierSessionDocument } from './pos-cashier-session.schema';
-import { PosCashMovement, PosCashMovementType } from './pos-cash-movement.schema';
+import { PosCashMovement, PosCashMovementDocument, PosCashMovementType } from './pos-cash-movement.schema';
 
 import { cashBusinessDate, expectedCash, validateCash } from './cash-accounting';
 import { PosDailyZ } from './pos-daily-z.schema';
@@ -35,6 +35,17 @@ export type SessionReportView = {
   transactionCount: number;
 };
 
+export type AddMovementInput = {
+  type: PosCashMovementType;
+  amountMinor: number;
+  reason: string;
+  category?: string;
+  categoryLabel?: string;
+  beneficiary?: string;
+  paymentMethod?: string;
+  reference?: string;
+};
+
 @Injectable()
 export class PosSessionsService implements OnModuleInit {
   constructor(
@@ -50,7 +61,25 @@ export class PosSessionsService implements OnModuleInit {
     await this.sessions.db.model(PosDailyZ.name).init();
   }
 
-  async open(cashierId: string, terminalId: string, registerId: string | null, openingCashMinor: number): Promise<PosCashierSessionDocument> {
+  async resolveCashierName(cashierId: string): Promise<string> {
+    try {
+      const emp = await this.sessions.db.model<Employee>(Employee.name).findById(cashierId);
+      return emp?.name || cashierId;
+    } catch {
+      return cashierId;
+    }
+  }
+
+  async resolveTerminalName(terminalId: string): Promise<string> {
+    try {
+      const term = await this.sessions.db.model<PosTerminal>(PosTerminal.name).findById(terminalId);
+      return term?.name || terminalId;
+    } catch {
+      return terminalId;
+    }
+  }
+
+  async open(cashierId: string, terminalId: string, registerId: string | null, openingCashMinor: number, note?: string): Promise<PosCashierSessionDocument> {
     if (!validateCash(openingCashMinor)) throw new BadRequestException('Montant invalide');
     const date = cashBusinessDate(new Date());
     // Create the shared day before competing transactions acquire its write lock.
@@ -66,8 +95,12 @@ export class PosSessionsService implements OnModuleInit {
         if (existing) throw new ConflictException('Une session est déjà ouverte sur ce terminal');
         const [doc] = await this.sessions.create([{
           cashierId, terminalId, registerId, openingCashMinor, businessDate: date, openedAt: new Date(), status: 'OPEN',
+          closingNote: note?.trim() || null,
         }], { session: txn });
-        await this.recordMovement(doc, 'OPENING_FUND', openingCashMinor, cashierId, 'Fond initial', txn, undefined, `open:${doc.id}`);
+        await this.recordMovement(doc, 'OPENING_FUND', openingCashMinor, cashierId, note?.trim() || 'Fond initial', txn, undefined, `open:${doc.id}`, {
+          category: 'FLOAT_ADD',
+          categoryLabel: 'Fond de caisse initial',
+        });
         return doc;
       });
     } catch (error) {
@@ -97,8 +130,42 @@ export class PosSessionsService implements OnModuleInit {
     return doc;
   }
 
-  async recordMovement(doc: PosCashierSessionDocument, type: PosCashMovementType, amountMinor: number, performedBy: string, reason: string, txn?: ClientSession, saleId?: string, operationKey?: string) {
-    await this.movements.create([{ sessionId: doc.id, terminalId: doc.terminalId, cashierId: doc.cashierId, type, amountMinor, performedBy, reason, saleId, operationKey }], { session: txn });
+  async recordMovement(
+    doc: PosCashierSessionDocument,
+    type: PosCashMovementType,
+    amountMinor: number,
+    performedBy: string,
+    reason: string,
+    txn?: ClientSession,
+    saleId?: string,
+    operationKey?: string,
+    details?: {
+      category?: string;
+      categoryLabel?: string;
+      beneficiary?: string;
+      paymentMethod?: string;
+      reference?: string;
+      performedByName?: string;
+    },
+  ): Promise<PosCashMovementDocument> {
+    const [movement] = await this.movements.create([{
+      sessionId: doc.id,
+      terminalId: doc.terminalId,
+      cashierId: doc.cashierId,
+      type,
+      amountMinor,
+      performedBy,
+      performedByName: details?.performedByName ?? null,
+      reason,
+      saleId,
+      operationKey,
+      category: details?.category ?? null,
+      categoryLabel: details?.categoryLabel ?? null,
+      beneficiary: details?.beneficiary ?? null,
+      paymentMethod: details?.paymentMethod ?? 'CASH',
+      reference: details?.reference ?? null,
+    }], { session: txn });
+    return movement;
   }
 
   async getOpenForTerminal(terminalId: string): Promise<PosCashierSessionDocument | null> {
@@ -125,6 +192,10 @@ export class PosSessionsService implements OnModuleInit {
     return this.sessions.find(query).sort({ openedAt: -1 }).limit(200);
   }
 
+  async listMovements(sessionId: string): Promise<PosCashMovementDocument[]> {
+    return this.movements.find({ sessionId }).sort({ createdAt: 1 });
+  }
+
   /** Manager sign-off on a closed session — corrections to a session's
    *  own financial totals are never made silently; this only records that
    *  a human reviewed the numbers as-is, it changes nothing else. */
@@ -138,14 +209,77 @@ export class PosSessionsService implements OnModuleInit {
     return doc;
   }
 
-  async addCashMovement(sessionId: string, type: PosCashMovementType, amountMinor: number, reason: string, performedBy: string): Promise<void> {
-    if (!validateCash(amountMinor) || !amountMinor || !reason.trim() || !['ADD', 'REMOVE', 'CASH_IN', 'CASH_OUT'].includes(type)) throw new BadRequestException('Montant ou motif invalide');
-    await this.transaction(async (txn) => {
+  async takeover(sessionId: string, newCashierId: string, authorizedBy: string, note?: string): Promise<PosCashierSessionDocument> {
+    return this.transaction(async (txn) => {
+      const doc = await this.sessions.findOne({ _id: sessionId, status: 'OPEN' }).session(txn);
+      if (!doc) throw new ConflictException('Cette session est déjà fermée');
+      const prevCashierId = doc.cashierId;
+      doc.cashierId = newCashierId;
+      await doc.save({ session: txn });
+      await this.recordMovement(
+        doc,
+        'CORRECTION',
+        0,
+        newCashierId,
+        `Reprise de caisse autorisée par ${authorizedBy}: ${note || `Transfert de ${prevCashierId} à ${newCashierId}`}`,
+        txn,
+        undefined,
+        `takeover:${sessionId}:${Date.now()}`,
+        {
+          category: 'ADJUSTMENT',
+          categoryLabel: 'Reprise de caisse autorisée',
+          performedByName: authorizedBy,
+        },
+      );
+      return doc;
+    });
+  }
+
+  async addCashMovement(
+    sessionId: string,
+    input: AddMovementInput,
+    performedBy: string,
+    performedByName?: string,
+  ): Promise<PosCashMovementDocument> {
+    const { type, amountMinor, reason, category, categoryLabel, beneficiary, paymentMethod = 'CASH', reference } = input;
+    if (!validateCash(amountMinor) || !amountMinor || !reason.trim() || !['ADD', 'REMOVE', 'CASH_IN', 'CASH_OUT'].includes(type)) {
+      throw new BadRequestException('Montant ou motif invalide');
+    }
+
+    return this.transaction(async (txn) => {
       const doc = await this.sessions.findOne({ _id: sessionId, status: 'OPEN' }).session(txn);
       if (!doc) throw new ConflictException('Cette session est fermée');
+
       const incoming = type === 'ADD' || type === 'CASH_IN';
-      await this.sessions.updateOne({ _id: sessionId, status: 'OPEN' }, { $inc: { [incoming ? 'cashMovementsAddMinor' : 'cashMovementsRemoveMinor']: amountMinor } }, { session: txn });
-      await this.recordMovement(doc, incoming ? 'CASH_IN' : 'CASH_OUT', amountMinor, performedBy, reason, txn);
+      const isPhysicalCash = paymentMethod.toUpperCase() === 'CASH';
+
+      // Only physical cash movements adjust the drawer expected cash
+      if (isPhysicalCash) {
+        await this.sessions.updateOne(
+          { _id: sessionId, status: 'OPEN' },
+          { $inc: { [incoming ? 'cashMovementsAddMinor' : 'cashMovementsRemoveMinor']: amountMinor } },
+          { session: txn },
+        );
+      }
+
+      return this.recordMovement(
+        doc,
+        incoming ? 'CASH_IN' : 'CASH_OUT',
+        amountMinor,
+        performedBy,
+        reason.trim(),
+        txn,
+        undefined,
+        undefined,
+        {
+          category,
+          categoryLabel,
+          beneficiary: beneficiary?.trim(),
+          paymentMethod: isPhysicalCash ? 'CASH' : paymentMethod,
+          reference: reference?.trim(),
+          performedByName,
+        },
+      );
     });
   }
 
@@ -183,10 +317,7 @@ export class PosSessionsService implements OnModuleInit {
   /**
    * Called by PosSalesService.update() when a completed sale is edited
    * while its session is still OPEN — applies the *delta* between the
-   * sale's old and new totals/payment split, never a full re-add, so the
-   * session's running totals stay correct without double-counting the
-   * amount already recorded when the sale was first created. transactionCount
-   * is untouched (editing a sale doesn't create or remove a ticket).
+   * sale's old and new totals/payment split, never a full re-add.
    */
   async applySaleEditToSession(
     sessionId: string,
@@ -239,32 +370,112 @@ export class PosSessionsService implements OnModuleInit {
     const cashDifferenceMinor = countedCashMinor === null ? null : countedCashMinor - expectedCashMinor;
     const sales = await this.sessions.db.model<PosSale>(PosSale.name).find({ sessionId: doc.id, status: { $ne: 'SUSPENDED' } }).sort({ saleNumber: 1 }).session(txn ?? null);
     const payments = await this.sessions.db.model<PosPayment>(PosPayment.name).find({ sessionId: doc.id }).session(txn ?? null);
+    const movements = await this.movements.find({ sessionId: doc.id }).sort({ createdAt: 1 }).session(txn ?? null);
     const terminal = await this.sessions.db.model<PosTerminal>(PosTerminal.name).findById(doc.terminalId).session(txn ?? null);
     const cashier = await this.sessions.db.model<Employee>(Employee.name).findById(doc.cashierId).session(txn ?? null);
     const company = await this.settings.getCompany();
-    // Derive gross/discounts from immutable price snapshots, including quantity offers.
+
+    // Derive gross/discounts from immutable price snapshots
     const gross = sales.reduce((sum, sale) => sum + sale.lines.reduce((n, l) => n + (l.regularUnitPriceMinor ?? l.unitPriceMinor) * l.qty, 0), 0);
     const charged = sales.reduce((sum, sale) => sum + sale.totalMinor, 0);
     const methods: Record<string, number> = {};
     for (const p of payments) if (p.status === 'PAID') methods[p.method] = (methods[p.method] ?? 0) + p.amountMinor;
+
+    // Movement categories breakdown
+    let supplierExpensesMinor = 0;
+    let employeeExpensesMinor = 0;
+    let transportExpensesMinor = 0;
+    let miscExpensesMinor = 0;
+    let cashInflowsMinor = 0;
+
+    for (const m of movements) {
+      if (m.type === 'CASH_OUT' || m.type === 'REMOVE') {
+        const cat = (m.category || '').toUpperCase();
+        if (cat === 'FOURNISSEUR' || cat === 'SUPPLIER') {
+          supplierExpensesMinor += m.amountMinor;
+        } else if (cat === 'SALAIRE_AVANCE' || cat === 'PAYROLL_ADVANCE') {
+          employeeExpensesMinor += m.amountMinor;
+        } else if (cat === 'TRANSPORT') {
+          transportExpensesMinor += m.amountMinor;
+        } else {
+          miscExpensesMinor += m.amountMinor;
+        }
+      } else if (m.type === 'CASH_IN' || m.type === 'ADD') {
+        cashInflowsMinor += m.amountMinor;
+      }
+    }
+
     return {
-      type, generatedAt: new Date(), expectedCashMinor, countedCashMinor, cashDifferenceMinor,
+      type,
+      generatedAt: new Date(),
+      expectedCashMinor,
+      countedCashMinor,
+      cashDifferenceMinor,
       flagged: cashDifferenceMinor !== null && Math.abs(cashDifferenceMinor) > await this.toleranceMinor(),
-      grossSalesMinor: gross, refundsMinor: doc.refundsMinor, discountsMinor: gross - charged,
+      grossSalesMinor: gross,
+      refundsMinor: doc.refundsMinor,
+      discountsMinor: gross - charged,
       netSalesMinor: charged - doc.refundsMinor,
-      cashSalesMinor: doc.cashSalesMinor, cardSalesMinor: doc.cardSalesMinor, otherSalesMinor: doc.otherSalesMinor,
+      cashSalesMinor: doc.cashSalesMinor,
+      cardSalesMinor: doc.cardSalesMinor,
+      otherSalesMinor: doc.otherSalesMinor,
       cashRefundsMinor: doc.cashRefundsMinor ?? 0,
-      cashMovementsAddMinor: doc.cashMovementsAddMinor, cashMovementsRemoveMinor: doc.cashMovementsRemoveMinor,
+      cashMovementsAddMinor: doc.cashMovementsAddMinor,
+      cashMovementsRemoveMinor: doc.cashMovementsRemoveMinor,
       transactionCount: sales.length,
       details: {
-        sessionId: doc.id, number: `Z-${doc.id}`, businessDate: doc.businessDate ?? cashBusinessDate(doc.openedAt),
-        company, terminalId: doc.terminalId, terminalName: terminal?.name ?? doc.terminalId,
-        cashierId: doc.cashierId, cashierName: cashier?.name ?? doc.cashierId,
-        openedAt: doc.openedAt.toISOString(), closedAt: doc.closedAt?.toISOString() ?? null,
-        openingCashMinor: doc.openingCashMinor, closingNote: doc.closingNote,
-        payments: methods, receiptCount: sales.length, averageTicketMinor: sales.length ? Math.round(charged / sales.length) : 0,
-        firstReceiptNumber: sales[0]?.saleNumber ?? null, lastReceiptNumber: sales.at(-1)?.saleNumber ?? null,
-        sales: sales.map((sale) => ({ id: sale.id, number: sale.saleNumber, totalMinor: sale.totalMinor, status: sale.status })),
+        sessionId: doc.id,
+        number: `Z-${doc.id.slice(-6).toUpperCase()}`,
+        businessDate: doc.businessDate ?? cashBusinessDate(doc.openedAt),
+        company,
+        terminalId: doc.terminalId,
+        terminalName: terminal?.name ?? doc.terminalId,
+        cashierId: doc.cashierId,
+        cashierName: cashier?.name ?? doc.cashierId,
+        openedAt: doc.openedAt.toISOString(),
+        closedAt: doc.closedAt?.toISOString() ?? null,
+        openingCashMinor: doc.openingCashMinor,
+        closingNote: doc.closingNote,
+        payments: methods,
+        receiptCount: sales.length,
+        averageTicketMinor: sales.length ? Math.round(charged / sales.length) : 0,
+        firstReceiptNumber: sales[0]?.saleNumber ?? null,
+        lastReceiptNumber: sales.at(-1)?.saleNumber ?? null,
+        supplierExpensesMinor,
+        employeeExpensesMinor,
+        transportExpensesMinor,
+        miscExpensesMinor,
+        cashInflowsMinor,
+        sales: sales.map((sale) => ({
+          id: sale.id,
+          number: sale.saleNumber,
+          createdAt: sale.createdAt,
+          cashierId: sale.cashierId,
+          totalMinor: sale.totalMinor,
+          subtotalMinor: sale.subtotalMinor,
+          discountMinor: sale.discountMinor,
+          paymentMethod: sale.paymentMethod,
+          status: sale.status,
+          lines: sale.lines.map((l) => ({
+            description: l.descriptionSnapshot,
+            qty: l.qty,
+            unitPriceMinor: l.unitPriceMinor,
+            lineTotalMinor: l.lineTotalMinor,
+          })),
+        })),
+        movements: movements.map((m) => ({
+          id: m.id,
+          type: m.type,
+          category: m.category,
+          categoryLabel: m.categoryLabel,
+          beneficiary: m.beneficiary,
+          paymentMethod: m.paymentMethod,
+          amountMinor: m.amountMinor,
+          reason: m.reason,
+          performedBy: m.performedBy,
+          performedByName: m.performedByName,
+          createdAt: m.createdAt,
+        })),
       },
     };
   }
@@ -282,25 +493,24 @@ export class PosSessionsService implements OnModuleInit {
       doc.closingNote = note?.trim() || null;
       doc.reports.push(await this.snapshot(doc, 'Z', txn));
       await doc.save({ session: txn });
-      await this.recordMovement(doc, 'CLOSING', countedCashMinor, doc.cashierId, note?.trim() || 'Comptage de clôture', txn, undefined, `close:${doc.id}`);
+      await this.recordMovement(doc, 'CLOSING', countedCashMinor, doc.cashierId, note?.trim() || 'Comptage de clôture', txn, undefined, `close:${doc.id}`, {
+        category: 'ADJUSTMENT',
+        categoryLabel: 'Comptage de clôture',
+      });
       return doc;
     });
   }
 
   /**
    * Admin-triggered close for a terminal an admin can't physically reach
-   * (device lost, cashier gone home with it open) — deliberately does NOT
-   * fabricate a verified cash count: the expected amount is recorded as
-   * counted (the only safe default without a real count) and the session
-   * is left explicitly un-reviewed with a note, forcing a manager to
-   * reconcile the drawer for real later. Never silently treated as
-   * "correct".
+   * or during an administrative takeover.
    */
-  async forceClose(id: string, actorName: string): Promise<PosCashierSessionDocument> {
+  async forceClose(id: string, actorName: string, countedCashMinor?: number, note?: string): Promise<PosCashierSessionDocument> {
     const doc = await this.requireOpen(id);
     const expected = await this.computeExpectedCashMinor(doc);
-    const closed = await this.close(id, expected);
-    closed.reviewNote = `Fermeture forcée par ${actorName} — comptage non vérifié physiquement`;
+    const finalCounted = typeof countedCashMinor === 'number' && validateCash(countedCashMinor) ? countedCashMinor : expected;
+    const closed = await this.close(id, finalCounted, note || `Fermeture administrative par ${actorName}`);
+    closed.reviewNote = note || `Fermeture administrative par ${actorName} — comptage ${typeof countedCashMinor === 'number' ? 'enregistré' : 'théorique'}`;
     await closed.save();
     return closed;
   }
@@ -308,7 +518,7 @@ export class PosSessionsService implements OnModuleInit {
   private toView(
     snapshot: {
       details?: Record<string, unknown>; cashRefundsMinor?: number; flagged?: boolean;
-      type: 'X' | 'Z'; generatedAt: Date; expectedCashMinor: number; countedCashMinor: number | null;
+      type: 'X' | 'Z'; generatedAt: Date | string; expectedCashMinor: number; countedCashMinor: number | null;
       cashDifferenceMinor: number | null; grossSalesMinor: number; refundsMinor: number; discountsMinor: number;
       netSalesMinor: number; cashSalesMinor: number; cardSalesMinor: number; otherSalesMinor: number;
       cashMovementsAddMinor: number; cashMovementsRemoveMinor: number; transactionCount: number;
@@ -319,7 +529,7 @@ export class PosSessionsService implements OnModuleInit {
       details: snapshot.details,
       cashRefundsMinor: snapshot.cashRefundsMinor ?? 0,
       type: snapshot.type,
-      generatedAt: snapshot.generatedAt.toISOString(),
+      generatedAt: typeof snapshot.generatedAt === 'string' ? snapshot.generatedAt : snapshot.generatedAt.toISOString(),
       expectedCashMinor: snapshot.expectedCashMinor,
       countedCashMinor: snapshot.countedCashMinor,
       cashDifferenceMinor: snapshot.cashDifferenceMinor,

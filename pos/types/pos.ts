@@ -218,13 +218,51 @@ export type RedeemPreviewResult = {
 
 export type PosSessionStatus = 'OPEN' | 'CLOSED';
 
+export type ActiveSessionOtherCashier = {
+  sessionId: string;
+  cashierId: string;
+  cashierName: string;
+  terminalId: string;
+  terminalName: string;
+  openedAt: string;
+  openingCashMinor: number;
+  expectedCashMinor: number;
+};
+
+export type CurrentSessionResponse = {
+  session: PosCashierSession | null;
+  activeSessionOtherCashier?: ActiveSessionOtherCashier | null;
+  isManagerAccess?: boolean;
+};
+
+export type PosCashMovement = {
+  id: string;
+  sessionId: string;
+  terminalId?: string;
+  cashierId?: string;
+  saleId?: string | null;
+  type: 'ADD' | 'REMOVE' | 'OPENING_FUND' | 'CASH_SALE' | 'CASH_REFUND' | 'CASH_IN' | 'CASH_OUT' | 'CORRECTION' | 'CLOSING';
+  category?: string | null;
+  categoryLabel?: string | null;
+  beneficiary?: string | null;
+  paymentMethod?: string;
+  reference?: string | null;
+  amountMinor: number;
+  reason: string;
+  performedBy: string;
+  performedByName?: string | null;
+  createdAt: string;
+};
+
 export type PosCashierSession = {
   expectedCashMinor: number;
   cashRefundsMinor: number;
   closingNote: string | null;
   id: string;
   cashierId: string;
+  cashierName?: string;
   terminalId: string;
+  terminalName?: string;
   registerId: string | null;
   openingCashMinor: number;
   openedAt: string;
@@ -240,6 +278,9 @@ export type PosCashierSession = {
   cashMovementsAddMinor: number;
   cashMovementsRemoveMinor: number;
   transactionCount: number;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
+  reviewNote?: string | null;
 };
 
 export type PosSessionReport = {

@@ -4,8 +4,9 @@ import { HydratedDocument } from 'mongoose';
 export type PosCashMovementType = 'ADD' | 'REMOVE' | 'OPENING_FUND' | 'CASH_SALE' | 'CASH_REFUND' | 'CASH_IN' | 'CASH_OUT' | 'CORRECTION' | 'CLOSING';
 
 /** Cash added to or removed from the drawer outside of a sale (float
- *  top-up, till-to-safe drop) — tracked separately from sales so the
- *  session close's expected-cash formula is auditable line by line. */
+ *  top-up, till-to-safe drop, supplier payments, employee advances) —
+ *  tracked separately from sales so the session close's expected-cash
+ *  formula is auditable line by line. */
 @Schema({ collection: 'pos_cash_movements', timestamps: { createdAt: true, updatedAt: false } })
 export class PosCashMovement {
   @Prop({ type: String, required: true, index: true })
@@ -18,6 +19,13 @@ export class PosCashMovement {
   @Prop({ type: String }) cashierId?: string;
   @Prop({ type: String, default: null }) saleId!: string | null;
   @Prop({ type: String }) operationKey?: string;
+
+  @Prop({ type: String, default: null }) category?: string;
+  @Prop({ type: String, default: null }) categoryLabel?: string;
+  @Prop({ type: String, default: null }) beneficiary?: string;
+  @Prop({ type: String, default: 'CASH' }) paymentMethod?: string;
+  @Prop({ type: String, default: null }) reference?: string;
+  @Prop({ type: String, default: null }) performedByName?: string;
 
   @Prop({ type: Number, required: true })
   amountMinor!: number;

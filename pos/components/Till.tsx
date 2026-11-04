@@ -1,7 +1,9 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
+import { ArrowDownRight, ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
+import CashMovementModal from './CashMovementModal';
+import SessionConflictModal from './SessionConflictModal';
 import { getTerminalCode, posFetch } from '@/lib/device';
 import { canOpenDrawer, completeSaleHardware, DEFAULT_PRINTER_SETTINGS, getBridgeStatus, openManualDrawer, printReceiptOnBridge, reportPrintStatus } from '@/lib/hardware';
 import { usePosEvents } from '@/hooks/usePosEvents';
@@ -17,7 +19,7 @@ import Cart from './Cart';
 import MobileCartSummary from './MobileCartSummary';
 import MobileCartDrawer from './MobileCartDrawer';
 import TicketPreview from './TicketPreview';
-import type { CartLine, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCatalogItem, PosCatalogResponse, PosPrinterSettings, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
+import type { ActiveSessionOtherCashier, CartLine, CurrentSessionResponse, LoyaltyAccount, LoyaltyCardLookupResult, LoyaltyLookupResult, PosCashierSession, PosCatalogItem, PosCatalogResponse, PosPrinterSettings, PosSale, PosSalePaymentInput, PosSaleQuote, RedeemPreviewResult } from '@/types/pos';
 
 const ACTIVE_SALE_DRAFT_KEY = 'mzali_pos_active_sale_draft';
 
@@ -62,6 +64,40 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const paymentRequestInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [draftReady, setDraftReady] = useState(false);
+  const [currentSession, setCurrentSession] = useState<PosCashierSession | null>(null);
+  const [sessionConflict, setSessionConflict] = useState<ActiveSessionOtherCashier | null>(null);
+  const [cashMovementModalOpen, setCashMovementModalOpen] = useState(false);
+
+  const checkSession = useCallback(async () => {
+    try {
+      const res = await posFetch('/api/sessions', { cache: 'no-store' });
+      if (res.status === 401) { router.replace('/login'); return; }
+      const data: CurrentSessionResponse = await res.json();
+      if (data.session) {
+        setCurrentSession(data.session);
+        setSessionConflict(null);
+      } else if (data.activeSessionOtherCashier) {
+        setCurrentSession(null);
+        setSessionConflict(data.activeSessionOtherCashier);
+      } else {
+        setCurrentSession(null);
+        setSessionConflict(null);
+        router.replace('/sessions/open');
+      }
+    } catch {
+      // ignore
+    }
+  }, [router]);
+
+  useEffect(() => {
+    void checkSession();
+    window.addEventListener('pos-cash-changed', checkSession);
+    window.addEventListener('focus', checkSession);
+    return () => {
+      window.removeEventListener('pos-cash-changed', checkSession);
+      window.removeEventListener('focus', checkSession);
+    };
+  }, [checkSession]);
 
   // Authentication and the business cashier session are separate. Keep the
   // current sale durable across a genuine auth failure/login round-trip.
@@ -484,6 +520,15 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   }
 
   async function confirmPayment(method: PosSalePaymentInput['method'], cashReceivedMinor: number | null) {
+    if (sessionConflict) {
+      setSaveError(`Cette caisse appartient à ${sessionConflict.cashierName}. Veuillez transférer la session.`);
+      return;
+    }
+    if (!currentSession) {
+      setSaveError('Aucune session active. Veuillez ouvrir la caisse.');
+      router.replace('/sessions/open');
+      return;
+    }
     if (paymentRequestInFlightRef.current) return;
     paymentRequestInFlightRef.current = true;
     setPaying(true);
@@ -646,7 +691,18 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       <header className="flex flex-none flex-wrap items-center justify-between gap-2 sm:gap-3 border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 shadow-sm">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3.5 min-w-0">
           <NavBar />
-          <CashSummary />
+          <CashSummary onOpenMovements={() => setCashMovementModalOpen(true)} />
+          {currentSession && (
+            <button
+              type="button"
+              onClick={() => setCashMovementModalOpen(true)}
+              className="flex min-h-9 sm:min-h-11 items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-blue-200 bg-blue-50 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-black text-blue-800 transition hover:bg-blue-100 shadow-xs whitespace-nowrap"
+              title="Entrées et sorties d'argent"
+            >
+              <ArrowDownRight size={14} />
+              <span className="hidden sm:inline">Mouvements</span>
+            </button>
+          )}
           <div className="hidden lg:flex items-center gap-2.5 rounded-2xl border border-blue-100 bg-blue-50 px-3.5 py-1.5 text-xs font-black text-blue-700">
             <UserCheck size={14} />
             <span>Caissier: {cashierName}</span>
@@ -887,6 +943,26 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
         />
       )}
 
+      {cashMovementModalOpen && currentSession && (
+        <CashMovementModal
+          sessionId={currentSession.id}
+          onClose={() => setCashMovementModalOpen(false)}
+          onMovementAdded={() => {
+            window.dispatchEvent(new Event('pos-cash-changed'));
+            void checkSession();
+          }}
+        />
+      )}
+      {sessionConflict && (
+        <SessionConflictModal
+          conflict={sessionConflict}
+          onSuccess={() => {
+            setSessionConflict(null);
+            void checkSession();
+          }}
+          onCancel={() => {}}
+        />
+      )}
       {completedSale && (
         <TicketPreview
           sale={completedSale}
