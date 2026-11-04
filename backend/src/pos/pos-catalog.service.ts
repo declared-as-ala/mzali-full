@@ -39,13 +39,13 @@ export class PosCatalogService {
       this.settings.getRaw('pos'),
     ]);
 
-    const isPosOnlyFiltered = productList.total > 0;
-    const finalProductList = isPosOnlyFiltered
-      ? productList
-      : await this.products.list({ perPage: 100, status: 'published' }, true);
-    const products = [...finalProductList.items];
-    for (let page = 2; page <= finalProductList.totalPages; page++) {
-      products.push(...(await this.products.list({ perPage: 100, page, status: 'published', ...(isPosOnlyFiltered ? { posOnly: true } : {}) }, true)).items);
+
+
+
+
+    const products = [...productList.items];
+    for (let page = 2; page <= productList.totalPages; page++) {
+      products.push(...(await this.products.list({ perPage: 100, page, status: 'published', posOnly: true }, true)).items);
     }
     const productIds = products.map((p) => p.id);
     const allVariants = await this.variants.allForProducts(productIds);

@@ -256,6 +256,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const filteredItems = useMemo(() => {
     if (!catalog) return [];
     let items = catalog.items;
+    if (items.some((i) => i.posOnly)) items = items.filter((i) => i.posOnly);
     if (activeCategory) items = items.filter((i) => i.categoryIds.includes(activeCategory));
     const q = query.trim().toLowerCase();
     if (q) items = items.filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q));

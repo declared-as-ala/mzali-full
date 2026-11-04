@@ -55,7 +55,7 @@ describe('Single DEPOT inventory (integration)', () => {
   /** Product tracked per exact variant: rows = [size, color, depotQty]. */
   async function matrixProduct(name: string, rows: [string, string, number][]) {
     const created = await products.create({
-      name, regularPrice: 30, status: 'published',
+      name, regularPrice: 30, status: 'published', posOnly: true,
       options: [{ label: 'couleur', type: 'text', values: [...new Set(rows.map((r) => r[1]))] }, { label: 'tallie', type: 'text', values: [...new Set(rows.map((r) => r[0]))] }],
     });
     await stock.activate(created.id, {
@@ -69,7 +69,7 @@ describe('Single DEPOT inventory (integration)', () => {
 
   /** Product without variants: one quantity on its single default variant. */
   async function simpleProduct(name: string, qty: number) {
-    const created = await products.create({ name, regularPrice: 10, status: 'published' });
+    const created = await products.create({ name, regularPrice: 10, status: 'published', posOnly: true });
     const v = (await variantsSvc.findByProductId(created.id))!;
     if (qty) await ledger.applyMovement({ variantId: v.id, locationId: 'DEPOT', type: 'manual_adjust', onHandDelta: qty, actor: ADMIN });
     return { productId: created.id, variantId: v.id };
