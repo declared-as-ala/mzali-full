@@ -33,7 +33,8 @@ export default function PanierPage() {
   const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
   const clear = useCart((s) => s.clear);
-  const { t, lang, isRtl } = useLanguage();
+  const { t, lang, dir } = useLanguage();
+  const isRtl = dir === 'rtl';
 
   const [updated, setUpdated] = useState(false);
   const [couponInput, setCouponInput] = useState('');
