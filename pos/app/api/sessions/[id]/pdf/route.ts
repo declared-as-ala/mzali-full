@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { getValidAccessToken } from '@/lib/api-auth';
 import { readPosHeaders } from '@/lib/pos-headers';
 
-const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:4000';
-
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const bearer = await getValidAccessToken();
@@ -13,8 +11,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'terminal non appairé' }, { status: 401 });
   }
 
+  const base = (process.env.MZALI_API_URL || process.env.API_BASE_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
+
   try {
-    const res = await fetch(`${API_BASE_URL}/pos/sessions/${id}/pdf`, {
+    const res = await fetch(`${base}/api/v1/pos/sessions/${encodeURIComponent(id)}/pdf`, {
       headers: {
         Authorization: `Bearer ${bearer}`,
         'X-POS-Terminal': terminalCode,
@@ -38,4 +38,3 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 });
   }
 }
-

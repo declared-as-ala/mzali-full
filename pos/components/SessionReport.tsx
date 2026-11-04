@@ -41,48 +41,65 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
   const isShortage = report.countedCashMinor !== null && diff < 0;
   const isSurplus = report.countedCashMinor !== null && diff > 0;
 
-  // Breakdown of expenses if available in details
-  const details = report.details as {
-    openingCashMinor?: number;
-    categoryExpenses?: {
-      SUPPLIER?: number;
-      SALARY?: number;
-      TRANSPORT?: number;
-      EQUIPMENT?: number;
-      MISC?: number;
-      OTHER?: number;
-    };
-    categoryInflows?: {
-      FLOAT_ADD?: number;
-      REFUND_IN?: number;
-      ADJUSTMENT?: number;
-      OTHER?: number;
-    };
-  } | undefined;
+  const details = report.details as Record<string, unknown> | undefined;
+
+  // Breakdown of articles / products sold during this session
+  const rawArticles = (Array.isArray(details?.articlesSold) ? details.articlesSold : []) as Array<{
+    description: string;
+    qty: number;
+    totalMinor: number;
+  }>;
+
+  const sales = (Array.isArray(details?.sales) ? details.sales : []) as Array<{
+    status?: string;
+    lines?: Array<{ description?: string; descriptionSnapshot?: string; qty: number; lineTotalMinor: number }>;
+  }>;
+
+  let articlesSold = rawArticles;
+  if (articlesSold.length === 0 && sales.length > 0) {
+    const map = new Map<string, { description: string; qty: number; totalMinor: number }>();
+    for (const s of sales) {
+      if (s.status !== 'CANCELLED' && s.status !== 'SUSPENDED') {
+        for (const l of (s.lines || [])) {
+          const name = l.description || l.descriptionSnapshot || 'Article';
+          const cur = map.get(name);
+          if (cur) {
+            cur.qty += l.qty;
+            cur.totalMinor += l.lineTotalMinor;
+          } else {
+            map.set(name, { description: name, qty: l.qty, totalMinor: l.lineTotalMinor });
+          }
+        }
+      }
+    }
+    articlesSold = Array.from(map.values()).sort((a, b) => b.qty - a.qty);
+  }
+
+  const totalArticlesQty = articlesSold.reduce((acc, i) => acc + i.qty, 0);
 
   return (
-    <div className="mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-lg print:border-none print:shadow-none print:p-0 print:max-w-none">
+    <div id="session-ticket-z-thermal" className="receipt-print mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-lg print:border-none print:shadow-none print:p-0 print:max-w-none print:m-0 print:w-full print:text-black">
       {/* Receipt Header */}
       <div className="border-b-2 border-dashed border-slate-300 pb-5 text-center">
-        <h2 className="text-xl font-black uppercase tracking-wider text-slate-900">
+        <h2 className="text-xl font-black uppercase tracking-wider text-slate-900 print:text-black">
           Boutique Ahmed Mzali
         </h2>
-        <p className="text-xs font-semibold text-slate-500 mt-0.5">Mode Masculine & Accessoires</p>
-        <p className="text-[11px] text-slate-400">Tél : +216 22 479 443 · Tunisie</p>
+        <p className="text-xs font-semibold text-slate-500 mt-0.5 print:text-black">Mode Masculine & Accessoires</p>
+        <p className="text-[11px] text-slate-400 print:text-black">Tél : +216 22 479 443 · Tunisie</p>
 
         <div className="mt-4 inline-block rounded-xl border border-slate-900 bg-slate-900 px-4 py-1 text-xs font-black uppercase tracking-widest text-white print:border-black print:bg-transparent print:text-black">
           {isZ ? 'TICKET Z · CLÔTURE DE CAISSE' : 'TICKET X · ÉTAT PROVISOIRE'}
         </div>
 
-        <div className="mt-3 text-[11px] text-slate-500 space-y-0.5">
+        <div className="mt-3 text-[11px] text-slate-500 print:text-black space-y-0.5">
           <p>Édité le : {new Date(report.generatedAt).toLocaleString('fr-TN', { timeZone: 'Africa/Tunis' })}</p>
-          <p>Transactions : <strong className="text-slate-800">{report.transactionCount}</strong></p>
+          <p>Transactions : <strong className="text-slate-800 print:text-black">{report.transactionCount}</strong></p>
         </div>
       </div>
 
       {/* Sales Summary */}
       <div className="py-4 border-b border-dashed border-slate-200">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 print:text-black mb-2">
           1. Résumé des ventes
         </h3>
         <Row label="Ventes brutes" value={formatMinor(report.grossSalesMinor)} />
@@ -93,7 +110,7 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
 
       {/* Payment Methods */}
       <div className="py-4 border-b border-dashed border-slate-200">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 print:text-black mb-2">
           2. Ventilation des encaissements
         </h3>
         <Row label="Espèces (ventes)" value={formatMinor(report.cashSalesMinor)} accent="emerald" />
@@ -103,7 +120,7 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
 
       {/* Movements breakdown */}
       <div className="py-4 border-b border-dashed border-slate-200">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 print:text-black mb-2">
           3. Mouvements de caisse
         </h3>
         <Row label="Entrées de caisse (apports)" value={`+ ${formatMinor(report.cashMovementsAddMinor)}`} accent="emerald" />
@@ -112,7 +129,7 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
 
       {/* Drawer Reconciliation */}
       <div className="py-4 border-b-2 border-dashed border-slate-300">
-        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-2">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 print:text-black mb-2">
           4. Réconciliation du tiroir-caisse
         </h3>
         <Row label="Fond de caisse initial" value={formatMinor(Number(details?.openingCashMinor ?? 0))} />
@@ -130,10 +147,10 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
             <div
               className={`mt-2 rounded-xl p-3 border ${
                 isBalanced
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900 print:border-black print:bg-transparent print:text-black'
                   : isShortage
-                  ? 'border-rose-200 bg-rose-50 text-rose-900'
-                  : 'border-amber-200 bg-amber-50 text-amber-900'
+                  ? 'border-rose-200 bg-rose-50 text-rose-900 print:border-black print:bg-transparent print:text-black'
+                  : 'border-amber-200 bg-amber-50 text-amber-900 print:border-black print:bg-transparent print:text-black'
               }`}
             >
               <div className="flex items-center justify-between text-xs font-black">
@@ -154,17 +171,40 @@ export default function SessionReport({ report }: { report: PosSessionReport }) 
         )}
       </div>
 
-      {/* Signature lines */}
-      <div className="pt-6 pb-2 text-[11px] text-slate-500">
-        <div className="grid grid-cols-2 gap-8 text-center">
-          <div className="border-t border-slate-300 pt-3">
-            <p className="font-bold text-slate-800">Signature Caissier</p>
+      {/* 5. Articles vendus (djin * 5, maryoul * 2, etc.) */}
+      <div className="py-4 border-b-2 border-dashed border-slate-300">
+        <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 print:text-black mb-2">
+          5. Articles vendus {totalArticlesQty > 0 ? `(${totalArticlesQty})` : ''}
+        </h3>
+        {articlesSold.length === 0 ? (
+          <p className="text-xs text-slate-400 print:text-black italic">Aucun article vendu pendant cette session</p>
+        ) : (
+          <div className="space-y-1.5 pt-0.5">
+            {articlesSold.map((item, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-2 py-1 text-xs sm:text-sm">
+                <span className="font-bold text-slate-800 print:text-black truncate">
+                  {item.description} <span className="font-black text-blue-600 print:text-black">× {item.qty}</span>
+                </span>
+                <span className="shrink-0 tabular-nums font-bold text-slate-900 print:text-black">
+                  {formatMinor(item.totalMinor)}
+                </span>
+              </div>
+            ))}
           </div>
-          <div className="border-t border-slate-300 pt-3">
-            <p className="font-bold text-slate-800">Signature Responsable</p>
+        )}
+      </div>
+
+      {/* Signature lines */}
+      <div className="pt-6 pb-2 text-[11px] text-slate-500 print:text-black">
+        <div className="grid grid-cols-2 gap-8 text-center">
+          <div className="border-t border-slate-300 print:border-black pt-3">
+            <p className="font-bold text-slate-800 print:text-black">Signature Caissier</p>
+          </div>
+          <div className="border-t border-slate-300 print:border-black pt-3">
+            <p className="font-bold text-slate-800 print:text-black">Signature Responsable</p>
           </div>
         </div>
-        <p className="mt-6 text-center text-[10px] text-slate-400">
+        <p className="mt-6 text-center text-[10px] text-slate-400 print:text-black">
           Document certifié · Système POS Boutique Ahmed Mzali
         </p>
       </div>

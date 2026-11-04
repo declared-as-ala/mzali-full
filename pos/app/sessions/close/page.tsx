@@ -9,7 +9,6 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Coins,
-  Download,
   FileText,
   HelpCircle,
   LogOut,
@@ -108,13 +107,28 @@ export default function CloseSessionPage() {
     }
   }
 
+  useEffect(() => {
+    const handleBeforePrint = () => document.body.classList.add('receipt-printing');
+    const handleAfterPrint = () => document.body.classList.remove('receipt-printing');
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('receipt-printing');
+    };
+  }, []);
+
   async function finish() {
     await fetch('/api/auth', { method: 'DELETE' });
     router.replace('/login');
   }
 
   function handlePrintThermal() {
-    window.print();
+    document.body.classList.add('receipt-printing');
+    setTimeout(() => {
+      window.print();
+    }, 50);
   }
 
   if (session === undefined) {
@@ -179,20 +193,10 @@ export default function CloseSessionPage() {
               <button
                 type="button"
                 onClick={handlePrintThermal}
-                className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-xs transition"
+                className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50 shadow-xs transition cursor-pointer"
               >
                 <Printer size={15} /> Imprimer Ticket Z
               </button>
-              {closedSessionId && (
-                <a
-                  href={`/api/sessions/${closedSessionId}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-700 shadow-xs transition"
-                >
-                  <Download size={15} /> Télécharger A4 PDF
-                </a>
-              )}
             </div>
           )}
         </header>
@@ -474,26 +478,16 @@ export default function CloseSessionPage() {
               <button
                 type="button"
                 onClick={handlePrintThermal}
-                className="flex-1 flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white py-4 text-sm font-black text-slate-800 hover:bg-slate-50 transition shadow-sm"
+                className="flex-1 flex items-center justify-center gap-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] py-4 text-base font-black text-white transition shadow-md shadow-blue-600/20 cursor-pointer"
               >
-                <Printer size={18} /> Imprimer Ticket Z (80mm)
+                <Printer size={20} /> Imprimer Ticket Z (80mm)
               </button>
-              {closedSessionId && (
-                <a
-                  href={`/api/sessions/${closedSessionId}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-4 text-sm font-black text-white hover:bg-blue-700 transition shadow-sm"
-                >
-                  <Download size={18} /> Télécharger Rapport A4 PDF
-                </a>
-              )}
               <button
                 type="button"
                 onClick={finish}
-                className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-slate-900 py-4 text-sm font-black text-white hover:bg-slate-800 transition shadow-sm"
+                className="flex-1 flex items-center justify-center gap-2.5 rounded-2xl border border-slate-300 bg-white hover:bg-slate-50 active:scale-[0.98] py-4 text-base font-bold text-slate-800 transition shadow-sm cursor-pointer"
               >
-                <LogOut size={18} /> Terminer et se déconnecter
+                <LogOut size={20} /> Terminer et se déconnecter
               </button>
             </div>
           </div>

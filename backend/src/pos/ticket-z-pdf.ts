@@ -153,9 +153,38 @@ export function renderSessionTicketZPdf(report: SessionReportView): Promise<Buff
       line('Note de clôture', String(details.closingNote));
     }
 
+    // Articles sold section
+    const rawArticles = (Array.isArray(details.articlesSold) ? details.articlesSold : []) as Array<{ description: string; qty: number; totalMinor: number }>;
+    let articlesSold = rawArticles;
+    if (articlesSold.length === 0 && sales.length > 0) {
+      const map = new Map<string, { description: string; qty: number; totalMinor: number }>();
+      for (const s of sales) {
+        for (const l of (s.lines || [])) {
+          const name = l.description || 'Article';
+          const cur = map.get(name);
+          if (cur) {
+            cur.qty += l.qty;
+            cur.totalMinor += l.lineTotalMinor;
+          } else {
+            map.set(name, { description: name, qty: l.qty, totalMinor: l.lineTotalMinor });
+          }
+        }
+      }
+      articlesSold = Array.from(map.values()).sort((a, b) => b.qty - a.qty);
+    }
+
+    if (articlesSold.length > 0) {
+      const totalItems = articlesSold.reduce((acc, i) => acc + i.qty, 0);
+      section(`5. ARTICLES VENDUS (${totalItems})`);
+      for (const item of articlesSold) {
+        if (doc.y > 730) doc.addPage();
+        line(`${item.description} * ${item.qty}`, money(item.totalMinor));
+      }
+    }
+
     // Orders details section
     if (sales.length > 0) {
-      section(`5. DÉTAILS DES COMMANDES (${sales.length})`);
+      section(`6. DÉTAILS DES COMMANDES (${sales.length})`);
       for (const s of sales) {
         if (doc.y > 730) doc.addPage();
         const header = `Ticket #${s.number} · ${stamp(s.createdAt)} · ${s.paymentMethod || 'Espèces'}`;
@@ -165,7 +194,7 @@ export function renderSessionTicketZPdf(report: SessionReportView): Promise<Buff
 
     // Cash movements section
     if (movements.length > 0) {
-      section(`6. DÉTAILS DES MOUVEMENTS DE CAISSE (${movements.length})`);
+      section(`7. DÉTAILS DES MOUVEMENTS DE CAISSE (${movements.length})`);
       for (const m of movements) {
         if (doc.y > 730) doc.addPage();
         const label = `${m.type === 'CASH_OUT' || m.type === 'REMOVE' ? 'Sortie' : 'Entrée'} [${m.categoryLabel || m.category || 'Général'}] - ${m.reason} ${m.beneficiary ? `(${m.beneficiary})` : ''}`;

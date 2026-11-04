@@ -2,16 +2,16 @@ import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { getValidAccessToken } from '@/lib/api-auth';
 
-const API_BASE_URL = process.env.API_BASE_URL ?? 'http://127.0.0.1:4000';
-
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { id } = await params;
   const bearer = await getValidAccessToken();
   if (!bearer) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
+  const base = (process.env.MZALI_API_URL || process.env.API_BASE_URL || 'http://127.0.0.1:4000').replace(/\/+$/, '');
+
   try {
-    const res = await fetch(`${API_BASE_URL}/admin/pos/sessions/${id}/pdf`, {
+    const res = await fetch(`${base}/api/v1/admin/pos/sessions/${encodeURIComponent(id)}/pdf`, {
       headers: { Authorization: `Bearer ${bearer}` },
       cache: 'no-store',
     });
@@ -31,4 +31,3 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 });
   }
 }
-

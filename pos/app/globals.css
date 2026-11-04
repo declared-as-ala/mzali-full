@@ -268,7 +268,9 @@ body {
   body:not(.receipt-printing) #a4-invoice-print,
   body:not(.receipt-printing) #a4-invoice-print *,
   body:not(.receipt-printing) #gift-receipt-print,
-  body:not(.receipt-printing) #gift-receipt-print * { visibility: visible; }
+  body:not(.receipt-printing) #gift-receipt-print *,
+  body:not(.receipt-printing) #session-ticket-z-thermal,
+  body:not(.receipt-printing) #session-ticket-z-thermal * { visibility: visible; }
   #a4-invoice-print,
   #gift-receipt-print {
     position: absolute;

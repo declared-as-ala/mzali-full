@@ -405,6 +405,28 @@ export class PosSessionsService implements OnModuleInit {
       }
     }
 
+    // Breakdown of articles / products sold during this session
+    const itemQuantities = new Map<string, { description: string; qty: number; totalMinor: number }>();
+    for (const sale of sales) {
+      if (sale.status !== 'SUSPENDED' && sale.status !== 'CANCELLED') {
+        for (const line of sale.lines) {
+          const name = line.descriptionSnapshot || 'Article';
+          const existing = itemQuantities.get(name);
+          if (existing) {
+            existing.qty += line.qty;
+            existing.totalMinor += line.lineTotalMinor;
+          } else {
+            itemQuantities.set(name, {
+              description: name,
+              qty: line.qty,
+              totalMinor: line.lineTotalMinor,
+            });
+          }
+        }
+      }
+    }
+    const articlesSold = Array.from(itemQuantities.values()).sort((a, b) => b.qty - a.qty);
+
     return {
       type,
       generatedAt: new Date(),
@@ -476,6 +498,7 @@ export class PosSessionsService implements OnModuleInit {
           performedByName: m.performedByName,
           createdAt: m.createdAt,
         })),
+        articlesSold,
       },
     };
   }
