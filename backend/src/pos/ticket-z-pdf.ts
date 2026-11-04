@@ -88,7 +88,7 @@ export function renderSessionTicketZPdf(report: SessionReportView): Promise<Buff
 
     const details = (report.details ?? {}) as Record<string, unknown>;
     const company = (details.company ?? {}) as Record<string, unknown>;
-    const sales = (Array.isArray(details.sales) ? details.sales : []) as Array<{ id: string; number: number; totalMinor: number; status: string; createdAt?: string; cashierName?: string; lines?: Array<{ description: string; qty: number; lineTotalMinor: number }> }>;
+    const sales = (Array.isArray(details.sales) ? details.sales : []) as Array<{ id: string; number: number; totalMinor: number; status: string; paymentMethod?: string; createdAt?: string; cashierName?: string; lines?: Array<{ description: string; qty: number; lineTotalMinor: number }> }>;
     const movements = (Array.isArray(details.movements) ? details.movements : []) as Array<{ id: string; type: string; category?: string; categoryLabel?: string; beneficiary?: string; amountMinor: number; reason: string; createdAt?: string; performedByName?: string }>;
 
     const line = (label: string, value: string, bold = false) => {
