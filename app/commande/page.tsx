@@ -45,7 +45,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [orderSummaryOpen, setOrderSummaryOpen] = useState(true);
+  const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
 
   const [form, setForm] = useState<{
     firstName: string;
@@ -389,7 +389,7 @@ export default function CheckoutPage() {
                       : '';
                     return (
                       <li key={i.lineId} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                        <div className="relative h-13 w-13 shrink-0 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
+                        <div className="relative h-14 w-14 min-w-[3.5rem] min-h-[3.5rem] shrink-0 overflow-hidden rounded-xl border border-neutral-200/80 bg-neutral-50 flex items-center justify-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={i.image} alt={i.name} className="h-full w-full object-contain p-1" />
                         </div>
@@ -729,7 +729,7 @@ export default function CheckoutPage() {
                     : '';
                   return (
                     <li key={i.lineId} className="flex items-center gap-3 py-3 first:pt-1 last:pb-1">
-                      <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
+                      <div className="relative h-14 w-14 min-w-[3.5rem] min-h-[3.5rem] shrink-0 overflow-hidden rounded-xl border border-neutral-200/80 bg-neutral-50 flex items-center justify-center">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={i.image} alt={i.name} className="h-full w-full object-contain p-1" />
                       </div>
