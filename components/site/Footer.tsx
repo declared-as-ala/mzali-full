@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
@@ -11,11 +10,6 @@ import {
   Mail,
   MapPin,
   Phone,
-  ArrowUpRight,
-  Truck,
-  ShieldCheck,
-  Headphones,
-  ChevronDown,
 } from 'lucide-react';
 import { SITE } from '@/lib/site-config';
 import { useLanguage } from '@/components/site/LanguageProvider';
@@ -41,15 +35,13 @@ export default function Footer() {
     facebook: siteConfig.facebook,
     instagram: siteConfig.instagram,
     tiktok: siteConfig.tiktok,
-    whatsapp: siteConfig.whatsapp,
-    phones: siteConfig.phones,
+    whatsapp: siteConfig.whatsapp || '22479443',
+    phones: siteConfig.phones?.length ? siteConfig.phones : ['22479443'],
     photoUrl: siteConfig.photoUrl,
   };
-  const { email } = SITE.contact;
+  const primaryPhone = phones[0] || '22479443';
+  const email = SITE.contact.email || 'mzaliahmed73@gmail.com';
   const { t } = useLanguage();
-
-  const [openSection, setOpenSection] = useState<string | null>(null);
-  const toggle = (id: string) => setOpenSection((prev) => (prev === id ? null : id));
 
   const socials = [
     { href: facebook, label: 'Facebook', icon: Facebook, hover: 'hover:bg-[#1877F2]' },
@@ -58,8 +50,6 @@ export default function Footer() {
     { href: `https://wa.me/216${whatsapp}`, label: t.common.whatsapp, icon: MessageCircle, hover: 'hover:bg-[#25D366]' },
   ];
 
-  const heading = 'text-xs font-bold uppercase tracking-[0.18em] text-white';
-
   return (
     <footer className="relative mt-8 sm:mt-14 lg:mt-20 overflow-hidden bg-ink-900 text-white/70">
       {/* Accent gradient line + ambient glow */}
@@ -67,43 +57,26 @@ export default function Footer() {
       <div aria-hidden className="pointer-events-none absolute -left-32 top-10 h-72 w-72 rounded-full bg-brand-300/15 blur-3xl" />
       <div aria-hidden className="pointer-events-none absolute -right-32 bottom-0 h-72 w-72 rounded-full bg-cta/10 blur-3xl" />
 
-      <div className="container-shop relative">
-        {/* Compact trust strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 border-b border-white/10 py-5 sm:py-7">
-          {[
-            { icon: Truck, text: t.footer.deliveryReturn },
-            { icon: ShieldCheck, text: t.footer.terms },
-            { icon: Headphones, text: t.footer.contact },
-          ].map(({ icon: Icon, text }) => (
-            <div
-              key={text}
-              className="flex items-center gap-3 rounded-xl sm:rounded-2xl border border-white/10 bg-white/5 px-3.5 py-2.5 sm:px-4 sm:py-3 backdrop-blur-sm"
-            >
-              <span className="grid h-8 w-8 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-lg sm:rounded-xl bg-brand-300/30 text-brand-50">
-                <Icon size={16} />
-              </span>
-              <span className="text-xs sm:text-sm font-semibold text-white">{text}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Brand header on mobile + desktop grid */}
-        <div className="py-6 sm:py-10">
-          {/* Brand & Socials */}
-          <div className="sm:hidden mb-5 pb-5 border-b border-white/10">
-            <Link href="/" className="inline-flex items-center gap-2.5 text-white">
+      <div className="container-shop relative py-8 sm:py-12">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 lg:gap-10">
+          {/* Brand & Socials Column */}
+          <div className="lg:col-span-5 space-y-4">
+            <Link href="/" className="inline-flex items-center gap-3 text-white">
               <Image
                 src={photoUrl}
                 alt={t.common.brandName}
-                width={40}
-                height={40}
-                className="h-10 w-10 rounded-full object-cover ring-2 ring-white/20"
+                width={120}
+                height={44}
+                className="h-10 sm:h-11 w-auto max-h-11 object-contain"
                 unoptimized
               />
-              <span className="text-lg font-black tracking-tight">{t.common.brandName}</span>
+              <span className="text-xl font-black tracking-tight">{t.common.brandName}</span>
             </Link>
-            <p className="mt-2 text-xs leading-relaxed text-white/60">{t.footer.tagline}</p>
-            <div className="mt-3.5 flex flex-wrap gap-2">
+            <p className="max-w-md text-xs sm:text-sm leading-relaxed text-white/60">
+              {t.footer.tagline}
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-2">
               {socials.map(({ href, label, icon: Icon, hover }) => (
                 <a
                   key={label}
@@ -111,203 +84,98 @@ export default function Footer() {
                   target="_blank"
                   rel="noopener"
                   aria-label={label}
-                  className={`grid h-8 w-8 place-items-center rounded-lg border border-white/10 bg-white/5 text-white transition hover:-translate-y-0.5 ${hover}`}
+                  className={`grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-white transition duration-200 hover:-translate-y-0.5 hover:border-transparent ${hover}`}
                 >
-                  <Icon size={15} />
+                  <Icon size={17} />
                 </a>
               ))}
             </div>
           </div>
 
-          {/* Desktop 4-column layout */}
-          <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1.3fr] gap-8 lg:gap-10">
-            <div>
-              <Link href="/" className="inline-flex items-center gap-3 text-white">
-                <Image
-                  src={photoUrl}
-                  alt={t.common.brandName}
-                  width={48}
-                  height={48}
-                  className="h-12 w-12 rounded-full object-cover ring-2 ring-white/20"
-                  unoptimized
-                />
-                <span className="text-xl font-black tracking-tight">{t.common.brandName}</span>
-              </Link>
-              <p className="mt-4 max-w-xs text-sm leading-relaxed text-white/60">{t.footer.tagline}</p>
-              <div className="mt-6 flex flex-wrap gap-2">
-                {socials.map(({ href, label, icon: Icon, hover }) => (
-                  <a
-                    key={label}
-                    href={href}
-                    target="_blank"
-                    rel="noopener"
-                    aria-label={label}
-                    className={`grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/5 text-white transition duration-200 hover:-translate-y-0.5 hover:border-transparent ${hover}`}
-                  >
-                    <Icon size={18} />
-                  </a>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h4 className={`${heading} mb-4`}>{t.footer.boutique}</h4>
-              <ul className="space-y-2.5">
-                <li><FooterLink href="/">{t.footer.allProducts}</FooterLink></li>
-                <li><FooterLink href="/categorie/nouveautes">{t.footer.newArrivals}</FooterLink></li>
-                <li><FooterLink href="/categorie/promotions">{t.footer.promotions}</FooterLink></li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className={`${heading} mb-4`}>{t.footer.help}</h4>
-              <ul className="space-y-2.5">
-                <li><FooterLink href="/contact">{t.footer.contact}</FooterLink></li>
-                <li><FooterLink href="/livraison">{t.footer.deliveryReturn}</FooterLink></li>
-                <li><FooterLink href="/cgv">{t.footer.terms}</FooterLink></li>
-                <li><FooterLink href="/politique-confidentialite">{t.footer.privacy}</FooterLink></li>
-                <li><FooterLink href="/mentions-legales">{t.footer.legal}</FooterLink></li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className={`${heading} mb-4`}>{t.footer.contact}</h4>
-              <ul className="space-y-3 text-sm">
-                {phones.map((p) => (
-                  <li key={p}>
-                    <a href={`tel:${p}`} className="flex items-center gap-3 text-white/70 transition hover:text-white">
-                      <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/10"><Phone size={15} /></span>
-                      <span dir="ltr">+216 {p}</span>
-                    </a>
-                  </li>
-                ))}
-                <li>
-                  <a href={`https://wa.me/216${whatsapp}`} target="_blank" rel="noopener" className="flex items-center gap-3 text-white/70 transition hover:text-white">
-                    <span className="grid h-8 w-8 place-items-center rounded-lg bg-white/10"><MessageCircle size={15} /></span>
-                    <span>{t.common.whatsapp}: <span dir="ltr">{whatsapp}</span></span>
-                  </a>
-                </li>
-                <li>
-                  <a href={`mailto:${email}`} className="flex items-center gap-3 break-all text-white/70 transition hover:text-white">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10"><Mail size={15} /></span>
-                    {email}
-                  </a>
-                </li>
-                <li className="flex items-center gap-3 text-white/70">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10"><MapPin size={15} /></span>
-                  {t.footer.location}
-                </li>
-              </ul>
-            </div>
+          {/* Quick Navigation Column */}
+          <div className="lg:col-span-3">
+            <h4 className="text-xs font-black uppercase tracking-[0.18em] text-white mb-3 sm:mb-4">
+              {t.footer.boutique}
+            </h4>
+            <ul className="space-y-2">
+              <li>
+                <FooterLink href="/">{t.footer.allProducts}</FooterLink>
+              </li>
+              <li>
+                <FooterLink href="/categorie/nouveautes">{t.footer.newArrivals}</FooterLink>
+              </li>
+              <li>
+                <FooterLink href="/categorie/promotions">{t.footer.promotions}</FooterLink>
+              </li>
+            </ul>
           </div>
 
-          {/* Mobile Accordions */}
-          <div className="sm:hidden space-y-2">
-            {/* Boutique Accordion */}
-            <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggle('boutique')}
-                className="w-full flex items-center justify-between px-4 py-3 text-start cursor-pointer"
+          {/* Highlighted Contact Column (Mise en valeur) */}
+          <div className="lg:col-span-4">
+            <h4 className="text-xs font-black uppercase tracking-[0.18em] text-white mb-3 sm:mb-4">
+              Contact &amp; Commandes
+            </h4>
+            <div className="space-y-2.5">
+              {/* Phone call pill */}
+              <a
+                href={`tel:${primaryPhone}`}
+                className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 p-3 sm:p-3.5 text-white transition hover:bg-white/10 hover:border-white/30"
               >
-                <span className={heading}>{t.footer.boutique}</span>
-                <ChevronDown
-                  size={16}
-                  className={`text-white/60 transition-transform duration-200 ${
-                    openSection === 'boutique' ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {openSection === 'boutique' && (
-                <div className="px-4 pb-3 pt-1 border-t border-white/10 flex flex-col space-y-1">
-                  <FooterLink href="/">{t.footer.allProducts}</FooterLink>
-                  <FooterLink href="/categorie/nouveautes">{t.footer.newArrivals}</FooterLink>
-                  <FooterLink href="/categorie/promotions">{t.footer.promotions}</FooterLink>
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-600/30 text-blue-400">
+                  <Phone size={18} />
+                </span>
+                <div>
+                  <span className="text-[11px] font-medium text-white/60 block">Téléphone direct</span>
+                  <span className="text-sm sm:text-base font-black tracking-wide" dir="ltr">
+                    +216 {primaryPhone}
+                  </span>
                 </div>
-              )}
-            </div>
+              </a>
 
-            {/* Aide Accordion */}
-            <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggle('help')}
-                className="w-full flex items-center justify-between px-4 py-3 text-start cursor-pointer"
+              {/* WhatsApp direct pill */}
+              <a
+                href={`https://wa.me/216${whatsapp}`}
+                target="_blank"
+                rel="noopener"
+                className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 sm:p-3.5 text-white transition hover:bg-emerald-500/20 hover:border-emerald-500/50"
               >
-                <span className={heading}>{t.footer.help}</span>
-                <ChevronDown
-                  size={16}
-                  className={`text-white/60 transition-transform duration-200 ${
-                    openSection === 'help' ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {openSection === 'help' && (
-                <div className="px-4 pb-3 pt-1 border-t border-white/10 flex flex-col space-y-1">
-                  <FooterLink href="/contact">{t.footer.contact}</FooterLink>
-                  <FooterLink href="/livraison">{t.footer.deliveryReturn}</FooterLink>
-                  <FooterLink href="/cgv">{t.footer.terms}</FooterLink>
-                  <FooterLink href="/politique-confidentialite">{t.footer.privacy}</FooterLink>
-                  <FooterLink href="/mentions-legales">{t.footer.legal}</FooterLink>
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#25D366] text-white shadow-sm">
+                  <MessageCircle size={18} />
+                </span>
+                <div>
+                  <span className="text-[11px] font-medium text-emerald-300 block">WhatsApp direct</span>
+                  <span className="text-sm sm:text-base font-black tracking-wide" dir="ltr">
+                    WhatsApp: {whatsapp}
+                  </span>
                 </div>
-              )}
-            </div>
+              </a>
 
-            {/* Contact Accordion */}
-            <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggle('contact')}
-                className="w-full flex items-center justify-between px-4 py-3 text-start cursor-pointer"
+              {/* Email */}
+              <a
+                href={`mailto:${email}`}
+                className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-xs sm:text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
               >
-                <span className={heading}>{t.footer.contact}</span>
-                <ChevronDown
-                  size={16}
-                  className={`text-white/60 transition-transform duration-200 ${
-                    openSection === 'contact' ? 'rotate-180' : ''
-                  }`}
-                />
-              </button>
-              {openSection === 'contact' && (
-                <div className="px-4 pb-3 pt-2 border-t border-white/10 flex flex-col space-y-2.5 text-xs">
-                  {phones.map((p) => (
-                    <a key={p} href={`tel:${p}`} className="flex items-center gap-2.5 text-white/70">
-                      <Phone size={14} />
-                      <span dir="ltr">+216 {p}</span>
-                    </a>
-                  ))}
-                  <a
-                    href={`https://wa.me/216${whatsapp}`}
-                    target="_blank"
-                    rel="noopener"
-                    className="flex items-center gap-2.5 text-white/70"
-                  >
-                    <MessageCircle size={14} />
-                    <span>WhatsApp: <span dir="ltr">{whatsapp}</span></span>
-                  </a>
-                  <a href={`mailto:${email}`} className="flex items-center gap-2.5 text-white/70 break-all">
-                    <Mail size={14} />
-                    <span>{email}</span>
-                  </a>
-                  <div className="flex items-center gap-2.5 text-white/70">
-                    <MapPin size={14} />
-                    <span>{t.footer.location}</span>
-                  </div>
-                </div>
-              )}
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-white/80">
+                  <Mail size={15} />
+                </span>
+                <span className="truncate font-semibold">{email}</span>
+              </a>
+
+              {/* Location */}
+              <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-xs sm:text-sm text-white/80">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/10 text-white/80">
+                  <MapPin size={15} />
+                </span>
+                <span className="font-semibold">Tunis, Tunisie</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Bottom copyright row */}
-        <div className="flex flex-col items-center justify-between gap-3 border-t border-white/10 py-5 text-xs text-white/45 sm:flex-row">
-          <span>© {new Date().getFullYear()} {t.common.brandName}. {t.footer.rights}</span>
-          <Link
-            href="/contact"
-            className="inline-flex items-center gap-1 font-semibold text-white/70 transition hover:text-white"
-          >
-            {t.footer.contact} <ArrowUpRight size={14} />
-          </Link>
+        {/* Bottom Copyright */}
+        <div className="mt-8 border-t border-white/10 pt-6 text-center text-xs text-white/45 sm:flex sm:items-center sm:justify-between sm:text-left">
+          <span>© {new Date().getFullYear()} {t.common.brandName}. Tous droits réservés.</span>
+          <span className="mt-2 block sm:mt-0 text-white/60 font-semibold">Tunis, Tunisie</span>
         </div>
       </div>
     </footer>

@@ -367,31 +367,6 @@ export default function AddToCart({ product }: { product: Product }) {
         </div>
       </div>
 
-      {/* Trust Strip Box (Photo 2) */}
-      <div className="rounded-2xl border border-blue-100 bg-[#F0F7FF] p-3.5 sm:p-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 text-xs font-semibold text-neutral-700">
-        <div className="flex items-center gap-2.5">
-          <Truck size={17} className="text-blue-600 shrink-0" />
-          <div>
-            <p className="font-bold text-neutral-900 leading-tight">Livraison rapide</p>
-            <p className="text-[11px] text-neutral-500">toute la Tunisie</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <CreditCard size={17} className="text-blue-600 shrink-0" />
-          <div>
-            <p className="font-bold text-neutral-900 leading-tight">Paiement</p>
-            <p className="text-[11px] text-neutral-500">à la livraison</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <RotateCcw size={17} className="text-blue-600 shrink-0" />
-          <div>
-            <p className="font-bold text-neutral-900 leading-tight">Échange &amp; retour</p>
-            <p className="text-[11px] text-neutral-500">sous 7 jours</p>
-          </div>
-        </div>
-      </div>
-
       {/* REAL FIXED BOTTOM PURCHASE BAR (Mobile Viewport) */}
       <div className="fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-t border-neutral-200/90 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] px-3.5 sm:px-4 py-2.5 pb-[calc(0.65rem+env(safe-area-inset-bottom,0px))] md:hidden transition-all">
         {soldOut ? (
