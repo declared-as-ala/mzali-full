@@ -16,9 +16,6 @@ import {
   ChevronLeft,
   ArrowRight,
   RefreshCw,
-  Truck,
-  ShieldCheck,
-  RotateCcw,
   FileText,
   Info,
   Tag,
@@ -285,51 +282,6 @@ export default function PanierPage() {
                         : 'Mettre à jour'}
                     </span>
                   </button>
-                </div>
-              </div>
-
-              {/* Trust Strip (Livraison rapide, Paiement à la livraison, Échange & retour) */}
-              <div className="rounded-2xl border border-blue-100/90 bg-[#F0F7FF] p-4 sm:p-5">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                      <Truck size={18} />
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold text-neutral-900">
-                        {lang === 'ar' ? 'توصيل سريع' : 'Livraison rapide'}
-                      </p>
-                      <p className="text-[11px] text-neutral-500">
-                        {lang === 'ar' ? 'كامل تراب الجمهورية (24-48 ساعة)' : 'Partout en Tunisie (24h – 48h)'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                      <ShieldCheck size={18} />
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold text-neutral-900">
-                        {lang === 'ar' ? 'الدفع عند الاستلام' : 'Paiement à la livraison'}
-                      </p>
-                      <p className="text-[11px] text-neutral-500">
-                        {lang === 'ar' ? 'بدون أي التزام مسبق' : 'Sans engagement'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                      <RotateCcw size={18} />
-                    </div>
-                    <div>
-                      <p className="text-xs sm:text-sm font-bold text-neutral-900">
-                        {lang === 'ar' ? 'استبدال واسترجاع' : 'Échange & retour'}
-                      </p>
-                      <p className="text-[11px] text-neutral-500">
-                        {lang === 'ar' ? 'خلال 7 أيام' : 'Sous 7 jours'}
-                      </p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>

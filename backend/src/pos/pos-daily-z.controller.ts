@@ -23,7 +23,7 @@ export class PosDailyZController {
   get(@Param('date') date: string) { return this.reports.get(date); }
 
   @Post(':date/close')
-  @RequirePermissions('pos.sessions.review')
+  @RequirePermissions('pos.close_session')
   async close(@Param('date') date: string, @CurrentUser() user: RequestUser) {
     const result = await this.reports.finalize(date, user.userId);
     await this.audit.log({ actor: { type: 'employee', id: user.userId, name: user.name }, action: 'pos.daily_z.close', entityType: 'pos_daily_z', entityId: date, summary: `Clôture ${result.number}` });

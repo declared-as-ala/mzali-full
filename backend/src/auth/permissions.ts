@@ -128,6 +128,7 @@ const ROLE_PERMISSIONS: Record<EmployeeRole, readonly Permission[]> = {
     'orders.read', 'orders.write', 'orders.delete', 'shipping.push',
     'orders.return', 'orders.return.view',
     'pos.open_session', 'pos.close_session', 'pos.sell',
+    'pos.sessions.read',
     'pos.view_boutique_stock', 'pos.view_depot_stock',
     'pos.apply_basic_discount', 'pos.reprint_ticket',
     'pos.open_cash_drawer',

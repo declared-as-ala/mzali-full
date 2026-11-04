@@ -133,7 +133,8 @@ export default function CheckoutPage() {
             bundleSlot: i.bundleSlot,
           })),
           customer: {
-            name: form.firstName.trim() || undefined,
+            firstName: form.firstName.trim() || undefined,
+          name: form.firstName.trim() || undefined,
             phone: normalizePhone(form.phone),
             city: form.city.trim() || undefined,
             locality: form.locality?.trim() || undefined,
@@ -215,6 +216,7 @@ export default function CheckoutPage() {
           bundleSlot: i.bundleSlot,
         })),
         customer: {
+          firstName: form.firstName.trim() || undefined,
           name: form.firstName.trim() || undefined,
           phone: normalizePhone(form.phone),
           city: form.city.trim() || undefined,
@@ -239,8 +241,13 @@ export default function CheckoutPage() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? t.checkout.orderFailed);
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response
+      }
+      if (!res.ok) throw new Error(data?.error ?? (res.status ? `Erreur du serveur (${res.status})` : t.checkout.orderFailed));
 
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem(DRAFT_STORAGE_KEY);

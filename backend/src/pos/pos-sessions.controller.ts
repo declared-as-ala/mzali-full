@@ -106,7 +106,7 @@ export class PosSessionsController {
   }
 
   @Post(':id/takeover')
-  @RequirePermissions('pos.sessions.review')
+  @RequirePermissions('pos.close_session')
   async takeover(@Param('id') id: string, @Body() dto: TakeoverSessionDto, @CurrentUser() user: RequestUser, @Req() posReq: PosRequest) {
     const doc = await this.sessions.takeover(id, user.userId, user.name, dto.note);
     const cashierName = await this.sessions.resolveCashierName(doc.cashierId);
@@ -124,7 +124,7 @@ export class PosSessionsController {
   }
 
   @Post(':id/force-close')
-  @RequirePermissions('pos.sessions.review')
+  @RequirePermissions('pos.close_session')
   async forceClose(@Param('id') id: string, @Body() dto: CloseSessionDto, @CurrentUser() user: RequestUser, @Req() posReq: PosRequest) {
     const doc = await this.sessions.forceClose(id, user.name, dto.closingCountedCashMinor, dto.note);
     const cashierName = await this.sessions.resolveCashierName(doc.cashierId);

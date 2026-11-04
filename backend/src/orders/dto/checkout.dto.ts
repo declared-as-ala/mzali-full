@@ -14,6 +14,7 @@ import { ORDER_STATUS_VALUES } from '@/orders/order-status';
 
 class CheckoutCustomerDto {
   @IsOptional() @IsString() firstName?: string;
+  @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() lastName?: string;
   @IsString() phone!: string;
   @IsOptional() @IsString() phone2?: string;
@@ -26,13 +27,13 @@ class CheckoutCustomerDto {
 }
 
 class CartItemDto {
-  @IsString() lineId!: string;
+  @IsOptional() @IsString() lineId?: string;
   @IsString() productId!: string;
   @IsOptional() @IsString() variantId?: string;
   @IsString() name!: string;
   @IsNumber() price!: number;
   @IsInt() @Min(1) qty!: number;
-  @IsString() image!: string;
+  @IsOptional() @IsString() image?: string;
   @IsOptional() @IsObject() variation?: Record<string, string>;
   @IsOptional() @IsArray() bundleItems?: Record<string, string>[];
   @IsOptional() @IsString() bundleId?: string;
@@ -53,4 +54,8 @@ export class CheckoutDto {
   @IsOptional() @IsIn(ORDER_STATUS_VALUES) status?: string;
   @IsOptional() @IsInt() attempts?: number;
   @IsOptional() @IsString() couponCode?: string;
+  @IsOptional() @IsString() note?: string;
+  @IsOptional() @IsString() draftId?: string;
+  @IsOptional() @IsString() orderId?: string;
+  @IsOptional() @IsString() idempotencyKey?: string;
 }
