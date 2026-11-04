@@ -21,8 +21,8 @@ export async function GET(req: Request) {
         page,
         perPage,
         search,
-        status: 'any',
-        ...(posOnly !== null ? { posOnly: posOnly === 'true' } : {}),
+        status: 'published',
+        posOnly: true,
       },
     });
     return NextResponse.json(data);

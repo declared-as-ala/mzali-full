@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowDownRight, ArrowLeft, Banknote, LogOut, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
+import { ArrowDownRight, ArrowLeft, Banknote, LogOut, Plus, Search, Star, Wallet, Wifi, WifiOff, X, UserCheck } from 'lucide-react';
 import CashMovementModal from './CashMovementModal';
 import SessionConflictModal from './SessionConflictModal';
 import { getTerminalCode, posFetch } from '@/lib/device';
@@ -255,15 +255,15 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
 
   const filteredItems = useMemo(() => {
     if (!catalog) return [];
-    let items = catalog.items;
-    if (items.some((i) => i.posOnly)) items = items.filter((i) => i.posOnly);
+    let items = catalog.items.filter((i) => i.posOnly === true);
+
     if (activeCategory) items = items.filter((i) => i.categoryIds.includes(activeCategory));
     const q = query.trim().toLowerCase();
     if (q) items = items.filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q));
     return [...new Map(items.map(i => [i.productId, { ...i, available: items.filter(v => v.productId === i.productId).reduce((n, v) => n + v.available, 0) }])).values()];
   }, [catalog, activeCategory, query]);
 
-  const favoriteItems = useMemo(() => [...new Map((catalog?.items.filter(i => i.favorite) ?? []).map(i => [i.productId, { ...i, available: (catalog?.items.filter(v => v.productId === i.productId) ?? []).reduce((n, v) => n + v.available, 0) }])).values()], [catalog]);
+  const favoriteItems = useMemo(() => [...new Map((catalog?.items.filter(i => i.posOnly === true && i.favorite) ?? []).map(i => [i.productId, { ...i, available: (catalog?.items.filter(v => v.productId === i.productId) ?? []).reduce((n, v) => n + v.available, 0) }])).values()], [catalog]);
 
   function addToCart(item: PosCatalogItem, qty = 1) {
     if (item.stockTracked === false) item = { ...item, available: Number.MAX_SAFE_INTEGER };
@@ -838,8 +838,9 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
       {/* Main Content Area */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row bg-slate-50">
         <main className="flex min-w-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:p-2.5 pb-24 lg:pb-2.5">
-          {/* Search bar */}
-          <div className="relative">
+          {/* Search bar + Nouveau produit POS */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
             <Search size={18} className="pointer-events-none absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               ref={searchInputRef}
@@ -856,6 +857,18 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
               <kbd className="pointer-events-none absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400 hidden sm:block">/</kbd>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => router.push('/products')}
+            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 sm:py-2 text-xs font-black text-white hover:bg-blue-700 transition shadow-2xs whitespace-nowrap cursor-pointer"
+            title="Gérer ou créer un nouveau produit POS"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">Nouveau produit POS</span>
+            <span className="sm:hidden">+ Produit</span>
+          </button>
+        </div>
 
           {!query && !activeCategory && (
             <div className="space-y-3">

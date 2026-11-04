@@ -9,10 +9,7 @@ import {
   ExternalLink,
   RefreshCw,
   Store,
-  Globe,
   X,
-  Check,
-  Tag,
   Boxes,
 } from 'lucide-react';
 import NavBar from './NavBar';
@@ -43,14 +40,12 @@ export default function PosProductsView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'posOnly' | 'webOnly'>('posOnly');
 
   // Edit modal state
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
   const [editPrice, setEditPrice] = useState('');
   const [editStock, setEditStock] = useState('');
   const [editName, setEditName] = useState('');
-  const [editPosOnly, setEditPosOnly] = useState(true);
   const [saving, setSaving] = useState(false);
 
   // Create modal state
@@ -59,7 +54,6 @@ export default function PosProductsView({
   const [newPrice, setNewPrice] = useState('');
   const [newStock, setNewStock] = useState('10');
   const [newSku, setNewSku] = useState('');
-  const [newPosOnly, setNewPosOnly] = useState(true);
   const [createSaving, setCreateSaving] = useState(false);
 
   const fetchProducts = useCallback(async () => {
@@ -71,7 +65,9 @@ export default function PosProductsView({
       if (!res.ok) {
         throw new Error(data.error || 'Erreur lors du chargement des produits');
       }
-      setProducts(data.items || []);
+      // Strictly POS products only
+      const all: ProductRow[] = data.items || [];
+      setProducts(all.filter((p) => p.posOnly === true));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
     } finally {
@@ -85,12 +81,6 @@ export default function PosProductsView({
 
   const filteredProducts = useMemo(() => {
     let list = products;
-    if (filterType === 'posOnly') {
-      list = list.filter((p) => p.posOnly === true);
-    } else if (filterType === 'webOnly') {
-      list = list.filter((p) => !p.posOnly);
-    }
-
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       list = list.filter(
@@ -101,39 +91,13 @@ export default function PosProductsView({
       );
     }
     return list;
-  }, [products, filterType, search]);
+  }, [products, search]);
 
   const openEdit = (product: ProductRow) => {
     setEditingProduct(product);
     setEditName(product.name);
     setEditPrice(String(product.price));
     setEditStock(product.stockQuantity != null ? String(product.stockQuantity) : '');
-    setEditPosOnly(Boolean(product.posOnly));
-  };
-
-  const handleTogglePosOnly = async (product: ProductRow) => {
-    const updatedPosOnly = !product.posOnly;
-    try {
-      // Optimistic update
-      setProducts((prev) =>
-        prev.map((p) => (p.id === product.id ? { ...p, posOnly: updatedPosOnly } : p)),
-      );
-      const res = await posFetch(`/api/products/${product.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ posOnly: updatedPosOnly }),
-      });
-      if (!res.ok) {
-        // Revert on failure
-        setProducts((prev) =>
-          prev.map((p) => (p.id === product.id ? { ...p, posOnly: !updatedPosOnly } : p)),
-        );
-      }
-    } catch {
-      setProducts((prev) =>
-        prev.map((p) => (p.id === product.id ? { ...p, posOnly: !updatedPosOnly } : p)),
-      );
-    }
   };
 
   const handleSaveEdit = async () => {
@@ -145,7 +109,7 @@ export default function PosProductsView({
 
       const updateData: Record<string, unknown> = {
         name: editName.trim() || editingProduct.name,
-        posOnly: editPosOnly,
+        posOnly: true,
       };
 
       if (!isNaN(priceNum) && priceNum >= 0) {
@@ -177,7 +141,7 @@ export default function PosProductsView({
                 price: updated.price ?? priceNum,
                 regularPrice: updated.regularPrice ?? priceNum,
                 stockQuantity: updated.stockQuantity ?? stockNum,
-                posOnly: editPosOnly,
+                posOnly: true,
               }
             : p,
         ),
@@ -210,7 +174,7 @@ export default function PosProductsView({
           manageStock: stockNum !== null,
           sku: newSku.trim() || undefined,
           status: 'published',
-          posOnly: newPosOnly,
+          posOnly: true,
         }),
       });
 
@@ -225,7 +189,6 @@ export default function PosProductsView({
       setNewPrice('');
       setNewStock('10');
       setNewSku('');
-      setNewPosOnly(true);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erreur');
     } finally {
@@ -243,7 +206,7 @@ export default function PosProductsView({
           <div className="hidden sm:flex items-center gap-2">
             <Package size={16} className="text-blue-600" />
             <h1 className="text-xs font-black uppercase tracking-wider text-slate-800">
-              Gestion des Produits
+              Articles Caisse (POS)
             </h1>
           </div>
         </div>
@@ -259,19 +222,12 @@ export default function PosProductsView({
             <ExternalLink size={13} />
             <span className="hidden md:inline">Admin complet</span>
           </a>
-          <button
-            onClick={() => setIsCreating(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-blue-700 transition shadow-xs"
-          >
-            <Plus size={14} />
-            <span>Nouveau produit POS</span>
-          </button>
         </div>
       </header>
 
       {/* Main Container */}
       <main className="flex min-h-0 flex-1 flex-col p-3 sm:p-5 gap-3 overflow-hidden">
-        {/* Controls Bar */}
+        {/* Controls Bar with New Product Button in Prominent Place */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
           <div className="flex flex-1 items-center gap-2 min-w-[220px]">
             <Search size={16} className="text-slate-400 ml-1" />
@@ -293,40 +249,22 @@ export default function PosProductsView({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 border-l border-slate-200 pl-3">
+          <div className="flex items-center gap-2">
+            {/* Nouveau produit POS Button in prime place */}
             <button
-              onClick={() => setFilterType('posOnly')}
-              className={`flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-black transition ${
-                filterType === 'posOnly'
-                  ? 'bg-amber-500 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              type="button"
+              onClick={() => setIsCreating(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-black text-white hover:bg-blue-700 transition shadow-xs cursor-pointer whitespace-nowrap"
             >
-              <Store size={12} />
-              <span>POS Uniquement ({products.filter((p) => p.posOnly).length})</span>
+              <Plus size={15} />
+              <span>Nouveau produit POS</span>
             </button>
-            <button
-              onClick={() => setFilterType('webOnly')}
-              className={`flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-black transition ${
-                filterType === 'webOnly'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Globe size={12} />
-              <span>Site Web ({products.filter((p) => !p.posOnly).length})</span>
-            </button>
-            <button
-              onClick={() => setFilterType('all')}
-              className={`flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-black transition ${
-                filterType === 'all'
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Boxes size={12} />
-              <span>Tous ({products.length})</span>
-            </button>
+
+            <span className="hidden sm:inline-flex items-center gap-1 rounded-xl bg-amber-50 border border-amber-200 px-2.5 py-1.5 text-xs font-black text-amber-800">
+              <Store size={13} />
+              <span>{filteredProducts.length} articles</span>
+            </span>
+
             <button
               onClick={fetchProducts}
               disabled={loading}
@@ -344,10 +282,10 @@ export default function PosProductsView({
             <table className="w-full border-collapse text-left text-xs">
               <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 font-black text-slate-600 uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="py-2.5 px-3">Produit</th>
+                  <th className="py-2.5 px-3">Produit POS</th>
                   <th className="py-2.5 px-3">Prix</th>
                   <th className="py-2.5 px-3">Stock Dispo</th>
-                  <th className="py-2.5 px-3">Canal de Vente</th>
+                  <th className="py-2.5 px-3">Statut</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -393,19 +331,9 @@ export default function PosProductsView({
                         </span>
                       </td>
                       <td className="py-2 px-3">
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePosOnly(p)}
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-black cursor-pointer transition ${
-                            p.posOnly
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
-                              : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'
-                          }`}
-                          title="Cliquer pour basculer entre POS uniquement et Site Web"
-                        >
-                          {p.posOnly ? <Store size={12} /> : <Globe size={12} />}
-                          <span>{p.posOnly ? 'POS Uniquement' : 'Site Web'}</span>
-                        </button>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 text-[11px] font-black">
+                          <Store size={11} /> POS Caisse
+                        </span>
                       </td>
                       <td className="py-2 px-3 text-right">
                         <button
@@ -423,9 +351,9 @@ export default function PosProductsView({
                   <tr>
                     <td colSpan={5} className="py-12 text-center text-slate-400">
                       <Package size={32} className="mx-auto mb-2 opacity-50" />
-                      <p className="font-bold">Aucun produit trouvé</p>
+                      <p className="font-bold">Aucun produit POS trouvé</p>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        {search ? 'Essayez un autre mot-clé' : 'Créez un nouveau produit pour démarrer'}
+                        {search ? 'Essayez un autre mot-clé' : 'Cliquez sur "Nouveau produit POS" ci-dessus pour ajouter votre premier article'}
                       </p>
                     </td>
                   </tr>
@@ -442,7 +370,7 @@ export default function PosProductsView({
           <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-black text-slate-900 flex items-center gap-2">
-                <Edit size={16} className="text-blue-600" /> Modifier le produit
+                <Edit size={16} className="text-blue-600" /> Modifier le produit POS
               </h3>
               <button
                 onClick={() => setEditingProduct(null)}
@@ -484,23 +412,6 @@ export default function PosProductsView({
                     placeholder="Illimité"
                   />
                 </div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div className="space-y-0.5">
-                    <p className="font-black text-slate-900">Vendre uniquement au POS (Caisse)</p>
-                    <p className="text-[11px] font-semibold text-slate-500">
-                      N&apos;apparaît pas sur le site web
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={editPosOnly}
-                    onChange={(e) => setEditPosOnly(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                  />
-                </label>
               </div>
             </div>
 
@@ -587,23 +498,6 @@ export default function PosProductsView({
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
                 />
               </div>
-
-              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div className="space-y-0.5">
-                    <p className="font-black text-amber-950">Vente POS uniquement</p>
-                    <p className="text-[11px] font-semibold text-amber-800">
-                      Coché = vendu en magasin, masqué sur le site
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={newPosOnly}
-                    onChange={(e) => setNewPosOnly(e.target.checked)}
-                    className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                  />
-                </label>
-              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -629,4 +523,3 @@ export default function PosProductsView({
     </div>
   );
 }
-
