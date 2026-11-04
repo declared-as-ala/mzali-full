@@ -55,9 +55,9 @@ export default function Header({ categories }: { categories: { name: string; slu
             <Image
               src={siteConfig.photoUrl}
               alt={t.common.brandName}
-              width={44}
+              width={120}
               height={44}
-              className="h-11 w-11 rounded-full object-cover ring-2 ring-brand-50"
+              className="h-10 sm:h-11 w-auto max-h-11 object-contain"
               unoptimized
             />
             <span className="hidden text-lg font-black tracking-tight text-ink-900 sm:block">{t.common.brandName}</span>

@@ -45,7 +45,7 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
-  const [orderSummaryOpen, setOrderSummaryOpen] = useState(false);
+  const [orderSummaryOpen, setOrderSummaryOpen] = useState(true);
 
   const [form, setForm] = useState<{
     firstName: string;
@@ -406,10 +406,10 @@ export default function CheckoutPage() {
                           <button
                             type="button"
                             onClick={() => remove(i.lineId)}
-                            className="text-neutral-400 hover:text-red-500 p-1 cursor-pointer"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 active:scale-95 transition cursor-pointer"
                             aria-label={t.cart.remove}
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={14} className="text-rose-600" />
                           </button>
                         </div>
                       </li>
@@ -754,11 +754,11 @@ export default function CheckoutPage() {
                         <button
                           type="button"
                           onClick={() => remove(i.lineId)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 transition cursor-pointer"
                           title={t.cart.remove}
                           aria-label={t.cart.remove}
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={14} className="text-rose-600" />
                         </button>
                       </div>
                     </li>
