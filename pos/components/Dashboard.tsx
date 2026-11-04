@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import OpenCashSession from './OpenCashSession';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, BarChart3, History, ShoppingCart, Sparkles, Store, UserCheck, Zap } from 'lucide-react';
+import { ArrowRight, BarChart3, History, Package, ShoppingCart, Sparkles, Store, UserCheck, Zap } from 'lucide-react';
 import NavBar from './NavBar';
 
 export default function Dashboard({ cashierName }: { cashierName: string; canEdit?: boolean }) {
@@ -28,9 +28,9 @@ export default function Dashboard({ cashierName }: { cashierName: string; canEdi
         </div>
       </header>
 
-      {/* Main Launcher Section with 3 Action Buttons */}
+      {/* Main Launcher Section with 4 Action Buttons */}
       <main className="flex flex-1 items-center justify-center p-6 sm:p-10">
-        <div className="w-full max-w-5xl">
+        <div className="w-full max-w-6xl">
           <div className="text-center mb-8">
             <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200 px-4 py-1.5 text-xs font-black text-blue-700 uppercase tracking-widest mb-2 shadow-2xs">
               <Zap size={14} className="text-amber-500" /> Menu Principal Point de Vente
@@ -41,7 +41,7 @@ export default function Dashboard({ cashierName }: { cashierName: string; canEdi
             <p className="text-xs font-bold text-slate-500">Choisissez une section ci-dessous pour démarrer votre activité</p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {/* Button 1: Caisse (Ventes) */}
             <div
               role="button" tabIndex={0}
@@ -122,6 +122,33 @@ export default function Dashboard({ cashierName }: { cashierName: string; canEdi
               <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs font-black">
                 <span className="text-slate-400">Rapports de Caisse</span>
                 <span className="text-emerald-400 font-black group-hover:text-emerald-300">Consulter les rapports →</span>
+              </div>
+            </div>
+
+            {/* Button 4: Produits (Gestion POS) */}
+            <div
+              onClick={() => router.push('/products')}
+              className="group relative overflow-hidden rounded-3xl bg-slate-900 border border-amber-500/30 p-8 text-white shadow-2xl shadow-slate-900/20 hover:border-amber-500/80 hover:shadow-amber-500/20 hover:-translate-y-1.5 transition-all duration-300 cursor-pointer"
+            >
+              <div className="absolute -right-8 -top-8 h-36 w-36 rounded-full bg-amber-600/20 blur-2xl pointer-events-none group-hover:bg-amber-600/35 transition-all" />
+
+              <div className="flex items-center justify-between mb-6">
+                <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500/20 border border-amber-500/30 px-3.5 py-1.5 text-xs font-black uppercase tracking-wider text-amber-300">
+                  <Package size={15} /> 4. PRODUITS
+                </span>
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-600 text-white shadow-md group-hover:bg-amber-500 group-hover:scale-110 transition-all">
+                  <ArrowRight size={18} />
+                </span>
+              </div>
+
+              <h3 className="text-2xl font-black text-white mb-2.5 tracking-tight">Gestion Produits</h3>
+              <p className="text-xs font-semibold text-slate-300 mb-8 leading-relaxed">
+                Gérer les articles de caisse, modifier les prix, ajuster les stocks et basculer en POS seul.
+              </p>
+
+              <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs font-black">
+                <span className="text-slate-400">Articles POS</span>
+                <span className="text-amber-400 font-black group-hover:text-amber-300">Gérer les produits →</span>
               </div>
             </div>
           </div>

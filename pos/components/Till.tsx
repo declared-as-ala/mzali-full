@@ -304,8 +304,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   const [variantPicker, setVariantPicker] = useState<string | null>(null);
   function handleProductSelect(item: PosCatalogItem) {
     const variants = catalog?.items.filter(v => v.productId === item.productId) ?? [];
-    if (variants.length > 1 || variants[0]?.size || variants[0]?.color) setVariantPicker(item.productId);
-    else if (variants[0]) addToCart(variants[0]);
+    addToCart(variants[0] ?? item);
+
   }
 
   const [offerModalItem, setOfferModalItem] = useState<PosCatalogItem | null>(null);
@@ -688,7 +688,7 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
   return (
     <div className="flex h-full flex-col bg-[#F4F6F9] text-slate-900 selection:bg-blue-600 selection:text-white overflow-hidden">
       {/* Top Light Header */}
-      <header className="flex flex-none flex-wrap items-center justify-between gap-2 sm:gap-3 border-b border-slate-200 bg-white px-3 sm:px-6 py-2.5 shadow-sm">
+      <header className="flex flex-none items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 sm:px-4 py-1.5 shadow-xs overflow-x-auto">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3.5 min-w-0">
           <NavBar />
           <CashSummary onOpenMovements={() => setCashMovementModalOpen(true)} />
@@ -726,8 +726,8 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
             </button>
           )}
           <button
-            onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-1.5 sm:gap-2 rounded-lg sm:rounded-xl border border-slate-200 bg-slate-50 px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs font-bold text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition shadow-sm whitespace-nowrap"
+            onClick={() => router.push('/sessions/close')}
+            className="hidden"
           >
             <ArrowLeft size={14} />
             <span className="hidden sm:inline">Tableau de bord</span>
@@ -836,13 +836,13 @@ export default function Till({ cashierName, role }: { cashierName: string; role:
 
       {/* Main Content Area */}
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row bg-slate-50">
-        <main className="flex min-w-0 flex-1 flex-col gap-3 sm:gap-4 overflow-y-auto p-3 sm:p-4 lg:p-5 pb-24 lg:pb-5">
+        <main className="flex min-w-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:p-2.5 pb-24 lg:pb-2.5">
           {/* Search bar */}
           <div className="relative">
             <Search size={18} className="pointer-events-none absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               ref={searchInputRef}
-              className="w-full rounded-xl sm:rounded-2xl border border-slate-200 bg-white py-2.5 sm:py-3.5 pl-10 sm:pl-12 pr-12 sm:pr-16 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 shadow-sm"
+              className="w-full rounded-xl border border-slate-200 bg-white py-1.5 sm:py-2 pl-9 pr-10 text-xs sm:text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 shadow-2xs"
               placeholder="Rechercher un produit..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}

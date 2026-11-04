@@ -17,4 +17,5 @@ export class ProductListQueryDto {
   @IsOptional() @Transform(toBool) @IsBoolean() onSale?: boolean;
   @IsOptional() @Transform(toBool) @IsBoolean() featured?: boolean;
   @IsOptional() @Transform(toBool) @IsBoolean() excludePosOnly?: boolean;
+  @IsOptional() @Transform(toBool) @IsBoolean() posOnly?: boolean;
 }

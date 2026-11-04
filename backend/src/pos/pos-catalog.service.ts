@@ -33,14 +33,20 @@ export class PosCatalogService {
 
   async getCatalog(): Promise<PosCatalogResponse> {
     const [productList, categoryList, depotCode, posSettings] = await Promise.all([
-      this.products.list({ perPage: 100, status: 'published' }, true),
+      this.products.list({ perPage: 100, status: 'published', posOnly: true }, true),
       this.categories.list({ hideEmpty: true }),
       this.locations.getDefaultOnlineLocationCode(),
       this.settings.getRaw('pos'),
     ]);
 
-    const products = [...productList.items];
-    for (let page = 2; page <= productList.totalPages; page++) products.push(...(await this.products.list({ perPage: 100, page, status: 'published' }, true)).items);
+    const isPosOnlyFiltered = productList.total > 0;
+    const finalProductList = isPosOnlyFiltered
+      ? productList
+      : await this.products.list({ perPage: 100, status: 'published' }, true);
+    const products = [...finalProductList.items];
+    for (let page = 2; page <= finalProductList.totalPages; page++) {
+      products.push(...(await this.products.list({ perPage: 100, page, status: 'published', ...(isPosOnlyFiltered ? { posOnly: true } : {}) }, true)).items);
+    }
     const productIds = products.map((p) => p.id);
     const allVariants = await this.variants.allForProducts(productIds);
     const stock = await this.ledger.stockForVariants(allVariants.map((v) => v.id), depotCode);
@@ -75,6 +81,7 @@ export class PosCatalogService {
           boutiqueAvailable: available,
           depotAvailable: available,
           favorite: favoriteProductIds.has(p.id),
+          posOnly: p.posOnly ?? false,
           bundles: p.bundles.map((bundle) => ({
             id: bundle.id,
             name: bundle.name,

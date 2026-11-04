@@ -30,6 +30,7 @@ export type PosCatalogItem = {
   /** Live DEPOT quantity of this exact variant: the one inventory shared with the website and the admin. */
   available: number;
   favorite: boolean;
+  posOnly?: boolean;
   bundles: PosProductBundle[];
 };
 

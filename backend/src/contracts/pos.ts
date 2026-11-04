@@ -137,6 +137,7 @@ export type PosCatalogItem = {
   /** @deprecated same value as `available`. */
   depotAvailable: number;
   favorite: boolean;
+  posOnly?: boolean;
   /** This product's configured quantity offers (may be empty). The POS
    *  shows these in the "Offres disponibles" section and uses them purely
    *  for display — the server always recomputes and validates the final

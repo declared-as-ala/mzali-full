@@ -20,7 +20,11 @@ export function buildProductFilter(query: ProductListQuery, forcePublished: bool
   } else if (query.status && query.status !== 'any') {
     filter.status = query.status;
   }
-  if (excludePosOnly) filter.posOnly = { $ne: true };
+  if (query.posOnly === true) {
+    filter.posOnly = true;
+  } else if (query.posOnly === false || excludePosOnly) {
+    filter.posOnly = { $ne: true };
+  }
   if (query.search) filter.$text = { $search: query.search };
   if (query.categorySlug) filter.categorySlugs = query.categorySlug;
   if (query.categoryId) filter.categoryIds = query.categoryId;
