@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start -p ${PORT:-3000} -H 0.0.0.0",
-    "start:prod": "next start -p ${PORT:-3000} -H 0.0.0.0",
+    "dev": "node init && next dev",
+    "build": "node init && next build",
+    "start": "node init && next start -p ${PORT:-3000} -H 0.0.0.0",
+    "start:prod": "node init && next start -p ${PORT:-3000} -H 0.0.0.0",
     "lint": "next lint",
     "test:session": "tsx --test tests/*.test.mjs tests/*.test.ts"
   },
