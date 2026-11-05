@@ -16,8 +16,6 @@ import {
   User,
   Phone,
   MapPin,
-  Home,
-  Mail,
   ChevronUp,
   ChevronDown,
   RotateCcw,
@@ -716,74 +714,6 @@ export default function CheckoutPage() {
                   </label>
                 )}
 
-                {/* Address */}
-                <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <span>{t.checkout.address}</span>
-                    <span className="text-[11px] font-normal text-neutral-400">
-                      {lang === 'ar' ? 'اختياري' : 'Optionnel'}
-                    </span>
-                  </div>
-                  <div className="relative mt-1">
-                    <Home
-                      size={17}
-                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
-                    />
-                    <input
-                      type="text"
-                      autoComplete="street-address"
-                      placeholder={lang === 'ar' ? 'النهج، الحي، المكان المميز...' : 'Rue, quartier, repère...'}
-                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
-                      value={form.address}
-                      onChange={(e) => setForm({ ...form, address: e.target.value })}
-                    />
-                  </div>
-                </label>
-
-                {/* Email */}
-                <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <span>{t.checkout.email}</span>
-                    <span className="text-[11px] font-normal text-neutral-400">
-                      {lang === 'ar' ? 'اختياري' : 'Optionnel'}
-                    </span>
-                  </div>
-                  <div className="relative mt-1">
-                    <Mail
-                      size={17}
-                      className={`absolute ${isRtl ? 'right-3.5' : 'left-3.5'} top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none`}
-                    />
-                    <input
-                      type="email"
-                      autoComplete="email"
-                      placeholder="exemple@email.com"
-                      className={`input ${isRtl ? 'pr-10' : 'pl-10'} font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100`}
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    />
-                  </div>
-                </label>
-
-                {/* Note */}
-                <label className="block text-sm font-semibold text-neutral-700 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <span>{t.checkout.note}</span>
-                    <span className="text-[11px] font-normal text-neutral-400">
-                      {lang === 'ar' ? 'اختياري' : 'Optionnel'}
-                    </span>
-                  </div>
-                  <textarea
-                    rows={2}
-                    placeholder={
-                      lang === 'ar'
-                        ? 'أي تفاصيل إضافية بخصوص التوصيل أو المقاس...'
-                        : 'Instructions spéciales pour le livreur...'
-                    }
-                    className="input mt-1 font-normal text-neutral-900 border-neutral-300 focus:border-blue-600 focus:ring-blue-100"
-                    value={form.note}
-                    onChange={(e) => setForm({ ...form, note: e.target.value })}
-                  />
-                </label>
               </div>
             </div>
 
