@@ -7,11 +7,11 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "node api.js && nest build",
-    "start": "node api.js && node dist/main.js",
-    "start:dev": "nest start --watch",
-    "start:worker": "node dist/worker-main.js",
-    "start:worker:dev": "nest start --watch --entryFile worker-main",
+    "build": "node init && nest build",
+    "start": "node init && node dist/main.js",
+    "start:dev": "node init && nest start --watch",
+    "start:worker": "node init && node dist/worker-main.js",
+    "start:worker:dev": "node init && nest start --watch --entryFile worker-main",
     "cli": "node dist/cli.js",
     "lint": "eslint \"src/**/*.ts\" \"scripts/**/*.ts\" \"test/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
