@@ -67,12 +67,12 @@ export default function ProductLoading() {
         {/* Related Products Skeleton */}
         <section className="mt-16">
           <div className="h-7 w-44 rounded-md bg-ink-200 mb-6" />
-          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white p-3 space-y-3">
-                <div className="w-full aspect-[3/4] rounded-xl bg-ink-200" />
-                <div className="h-4 w-3/4 rounded bg-ink-200" />
-                <div className="h-5 w-1/3 rounded bg-brand-200" />
+          <div className="grid grid-cols-3 gap-1.5 min-[375px]:gap-2 sm:gap-3.5 md:gap-4 lg:grid-cols-4 lg:gap-5">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="flex flex-col overflow-hidden rounded-xl sm:rounded-2xl border border-ink-200 bg-white p-1.5 min-[375px]:p-2 sm:p-3 space-y-2">
+                <div className="w-full aspect-[3/4] rounded-lg sm:rounded-xl bg-ink-200" />
+                <div className="h-3 sm:h-4 w-3/4 rounded bg-ink-200" />
+                <div className="h-3.5 sm:h-5 w-1/2 rounded bg-brand-200" />
               </div>
             ))}
           </div>
