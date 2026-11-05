@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -46,6 +46,109 @@ export default function CheckoutPage() {
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(true);
+
+  // Mobile virtual keyboard & visualViewport state
+  const bottomBarRef = useRef<HTMLDivElement>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  // Smooth scroll active field above the raised sticky bar
+  const scrollActiveIntoView = useCallback((target?: HTMLElement | null) => {
+    if (typeof window === 'undefined') return;
+    const el = target || (document.activeElement as HTMLElement | null);
+    if (!el || !['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return;
+
+    requestAnimationFrame(() => {
+      const barHeight = bottomBarRef.current?.offsetHeight || 75;
+      const vv = window.visualViewport;
+      const visibleHeight = vv ? vv.height : window.innerHeight;
+      const availableBottom = visibleHeight - barHeight - 16;
+      const rect = el.getBoundingClientRect();
+
+      if (rect.bottom > availableBottom) {
+        window.scrollBy({ top: rect.bottom - availableBottom, behavior: 'smooth' });
+      } else if (rect.top < 65) {
+        window.scrollBy({ top: rect.top - 75, behavior: 'smooth' });
+      }
+    });
+  }, []);
+
+  // Track virtual keyboard via window.visualViewport
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    let rafId: number | null = null;
+
+    const updatePosition = () => {
+      const vv = window.visualViewport;
+      const layoutHeight = window.innerHeight;
+      const vvHeight = vv ? vv.height : layoutHeight;
+      const vvOffsetTop = vv ? (vv.offsetTop || 0) : 0;
+
+      // Space below the visible viewport covered by the virtual keyboard
+      const rawOffset = Math.max(0, Math.round(layoutHeight - (vvHeight + vvOffsetTop)));
+      const offset = rawOffset > 60 ? rawOffset : 0;
+      const keyboardActive = offset > 0;
+
+      setKeyboardOffset(offset);
+      setIsKeyboardOpen(keyboardActive);
+
+      if (bottomBarRef.current) {
+        bottomBarRef.current.style.bottom = `${offset}px`;
+        bottomBarRef.current.style.paddingBottom = keyboardActive
+          ? '0.75rem'
+          : 'calc(0.75rem + env(safe-area-inset-bottom, 0px))';
+      }
+
+      if (keyboardActive) {
+        scrollActiveIntoView();
+      }
+    };
+
+    const onViewportChange = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updatePosition);
+    };
+
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', onViewportChange);
+      vv.addEventListener('scroll', onViewportChange);
+    }
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, { passive: true });
+
+    updatePosition();
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (vv) {
+        vv.removeEventListener('resize', onViewportChange);
+        vv.removeEventListener('scroll', onViewportChange);
+      }
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onViewportChange);
+    };
+  }, [scrollActiveIntoView]);
+
+  // Keep input in view when focus shifts between fields
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) {
+        setTimeout(() => scrollActiveIntoView(target), 60);
+        setTimeout(() => scrollActiveIntoView(target), 220);
+        setTimeout(() => scrollActiveIntoView(target), 400);
+      }
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+    };
+  }, [scrollActiveIntoView]);
 
   const [form, setForm] = useState<{
     firstName: string;
@@ -295,7 +398,13 @@ export default function CheckoutPage() {
     <>
       <Header categories={[]} />
 
-      <main className="container-shop py-4 sm:py-8 pb-32 lg:pb-12">
+      <main
+        className="container-shop py-4 sm:py-8 pb-32 lg:pb-12"
+        style={{
+          paddingBottom: keyboardOffset > 0 ? `${keyboardOffset + 120}px` : undefined,
+          transition: 'padding-bottom 0.2s ease-out',
+        }}
+      >
         {/* Top Header & Mobile Back Button (Matching Photo 4) */}
         <div className="mb-4 sm:mb-6">
           <div className="flex items-center gap-3">
@@ -805,7 +914,16 @@ export default function CheckoutPage() {
       </main>
 
       {/* Pinned Mobile Confirmation Bottom Bar (Matching Photo 4) */}
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-200/90 bg-white/95 backdrop-blur-md px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] shadow-[0_-4px_25px_rgba(0,0,0,0.1)] lg:hidden">
+      <div
+        ref={bottomBarRef}
+        style={{
+          bottom: `${keyboardOffset}px`,
+          paddingBottom: isKeyboardOpen
+            ? '0.75rem'
+            : 'calc(0.75rem + env(safe-area-inset-bottom, 0px))',
+          transition: 'bottom 0.15s ease-out, padding-bottom 0.15s ease-out',
+        }}
+        className="fixed inset-x-0 z-50 border-t border-neutral-200/90 bg-white/95 backdrop-blur-md px-4 py-3 shadow-[0_-4px_25px_rgba(0,0,0,0.1)] lg:hidden">
         <div className="mx-auto flex max-w-lg items-center justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">{t.cart.total}</p>

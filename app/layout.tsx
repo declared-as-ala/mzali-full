@@ -1,5 +1,5 @@
 import './globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { LanguageProvider } from '@/components/site/LanguageProvider';
 import { SiteConfigProvider } from '@/components/site/SiteConfigContext';
 import { getDirection } from '@/lib/i18n';
@@ -65,6 +65,13 @@ export const metadata: Metadata = {
     'facebook-domain-verification': fbVerificationToken,
     ...(fbAppId ? { 'fb:app_id': fbAppId } : {}),
   },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
