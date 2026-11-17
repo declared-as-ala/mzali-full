@@ -60,11 +60,20 @@ export class WooCommerceProductService implements ProductService {
     if (!wcQuery.category && query.categorySlug) {
       try {
         const cats = await wooClient.get<{ id: number; slug: string }[]>('/products/categories', { slug: query.categorySlug, per_page: 1 });
-        wcQuery.category = cats.data[0]?.id;
-      } catch {}
+        if (!cats.data[0]?.id) {
+          return { items: [], total: 0, totalPages: 0, page: query.page ?? 1 };
+        }
+        wcQuery.category = cats.data[0].id;
+      } catch {
+        return { items: [], total: 0, totalPages: 0, page: query.page ?? 1 };
+      }
     }
     const res = await wooClient.get<WooProductRaw[]>('/products', wcQuery);
-    return { items: res.data.map(mapProduct), total: res.total, totalPages: res.totalPages, page: query.page ?? 1 };
+    let mapped = res.data.map(mapProduct);
+    if (query.excludeCategorySlug) {
+      mapped = mapped.filter((p) => !p.categorySlugs.includes(query.excludeCategorySlug!));
+    }
+    return { items: mapped, total: res.total, totalPages: res.totalPages, page: query.page ?? 1 };
   }
 
   async getBySlug(slug: string): Promise<Product | null> {

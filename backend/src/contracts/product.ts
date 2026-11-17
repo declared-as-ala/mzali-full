@@ -76,6 +76,7 @@ export type ProductListQuery = {
   status?: string;
   categorySlug?: string;
   categoryId?: string;
+  excludeCategorySlug?: string;
   orderBy?: 'date' | 'price' | 'popularity' | 'rating' | 'title' | 'menu_order';
   order?: 'asc' | 'desc';
   onSale?: boolean;

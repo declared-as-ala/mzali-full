@@ -27,6 +27,7 @@ export function buildProductFilter(query: ProductListQuery, forcePublished: bool
   }
   if (query.search) filter.$text = { $search: query.search };
   if (query.categorySlug) filter.categorySlugs = query.categorySlug;
+  else if (query.excludeCategorySlug) filter.categorySlugs = { $ne: query.excludeCategorySlug };
   if (query.categoryId) filter.categoryIds = query.categoryId;
   if (query.onSale) filter.salePriceMinor = { $ne: null };
   if (query.featured) filter.featured = true;

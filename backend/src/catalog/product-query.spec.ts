@@ -32,6 +32,13 @@ describe('buildProductFilter', () => {
     const filter = buildProductFilter({ categoryId: '507f1f77bcf86cd799439011' }, true);
     expect(filter.categoryIds).toBe('507f1f77bcf86cd799439011');
   });
+
+  it('excludes a category slug when excludeCategorySlug is provided', () => {
+    const filter = buildProductFilter({ excludeCategorySlug: 'casquettes' }, true, true);
+    expect(filter.categorySlugs).toEqual({ $ne: 'casquettes' });
+    expect(filter.status).toBe('published');
+    expect(filter.posOnly).toEqual({ $ne: true });
+  });
 });
 
 describe('buildProductSort', () => {

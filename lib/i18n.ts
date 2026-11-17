@@ -32,6 +32,7 @@ export const dictionaries = {
     nav: {
       announcement: 'Bienvenue à Boutique Ahmed Mzali',
       home: 'Accueil',
+      casquettes: 'Casquettes',
       menu: 'Menu',
       search: 'Recherche',
       cart: 'Panier',
@@ -80,6 +81,13 @@ export const dictionaries = {
     category: {
       label: 'Catégorie',
       empty: 'Aucun produit dans cette catégorie.',
+    },
+    casquettes: {
+      label: 'Collection Exclusive',
+      title: 'Casquettes',
+      subtitle: 'Découvrez notre sélection de casquettes tendance avec livraison rapide partout en Tunisie.',
+      empty: 'Aucune casquette disponible pour le moment.',
+      backToHome: 'Voir nos vêtements & chaussures',
     },
     cart: {
       title: 'Mon panier',
@@ -181,6 +189,7 @@ export const dictionaries = {
     nav: {
       announcement: 'مرحبا بكم في بوتيك أحمد مزالي',
       home: 'الرئيسية',
+      casquettes: 'كاسكيتات',
       menu: 'القائمة',
       search: 'بحث',
       cart: 'السلة',
@@ -229,6 +238,13 @@ export const dictionaries = {
     category: {
       label: 'تصنيف',
       empty: 'لا توجد منتجات في هذا التصنيف.',
+    },
+    casquettes: {
+      label: 'مجموعة حصرية',
+      title: 'كاسكيتات',
+      subtitle: 'اكتشف مجموعتنا المختارة من الكاسكيتات العصرية مع توصيل سريع إلى كامل تراب الجمهورية.',
+      empty: 'لا توجد كاسكيتات متوفرة حالياً.',
+      backToHome: 'مشاهدة الملابس والأحذية',
     },
     cart: {
       title: 'سلة التسوق',

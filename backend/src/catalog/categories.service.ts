@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import type { Category as CategoryContract, CategoryListQuery } from '@contracts';
@@ -8,11 +8,31 @@ import { buildCategoryTree, CategoryTreeNode, toCategoryContract } from './categ
 import { Category, CategoryDocument } from './category.schema';
 
 @Injectable()
-export class CategoriesService {
+export class CategoriesService implements OnModuleInit {
   private readonly cache = new Map<string, { at: number; data: CategoryContract[] | CategoryContract }>();
   private readonly CACHE_TTL_MS = 60_000; // 60 seconds
 
   constructor(@InjectModel(Category.name) private readonly model: Model<Category>) {}
+
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.model.findOneAndUpdate(
+        { slug: 'casquettes' },
+        {
+          $setOnInsert: {
+            name: 'Casquettes',
+            slug: 'casquettes',
+            parentId: null,
+            description: 'Collection de casquettes tendance',
+          },
+        },
+        { upsert: true, new: true },
+      );
+      this.cache.clear();
+    } catch {
+      // Non-fatal on startup
+    }
+  }
 
   async list(query: CategoryListQuery = {}): Promise<CategoryContract[]> {
     const filter: Record<string, unknown> = {};

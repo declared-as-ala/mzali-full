@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import Header from '@/components/site/Header';
 import Footer from '@/components/site/Footer';
 import ProductCard from '@/components/site/ProductCard';
@@ -11,6 +11,13 @@ export const revalidate = 60;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
+  if (slug.toLowerCase() === 'casquettes') {
+    return {
+      title: 'Casquettes — Boutique Ahmed Mzali',
+      alternates: { canonical: 'https://ahmedmzaliboutique.tn/casquettes' },
+    };
+  }
+
   const cat = await categoryService.getBySlug(slug).catch(() => null);
 
   if (!cat) {
@@ -56,9 +63,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  if (slug.toLowerCase() === 'casquettes') {
+    permanentRedirect('/casquettes');
+  }
+
   const lang = await getCurrentLang();
   const t = getDictionary(lang);
-  const { slug } = await params;
   const [cat, categories] = await Promise.all([
     categoryService.getBySlug(slug),
     categoryService.list({ hideEmpty: true }),

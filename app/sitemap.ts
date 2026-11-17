@@ -16,6 +16,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 1.0,
     },
     {
+      url: `${baseUrl}/casquettes`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    {
       url: `${baseUrl}/shop`,
       lastModified: now,
       changeFrequency: 'daily',
@@ -53,12 +59,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // Dynamic category routes
+  // Dynamic category routes (excluding casquettes to prevent duplicate URLs with /casquettes)
   let categoryRoutes: MetadataRoute.Sitemap = [];
   try {
     const categories = await categoryService.list({ hideEmpty: true });
     categoryRoutes = categories
-      .filter((c) => c.slug && c.slug.trim() !== '')
+      .filter((c) => c.slug && c.slug.trim() !== '' && c.slug.toLowerCase() !== 'casquettes')
       .map((c) => ({
         url: `${baseUrl}/categorie/${encodeURIComponent(c.slug)}`,
         lastModified: now,

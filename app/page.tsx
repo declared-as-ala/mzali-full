@@ -48,8 +48,11 @@ export default async function Home() {
   const whatsapp = saved.whatsapp ?? SITE.contact.whatsapp;
   // menu_order/asc matches the admin's drag-and-drop product order (see
   // app/shop/page.tsx for the same default and why).
+  // Exclude Casquettes server-side so they only appear on /casquettes.
   const [firstProductsResult, categories] = await Promise.all([
-    productService.list({ perPage: 100, orderBy: 'menu_order', order: 'asc' }).catch(() => ({ items: [] as Product[], total: 0, totalPages: 0, page: 1 })),
+    productService
+      .list({ perPage: 100, orderBy: 'menu_order', order: 'asc', excludeCategorySlug: 'casquettes' })
+      .catch(() => ({ items: [] as Product[], total: 0, totalPages: 0, page: 1 })),
     categoryService.list({ hideEmpty: true }).catch(() => []),
   ]);
 
@@ -59,14 +62,20 @@ export default async function Home() {
     const promises: Promise<Product[]>[] = [];
     for (let p = 2; p <= firstProductsResult.totalPages; p++) {
       promises.push(
-        productService.list({ perPage: 100, orderBy: 'menu_order', order: 'asc', page: p })
+        productService
+          .list({ perPage: 100, orderBy: 'menu_order', order: 'asc', page: p, excludeCategorySlug: 'casquettes' })
           .then((res) => res.items)
-          .catch(() => [] as Product[])
+          .catch(() => [] as Product[]),
       );
     }
     const additionalPages = await Promise.all(promises);
     products = products.concat(additionalPages.flat());
   }
+
+  // Ensure any product belonging to Casquettes is strictly excluded from homepage grid
+  products = products.filter(
+    (p) => !p.categorySlugs?.some((slug) => slug.toLowerCase() === 'casquettes'),
+  );
 
   return (
     <>

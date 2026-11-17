@@ -10,6 +10,7 @@ export class ProductListQueryDto {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() categorySlug?: string;
   @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsString() excludeCategorySlug?: string;
   @IsOptional()
   @IsIn(['date', 'price', 'popularity', 'rating', 'title', 'menu_order'])
   orderBy?: 'date' | 'price' | 'popularity' | 'rating' | 'title' | 'menu_order';

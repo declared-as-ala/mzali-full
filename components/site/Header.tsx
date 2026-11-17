@@ -38,6 +38,9 @@ export default function Header({ categories }: { categories: { name: string; slu
   const iconBtn =
     'relative grid h-11 w-11 place-items-center rounded-full text-ink-900 transition hover:bg-ink-100 active:scale-95';
 
+  // Avoid duplicating Casquettes if also present in the dynamic categories list
+  const otherCategories = categories.filter((c) => c.slug.toLowerCase() !== 'casquettes');
+
   return (
     <>
       <div className="announce-bar py-2 text-center text-xs sm:text-sm">{t.nav.announcement}</div>
@@ -51,21 +54,34 @@ export default function Header({ categories }: { categories: { name: string; slu
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
 
-          <Link href="/" className="flex items-center gap-3">
-            <Image
-              src={siteConfig.photoUrl}
-              alt={t.common.brandName}
-              width={120}
-              height={44}
-              className="h-10 sm:h-11 w-auto max-h-11 object-contain"
-              unoptimized
-            />
-            <span className="hidden text-lg font-black tracking-tight text-ink-900 sm:block">{t.common.brandName}</span>
-          </Link>
+          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
+            <Link href="/" className="flex items-center gap-2.5 sm:gap-3">
+              <Image
+                src={siteConfig.photoUrl}
+                alt={t.common.brandName}
+                width={120}
+                height={44}
+                className="h-10 sm:h-11 w-auto max-h-11 object-contain"
+                unoptimized
+              />
+              <span className="hidden text-lg font-black tracking-tight text-ink-900 sm:block">{t.common.brandName}</span>
+            </Link>
+
+            <Link
+              href="/casquettes"
+              className={`hidden md:inline-flex items-center rounded-full px-4 py-1.5 text-xs font-extrabold uppercase tracking-wider transition-all duration-200 ${
+                isActive('/casquettes')
+                  ? 'bg-brand-500 text-white shadow-soft ring-2 ring-brand-200'
+                  : 'bg-ink-100/90 text-ink-800 hover:bg-brand-50 hover:text-brand-600'
+              }`}
+            >
+              {t.nav.casquettes}
+            </Link>
+          </div>
 
           <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
             <Link href="/" className={navLink('/')}>{t.nav.home}</Link>
-            {categories.map((c) => (
+            {otherCategories.map((c) => (
               <Link key={c.slug} href={`/categorie/${c.slug}`} className={navLink(`/categorie/${c.slug}`)}>{c.name}</Link>
             ))}
           </nav>
@@ -97,7 +113,11 @@ export default function Header({ categories }: { categories: { name: string; slu
         <div className={`grid transition-all duration-300 lg:hidden ${open ? 'grid-rows-[1fr] border-t border-ink-200' : 'grid-rows-[0fr]'}`}>
           <nav className="overflow-hidden bg-white">
             <div className="space-y-1 p-3">
-              {[{ name: t.nav.home, href: '/' }, ...categories.map((c) => ({ name: c.name, href: `/categorie/${c.slug}` }))].map((l) => (
+              {[
+                { name: t.nav.home, href: '/' },
+                { name: t.nav.casquettes, href: '/casquettes' },
+                ...otherCategories.map((c) => ({ name: c.name, href: `/categorie/${c.slug}` })),
+              ].map((l) => (
                 <Link
                   key={l.href}
                   href={l.href}
@@ -105,7 +125,7 @@ export default function Header({ categories }: { categories: { name: string; slu
                     isActive(l.href) ? 'bg-brand-50 text-brand-600' : 'text-ink-900 hover:bg-ink-100'
                   }`}
                 >
-                  {l.name}
+                  <span>{l.name}</span>
                   <ChevronRight size={16} className="text-ink-400 rtl:rotate-180" />
                 </Link>
               ))}
