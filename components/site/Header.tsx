@@ -35,6 +35,28 @@ function CapIcon({ className = 'h-4 w-4' }: { className?: string }) {
   );
 }
 
+function JacketIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      {/* Bomber jacket collar & shoulders */}
+      <path d="M9 3h6l4 3 3 9-3.5 1.5L17 11v9a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-9l-1.5 5.5L2 15l3-9 4-3Z" />
+      {/* Ribbed bomber collar V-neck */}
+      <path d="M9 3l3 4 3-4" />
+      {/* Center zipper line */}
+      <path d="M12 7v14" />
+    </svg>
+  );
+}
+
 export default function Header({ categories }: { categories: { name: string; slug: string }[] }) {
   const items = useCart((s) => s.items);
   const count = items.reduce((n, i) => n + i.qty, 0);
@@ -59,11 +81,19 @@ export default function Header({ categories }: { categories: { name: string; slu
     `relative rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
       isActive(href) ? 'bg-brand-300 text-white shadow-soft' : 'text-ink-700 hover:bg-ink-100 hover:text-ink-900'
     }`;
+  const pillBtn = (href: string) =>
+    `inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2 py-1 min-[390px]:px-2.5 sm:px-3.5 sm:py-1.5 text-[9.5px] min-[390px]:text-[10.5px] sm:text-xs font-extrabold uppercase tracking-wider transition-all duration-200 shrink-0 ${
+      isActive(href)
+        ? 'bg-brand-500 text-white shadow-soft ring-2 ring-brand-200'
+        : 'bg-brand-50 text-brand-700 border border-brand-200/80 hover:bg-brand-500 hover:text-white'
+    }`;
   const iconBtn =
-    'relative grid h-9 w-9 sm:h-11 sm:w-11 place-items-center rounded-full text-ink-900 transition hover:bg-ink-100 active:scale-95 shrink-0';
+    'relative grid h-8 w-8 min-[390px]:h-9 min-[390px]:w-9 sm:h-11 sm:w-11 place-items-center rounded-full text-ink-900 transition hover:bg-ink-100 active:scale-95 shrink-0';
 
-  // Avoid duplicating Casquettes if also present in the dynamic categories list
-  const otherCategories = categories.filter((c) => c.slug.toLowerCase() !== 'casquettes');
+  // Avoid duplicating Casquettes & Bomberses if also present in the dynamic categories list
+  const otherCategories = categories.filter(
+    (c) => !['casquettes', 'bomberses'].includes(c.slug.toLowerCase()),
+  );
 
   return (
     <>
@@ -73,36 +103,36 @@ export default function Header({ categories }: { categories: { name: string; slu
           scrolled ? 'border-ink-200 bg-white/85 shadow-card backdrop-blur-xl' : 'border-transparent bg-white'
         }`}
       >
-        <div className={`container-shop flex items-center gap-1.5 transition-all duration-300 sm:gap-4 ${scrolled ? 'py-2' : 'py-2.5 sm:py-3'}`}>
-          <button className={`${iconBtn} lg:hidden`} onClick={() => setOpen(!open)} aria-label={t.nav.menu} aria-expanded={open}>
-            {open ? <X size={21} /> : <Menu size={21} />}
-          </button>
+        <div className={`container-shop flex items-center justify-between gap-1 min-[390px]:gap-1.5 transition-all duration-300 sm:gap-3 ${scrolled ? 'py-2' : 'py-2.5 sm:py-3'}`}>
+          <div className="flex items-center gap-1 min-[390px]:gap-1.5 sm:gap-3 min-w-0">
+            <button className={`${iconBtn} lg:hidden`} onClick={() => setOpen(!open)} aria-label={t.nav.menu} aria-expanded={open}>
+              {open ? <X size={20} /> : <Menu size={20} />}
+            </button>
 
-          <div className="flex items-center gap-1.5 min-[375px]:gap-2 sm:gap-3.5 shrink-0">
-            <Link href="/" className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <Link href="/" className="flex items-center gap-2 sm:gap-2.5 shrink-0">
               <Image
                 src={siteConfig.photoUrl}
                 alt={t.common.brandName}
                 width={120}
                 height={44}
-                className="h-9 sm:h-11 w-auto max-h-11 object-contain"
+                className="h-8 min-[390px]:h-9 sm:h-11 w-auto max-h-11 object-contain"
                 unoptimized
               />
-              <span className="hidden text-lg font-black tracking-tight text-ink-900 md:block">{t.common.brandName}</span>
+              <span className="hidden text-lg font-black tracking-tight text-ink-900 xl:block">{t.common.brandName}</span>
             </Link>
 
-            {/* Visible on BOTH mobile and desktop immediately next to the logo, with Cap logo icon */}
-            <Link
-              href="/casquettes"
-              className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2.5 py-1.5 sm:px-3.5 sm:py-1.5 text-[10px] min-[375px]:text-[11px] sm:text-xs font-extrabold uppercase tracking-wider transition-all duration-200 shrink-0 ${
-                isActive('/casquettes')
-                  ? 'bg-brand-500 text-white shadow-soft ring-2 ring-brand-200'
-                  : 'bg-brand-50 text-brand-700 border border-brand-200/80 hover:bg-brand-500 hover:text-white'
-              }`}
-            >
-              <CapIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
-              <span>{t.nav.casquettes}</span>
-            </Link>
+            {/* Dedicated Category Pills: [🧢 CASQUETTES] [🧥 BOMBERSES] */}
+            <div className="flex items-center gap-1 min-[390px]:gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
+              <Link href="/casquettes" className={pillBtn('/casquettes')}>
+                <CapIcon className="h-3 w-3 min-[390px]:h-3.5 min-[390px]:w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                <span>{t.nav.casquettes}</span>
+              </Link>
+
+              <Link href="/bomberses" className={pillBtn('/bomberses')}>
+                <JacketIcon className="h-3 w-3 min-[390px]:h-3.5 min-[390px]:w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                <span>{t.nav.bomberses}</span>
+              </Link>
+            </div>
           </div>
 
           <nav className="hidden flex-1 items-center justify-center gap-1 lg:flex">
@@ -112,20 +142,20 @@ export default function Header({ categories }: { categories: { name: string; slu
             ))}
           </nav>
 
-          <div className="flex flex-1 items-center justify-end gap-0.5 min-[375px]:gap-1 sm:gap-2 lg:flex-none">
+          <div className="flex items-center justify-end gap-0.5 sm:gap-1.5 shrink-0">
             <a
               href={`tel:${primaryPhone}`}
-              className="hidden items-center gap-2 rounded-full bg-cta/10 px-4 py-2 text-sm font-bold text-cta-dark transition hover:bg-cta hover:text-white md:inline-flex"
+              className="hidden items-center gap-2 rounded-full bg-cta/10 px-4 py-2 text-sm font-bold text-cta-dark transition hover:bg-cta hover:text-white xl:inline-flex"
             >
               <Phone size={14} />
               <span dir="ltr">{primaryPhone}</span>
             </a>
             <LanguageSwitcher />
-            <Link href="/shop" className={iconBtn} aria-label={t.nav.search}>
-              <Search size={19} />
+            <Link href="/shop" className={`${iconBtn} hidden min-[360px]:grid`} aria-label={t.nav.search}>
+              <Search size={18} />
             </Link>
             <Link href="/panier" className={iconBtn} aria-label={t.nav.cart}>
-              <ShoppingBag size={19} />
+              <ShoppingBag size={18} />
               {count > 0 && (
                 <span className="absolute right-0 top-0 sm:right-0.5 sm:top-0.5 grid h-4 min-w-4 sm:h-5 sm:min-w-5 place-items-center rounded-full bg-cta px-1 text-[9px] sm:text-[10px] font-black text-white ring-2 ring-white">
                   {count}
@@ -158,6 +188,19 @@ export default function Header({ categories }: { categories: { name: string; slu
                 <span className="inline-flex items-center gap-2.5">
                   <CapIcon className="h-4 w-4 text-brand-600" />
                   <span>{t.nav.casquettes}</span>
+                </span>
+                <ChevronRight size={16} className="text-ink-400 rtl:rotate-180" />
+              </Link>
+
+              <Link
+                href="/bomberses"
+                className={`flex items-center justify-between rounded-xl px-4 py-3 font-bold transition ${
+                  isActive('/bomberses') ? 'bg-brand-50 text-brand-600' : 'text-ink-900 hover:bg-ink-100'
+                }`}
+              >
+                <span className="inline-flex items-center gap-2.5">
+                  <JacketIcon className="h-4 w-4 text-brand-600" />
+                  <span>{t.nav.bomberses}</span>
                 </span>
                 <ChevronRight size={16} className="text-ink-400 rtl:rotate-180" />
               </Link>

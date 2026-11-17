@@ -26,8 +26,19 @@ export function buildProductFilter(query: ProductListQuery, forcePublished: bool
     filter.posOnly = { $ne: true };
   }
   if (query.search) filter.$text = { $search: query.search };
-  if (query.categorySlug) filter.categorySlugs = query.categorySlug;
-  else if (query.excludeCategorySlug) filter.categorySlugs = { $ne: query.excludeCategorySlug };
+  if (query.categorySlug) {
+    filter.categorySlugs = query.categorySlug;
+  } else if (query.excludeCategorySlug) {
+    const slugs = query.excludeCategorySlug
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (slugs.length === 1) {
+      filter.categorySlugs = { $ne: slugs[0] };
+    } else if (slugs.length > 1) {
+      filter.categorySlugs = { $nin: slugs };
+    }
+  }
   if (query.categoryId) filter.categoryIds = query.categoryId;
   if (query.onSale) filter.salePriceMinor = { $ne: null };
   if (query.featured) filter.featured = true;

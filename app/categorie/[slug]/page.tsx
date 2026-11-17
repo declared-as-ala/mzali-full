@@ -11,10 +11,17 @@ export const revalidate = 60;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  if (slug.toLowerCase() === 'casquettes') {
+  const lower = slug.toLowerCase();
+  if (lower === 'casquettes') {
     return {
       title: 'Casquettes — Boutique Ahmed Mzali',
       alternates: { canonical: 'https://ahmedmzaliboutique.tn/casquettes' },
+    };
+  }
+  if (lower === 'bomberses') {
+    return {
+      title: 'Bomberses — Boutique Ahmed Mzali',
+      alternates: { canonical: 'https://ahmedmzaliboutique.tn/bomberses' },
     };
   }
 
@@ -64,8 +71,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  if (slug.toLowerCase() === 'casquettes') {
+  const lower = slug.toLowerCase();
+  if (lower === 'casquettes') {
     permanentRedirect('/casquettes');
+  }
+  if (lower === 'bomberses') {
+    permanentRedirect('/bomberses');
   }
 
   const lang = await getCurrentLang();

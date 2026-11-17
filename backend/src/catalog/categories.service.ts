@@ -15,23 +15,38 @@ export class CategoriesService implements OnModuleInit {
   constructor(@InjectModel(Category.name) private readonly model: Model<Category>) {}
 
   async onModuleInit(): Promise<void> {
-    try {
-      await this.model.findOneAndUpdate(
-        { slug: 'casquettes' },
-        {
-          $setOnInsert: {
-            name: 'Casquettes',
-            slug: 'casquettes',
-            parentId: null,
-            description: 'Collection de casquettes tendance',
+    const defaults = [
+      {
+        name: 'Casquettes',
+        slug: 'casquettes',
+        description: 'Collection de casquettes tendance',
+      },
+      {
+        name: 'Bomberses',
+        slug: 'bomberses',
+        description: 'Collection de vestes bombers tendance',
+      },
+    ];
+
+    for (const item of defaults) {
+      try {
+        await this.model.findOneAndUpdate(
+          { slug: item.slug },
+          {
+            $setOnInsert: {
+              name: item.name,
+              slug: item.slug,
+              parentId: null,
+              description: item.description,
+            },
           },
-        },
-        { upsert: true, new: true },
-      );
-      this.cache.clear();
-    } catch {
-      // Non-fatal on startup
+          { upsert: true, new: true },
+        );
+      } catch {
+        // Non-fatal on startup
+      }
     }
+    this.cache.clear();
   }
 
   async list(query: CategoryListQuery = {}): Promise<CategoryContract[]> {

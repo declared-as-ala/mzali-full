@@ -2,24 +2,31 @@ import { NextResponse } from 'next/server';
 import { isAdmin } from '@/lib/auth';
 import { categoryService } from '@/services';
 
+const REQUIRED_CATEGORIES = [
+  { name: 'Casquettes', slug: 'casquettes', description: 'Collection de casquettes tendance' },
+  { name: 'Bomberses', slug: 'bomberses', description: 'Collection de vestes bombers tendance' },
+];
+
 export async function GET() {
   if (!(await isAdmin())) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const cats = await categoryService.list({ hideEmpty: false });
-  const hasCasquettes = cats.some(
-    (c) => c.slug.toLowerCase() === 'casquettes' || c.name.trim().toLowerCase() === 'casquettes',
-  );
-  if (!hasCasquettes) {
-    try {
-      const created = await categoryService.create({
-        name: 'Casquettes',
-        slug: 'casquettes',
-        description: 'Collection de casquettes tendance',
-      });
-      cats.push(created);
-    } catch {
-      // Ignore if created concurrently
+
+  for (const reqCat of REQUIRED_CATEGORIES) {
+    const exists = cats.some(
+      (c) =>
+        c.slug.toLowerCase() === reqCat.slug ||
+        c.name.trim().toLowerCase() === reqCat.name.toLowerCase(),
+    );
+    if (!exists) {
+      try {
+        const created = await categoryService.create(reqCat);
+        cats.push(created);
+      } catch {
+        // Ignore if created concurrently
+      }
     }
   }
+
   return NextResponse.json(cats);
 }
 

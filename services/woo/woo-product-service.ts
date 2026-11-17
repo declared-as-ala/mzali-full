@@ -71,7 +71,13 @@ export class WooCommerceProductService implements ProductService {
     const res = await wooClient.get<WooProductRaw[]>('/products', wcQuery);
     let mapped = res.data.map(mapProduct);
     if (query.excludeCategorySlug) {
-      mapped = mapped.filter((p) => !p.categorySlugs.includes(query.excludeCategorySlug!));
+      const excluded = query.excludeCategorySlug
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      mapped = mapped.filter(
+        (p) => !p.categorySlugs.some((slug) => excluded.includes(slug.toLowerCase())),
+      );
     }
     return { items: mapped, total: res.total, totalPages: res.totalPages, page: query.page ?? 1 };
   }

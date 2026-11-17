@@ -33,6 +33,7 @@ export const dictionaries = {
       announcement: 'Bienvenue à Boutique Ahmed Mzali',
       home: 'Accueil',
       casquettes: 'Casquettes',
+      bomberses: 'Bomberses',
       menu: 'Menu',
       search: 'Recherche',
       cart: 'Panier',
@@ -87,6 +88,13 @@ export const dictionaries = {
       title: 'Casquettes',
       subtitle: 'Découvrez notre sélection de casquettes tendance avec livraison rapide partout en Tunisie.',
       empty: 'Aucune casquette disponible pour le moment.',
+      backToHome: 'Voir nos vêtements & chaussures',
+    },
+    bomberses: {
+      label: 'Collection Exclusive',
+      title: 'Bomberses',
+      subtitle: 'Découvrez notre sélection de vestes bombers tendance avec livraison rapide partout en Tunisie.',
+      empty: 'Aucun bomber disponible pour le moment.',
       backToHome: 'Voir nos vêtements & chaussures',
     },
     cart: {
@@ -190,6 +198,7 @@ export const dictionaries = {
       announcement: 'مرحبا بكم في بوتيك أحمد مزالي',
       home: 'الرئيسية',
       casquettes: 'كاسكيتات',
+      bomberses: 'بومبرز',
       menu: 'القائمة',
       search: 'بحث',
       cart: 'السلة',
@@ -244,6 +253,13 @@ export const dictionaries = {
       title: 'كاسكيتات',
       subtitle: 'اكتشف مجموعتنا المختارة من الكاسكيتات العصرية مع توصيل سريع إلى كامل تراب الجمهورية.',
       empty: 'لا توجد كاسكيتات متوفرة حالياً.',
+      backToHome: 'مشاهدة الملابس والأحذية',
+    },
+    bomberses: {
+      label: 'مجموعة حصرية',
+      title: 'بومبرز',
+      subtitle: 'اكتشف مجموعتنا المختارة من جاكيتات البومبرز العصرية مع توصيل سريع إلى كامل تراب الجمهورية.',
+      empty: 'لا توجد منتجات بومبرز متوفرة حالياً.',
       backToHome: 'مشاهدة الملابس والأحذية',
     },
     cart: {

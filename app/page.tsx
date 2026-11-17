@@ -40,6 +40,8 @@ export const metadata: Metadata = {
   },
 };
 
+const HOMEPAGE_EXCLUDED_CATEGORIES = 'casquettes,bomberses';
+
 export default async function Home() {
   const lang = await getCurrentLang();
   const t = getDictionary(lang);
@@ -48,10 +50,10 @@ export default async function Home() {
   const whatsapp = saved.whatsapp ?? SITE.contact.whatsapp;
   // menu_order/asc matches the admin's drag-and-drop product order (see
   // app/shop/page.tsx for the same default and why).
-  // Exclude Casquettes server-side so they only appear on /casquettes.
+  // Exclude Casquettes and Bomberses server-side so they only appear on their dedicated routes.
   const [firstProductsResult, categories] = await Promise.all([
     productService
-      .list({ perPage: 100, orderBy: 'menu_order', order: 'asc', excludeCategorySlug: 'casquettes' })
+      .list({ perPage: 100, orderBy: 'menu_order', order: 'asc', excludeCategorySlug: HOMEPAGE_EXCLUDED_CATEGORIES })
       .catch(() => ({ items: [] as Product[], total: 0, totalPages: 0, page: 1 })),
     categoryService.list({ hideEmpty: true }).catch(() => []),
   ]);
@@ -63,7 +65,7 @@ export default async function Home() {
     for (let p = 2; p <= firstProductsResult.totalPages; p++) {
       promises.push(
         productService
-          .list({ perPage: 100, orderBy: 'menu_order', order: 'asc', page: p, excludeCategorySlug: 'casquettes' })
+          .list({ perPage: 100, orderBy: 'menu_order', order: 'asc', page: p, excludeCategorySlug: HOMEPAGE_EXCLUDED_CATEGORIES })
           .then((res) => res.items)
           .catch(() => [] as Product[]),
       );
@@ -72,9 +74,9 @@ export default async function Home() {
     products = products.concat(additionalPages.flat());
   }
 
-  // Ensure any product belonging to Casquettes is strictly excluded from homepage grid
+  // Ensure any product belonging to Casquettes or Bomberses is strictly excluded from homepage grid
   products = products.filter(
-    (p) => !p.categorySlugs?.some((slug) => slug.toLowerCase() === 'casquettes'),
+    (p) => !p.categorySlugs?.some((slug) => ['casquettes', 'bomberses'].includes(slug.toLowerCase())),
   );
 
   return (

@@ -11,6 +11,7 @@ export function revalidateStorefront(): void {
     revalidatePath('/produit/[slug]', 'page');
     revalidatePath('/categorie/[slug]', 'page');
     revalidatePath('/casquettes');
+    revalidatePath('/bomberses');
     revalidatePath('/shop');
     revalidatePath('/');
   } catch (error) {
