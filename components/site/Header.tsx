@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { ShoppingBag, Search, Menu, X, Phone, ChevronRight } from 'lucide-react';
+import { ShoppingBag, Search, Menu, X, Phone, ChevronRight, Home } from 'lucide-react';
 import { useCart } from '@/lib/cart';
 import { SITE } from '@/lib/site-config';
 import { useEffect, useState } from 'react';
@@ -81,14 +81,20 @@ export default function Header({ categories }: { categories: { name: string; slu
     `relative rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
       isActive(href) ? 'bg-brand-300 text-white shadow-soft' : 'text-ink-700 hover:bg-ink-100 hover:text-ink-900'
     }`;
-  const pillBtn = (href: string) =>
-    `inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2 py-1 min-[390px]:px-2.5 sm:px-3.5 sm:py-1.5 text-[9.5px] min-[390px]:text-[10.5px] sm:text-xs font-extrabold uppercase tracking-wider transition-all duration-200 shrink-0 ${
+  const desktopPillBtn = (href: string) =>
+    `inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-extrabold uppercase tracking-wider transition-all duration-200 shrink-0 ${
       isActive(href)
         ? 'bg-brand-500 text-white shadow-soft ring-2 ring-brand-200'
         : 'bg-brand-50 text-brand-700 border border-brand-200/80 hover:bg-brand-500 hover:text-white'
     }`;
+  const mobileSubNavBtn = (href: string) =>
+    `flex-1 inline-flex items-center justify-center gap-1 min-[375px]:gap-1.5 rounded-full px-2 py-1.5 text-[10.5px] min-[375px]:text-[11.5px] font-extrabold uppercase tracking-wide transition-all duration-200 whitespace-nowrap ${
+      isActive(href)
+        ? 'bg-brand-500 text-white shadow-xs'
+        : 'bg-white text-ink-800 border border-ink-200/90 hover:border-brand-300 hover:text-brand-600'
+    }`;
   const iconBtn =
-    'relative grid h-8 w-8 min-[390px]:h-9 min-[390px]:w-9 sm:h-11 sm:w-11 place-items-center rounded-full text-ink-900 transition hover:bg-ink-100 active:scale-95 shrink-0';
+    'relative grid h-10 w-10 sm:h-11 sm:w-11 place-items-center rounded-full text-ink-900 transition hover:bg-ink-100 active:scale-95 shrink-0';
 
   // Avoid duplicating Casquettes & Bomberses if also present in the dynamic categories list
   const otherCategories = categories.filter(
@@ -100,36 +106,37 @@ export default function Header({ categories }: { categories: { name: string; slu
       <div className="announce-bar py-2 text-center text-xs sm:text-sm">{t.nav.announcement}</div>
       <header
         className={`sticky top-0 z-30 border-b transition-all duration-300 ${
-          scrolled ? 'border-ink-200 bg-white/85 shadow-card backdrop-blur-xl' : 'border-transparent bg-white'
+          scrolled ? 'border-ink-200 bg-white/90 shadow-card backdrop-blur-xl' : 'border-ink-100 bg-white'
         }`}
       >
-        <div className={`container-shop flex items-center justify-between gap-1 min-[390px]:gap-1.5 transition-all duration-300 sm:gap-3 ${scrolled ? 'py-2' : 'py-2.5 sm:py-3'}`}>
-          <div className="flex items-center gap-1 min-[390px]:gap-1.5 sm:gap-3 min-w-0">
+        {/* Main Top Row */}
+        <div className={`container-shop flex items-center justify-between gap-2 transition-all duration-300 sm:gap-3 ${scrolled ? 'py-2' : 'py-2.5 sm:py-3'}`}>
+          <div className="flex items-center gap-2 sm:gap-3.5 shrink-0">
             <button className={`${iconBtn} lg:hidden`} onClick={() => setOpen(!open)} aria-label={t.nav.menu} aria-expanded={open}>
-              {open ? <X size={20} /> : <Menu size={20} />}
+              {open ? <X size={21} /> : <Menu size={21} />}
             </button>
 
-            <Link href="/" className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            <Link href="/" className="flex items-center gap-2.5 sm:gap-3 shrink-0">
               <Image
                 src={siteConfig.photoUrl}
                 alt={t.common.brandName}
                 width={120}
                 height={44}
-                className="h-8 min-[390px]:h-9 sm:h-11 w-auto max-h-11 object-contain"
+                className="h-9 sm:h-11 w-auto max-h-11 object-contain"
                 unoptimized
               />
-              <span className="hidden text-lg font-black tracking-tight text-ink-900 xl:block">{t.common.brandName}</span>
+              <span className="hidden text-lg font-black tracking-tight text-ink-900 sm:block">{t.common.brandName}</span>
             </Link>
 
-            {/* Dedicated Category Pills: [🧢 CASQUETTES] [🧥 BOMBERSES] */}
-            <div className="flex items-center gap-1 min-[390px]:gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-0.5">
-              <Link href="/casquettes" className={pillBtn('/casquettes')}>
-                <CapIcon className="h-3 w-3 min-[390px]:h-3.5 min-[390px]:w-3.5 sm:h-4 sm:w-4 shrink-0" />
+            {/* Desktop Category Pills immediately next to logo */}
+            <div className="hidden lg:flex items-center gap-2">
+              <Link href="/casquettes" className={desktopPillBtn('/casquettes')}>
+                <CapIcon className="h-4 w-4 shrink-0" />
                 <span>{t.nav.casquettes}</span>
               </Link>
 
-              <Link href="/bomberses" className={pillBtn('/bomberses')}>
-                <JacketIcon className="h-3 w-3 min-[390px]:h-3.5 min-[390px]:w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <Link href="/bomberses" className={desktopPillBtn('/bomberses')}>
+                <JacketIcon className="h-4 w-4 shrink-0" />
                 <span>{t.nav.bomberses}</span>
               </Link>
             </div>
@@ -142,7 +149,7 @@ export default function Header({ categories }: { categories: { name: string; slu
             ))}
           </nav>
 
-          <div className="flex items-center justify-end gap-0.5 sm:gap-1.5 shrink-0">
+          <div className="flex items-center justify-end gap-1 sm:gap-2 shrink-0">
             <a
               href={`tel:${primaryPhone}`}
               className="hidden items-center gap-2 rounded-full bg-cta/10 px-4 py-2 text-sm font-bold text-cta-dark transition hover:bg-cta hover:text-white xl:inline-flex"
@@ -151,19 +158,42 @@ export default function Header({ categories }: { categories: { name: string; slu
               <span dir="ltr">{primaryPhone}</span>
             </a>
             <LanguageSwitcher />
-            <Link href="/shop" className={`${iconBtn} hidden min-[360px]:grid`} aria-label={t.nav.search}>
-              <Search size={18} />
+            <Link href="/shop" className={iconBtn} aria-label={t.nav.search}>
+              <Search size={19} />
             </Link>
             <Link href="/panier" className={iconBtn} aria-label={t.nav.cart}>
-              <ShoppingBag size={18} />
+              <ShoppingBag size={19} />
               {count > 0 && (
-                <span className="absolute right-0 top-0 sm:right-0.5 sm:top-0.5 grid h-4 min-w-4 sm:h-5 sm:min-w-5 place-items-center rounded-full bg-cta px-1 text-[9px] sm:text-[10px] font-black text-white ring-2 ring-white">
+                <span className="absolute right-0.5 top-0.5 grid h-4.5 min-w-4.5 sm:h-5 sm:min-w-5 place-items-center rounded-full bg-cta px-1 text-[9px] sm:text-[10px] font-black text-white ring-2 ring-white">
                   {count}
                 </span>
               )}
             </Link>
           </div>
         </div>
+
+        {/* Mobile Sub-Navbar under logo: [Accueil] [🧢 CASQUETTES] [🧥 BOMBERSES] — zero scrollbar */}
+        <nav
+          aria-label="Navigation principale mobile"
+          className="border-t border-ink-100 bg-neutral-50/80 lg:hidden"
+        >
+          <div className="container-shop flex items-center justify-between gap-1.5 py-2">
+            <Link href="/" className={mobileSubNavBtn('/')}>
+              <Home className="h-3.5 w-3.5 shrink-0" />
+              <span>{t.nav.home}</span>
+            </Link>
+
+            <Link href="/casquettes" className={mobileSubNavBtn('/casquettes')}>
+              <CapIcon className="h-3.5 w-3.5 shrink-0" />
+              <span>{t.nav.casquettes}</span>
+            </Link>
+
+            <Link href="/bomberses" className={mobileSubNavBtn('/bomberses')}>
+              <JacketIcon className="h-3.5 w-3.5 shrink-0" />
+              <span>{t.nav.bomberses}</span>
+            </Link>
+          </div>
+        </nav>
 
         {/* mobile drawer */}
         <div className={`grid transition-all duration-300 lg:hidden ${open ? 'grid-rows-[1fr] border-t border-ink-200' : 'grid-rows-[0fr]'}`}>
@@ -175,7 +205,10 @@ export default function Header({ categories }: { categories: { name: string; slu
                   isActive('/') ? 'bg-brand-50 text-brand-600' : 'text-ink-900 hover:bg-ink-100'
                 }`}
               >
-                <span>{t.nav.home}</span>
+                <span className="inline-flex items-center gap-2.5">
+                  <Home size={16} className="text-brand-600" />
+                  <span>{t.nav.home}</span>
+                </span>
                 <ChevronRight size={16} className="text-ink-400 rtl:rotate-180" />
               </Link>
 
