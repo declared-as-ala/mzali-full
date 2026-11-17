@@ -18,10 +18,10 @@ export default function LanguageSwitcher() {
   return (
     <div
       dir="ltr"
-      className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-ink-200 bg-white p-1 shadow-sm"
+      className="inline-flex min-h-9 sm:min-h-11 items-center gap-0.5 sm:gap-1 rounded-xl border border-ink-200 bg-white p-0.5 sm:p-1 shadow-sm shrink-0"
       aria-label={t.language.switcherLabel}
     >
-      <Languages size={16} className="ml-2 text-ink-500" aria-hidden />
+      <Languages size={15} className="hidden sm:block ml-1.5 text-ink-500" aria-hidden />
       {languageOptions.map((option) => {
         const active = option.code === lang;
         return (
@@ -31,7 +31,7 @@ export default function LanguageSwitcher() {
             onClick={() => changeLanguage(option.code)}
             aria-pressed={active}
             title={option.label}
-            className={`grid min-h-8 min-w-9 cursor-pointer place-items-center rounded-lg px-2 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-brand-200 ${
+            className={`grid min-h-7 min-w-7 sm:min-h-8 sm:min-w-9 cursor-pointer place-items-center rounded-lg px-1.5 sm:px-2 text-[11px] sm:text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-brand-200 ${
               active
                 ? 'bg-brand-500 text-white shadow-soft'
                 : 'text-ink-700 hover:bg-ink-100'
